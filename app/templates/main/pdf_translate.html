@@ -678,6 +678,7 @@
                 document.getElementById('pdfResultContainer').style.display = 'block';
                 document.getElementById('pdfDownloadLink').href = data.download_url;
                 document.getElementById('pdfDownloadLink').setAttribute('download', data.filename);
+                document.getElementById('pdfDownloadLink').textContent = (currentLanguage === 'en' ? 'Download ' : '下载 ') + data.filename;
                 // 翻译完成后刷新历史记录
                 loadHistory();
             } else {
@@ -723,7 +724,7 @@
                             <td><span class="status-badge completed">${currentLanguage === 'en' ? 'Completed' : '已完成'}</span></td>
                             <td>
                                 ${record.file_exists ? 
-                                    `<a href="/download_translated_pdf/${record.stored_filename || record.filename}" class="action-btn download" title="${currentLanguage === 'en' ? 'Download' : '下载'}" target="_blank">
+                                    `<a href="/download_translated_pdf/${encodeURIComponent(record.stored_filename || record.filename)}" class="action-btn download" title="${currentLanguage === 'en' ? 'Download' : '下载'}" target="_blank">
                                         <i class="bi bi-download"></i>
                                     </a>` : 
                                     `<span class="text-muted">${currentLanguage === 'en' ? 'File not found' : '文件不存在'}</span>`

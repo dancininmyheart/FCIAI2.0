@@ -2695,12 +2695,17 @@ def translate_pdf():
                     return jsonify({
                         'success': True,
                         'message': 'PDF处理完成',
-                        'download_url': f"/download_docx/{os.path.basename(docx_path)}"
+                        'filename': os.path.basename(docx_path),
+                        'download_url': url_for('main.download_translated_pdf', filename=os.path.basename(docx_path), _external=True)
                     })
                 else:
-                    logger.warning('逐段翻译生成Word失败，回退到旧流程')
+                    logger.warning('逐段翻译生成Word失败')
+                    return jsonify({'success': False, 'error': '翻译处理失败'}), 500
             except Exception as e:
-                logger.warning(f"逐段翻译流程异常，回退到旧流程: {e}")
+                logger.error(f"逐段翻译流程异常: {e}")
+                import traceback
+                logger.error(f"错误详情: {traceback.format_exc()}")
+                return jsonify({'success': False, 'error': f'翻译处理异常: {str(e)}'}), 500
             
             # 转换markdown为Word文档
             # 尝试使用pypandoc转换内容到docx
@@ -3110,9 +3115,9 @@ def translate_pdf():
         return jsonify({
             'success': True, 
             'message': 'PDF翻译完成', 
-            'filename': docx_filename,
+            'filename': os.path.basename(docx_path),
             'file_path': docx_path,
-            'download_url': url_for('main.download_translated_pdf', filename=docx_filename, _external=True)
+            'download_url': url_for('main.download_translated_pdf', filename=os.path.basename(docx_path), _external=True)
         })
         
     except Exception as e:
@@ -3169,24 +3174,35 @@ def download_translated_pdf(filename):
                 files_in_dir = os.listdir(pdf_output_dir)
                 logger.info(f"目录中的文件列表: {files_in_dir}")
                 
-                # 尝试模糊匹配文件名
-                matched_files = [f for f in files_in_dir if filename in f or f.startswith(filename.split('.')[0])]
-                logger.info(f"匹配的文件: {matched_files}")
+                # 尝试精确匹配文件名（不带路径）
+                matched_files = [f for f in files_in_dir if f == filename]
+                logger.info(f"精确匹配的文件: {matched_files}")
                 
                 if matched_files:
                     # 使用第一个匹配的文件
                     file_path = os.path.join(pdf_output_dir, matched_files[0])
                     filename = matched_files[0]
-                    logger.info(f"使用匹配的文件: {file_path}")
-                    logger.info(f"匹配文件的绝对路径: {os.path.abspath(file_path)}")
+                    logger.info(f"使用精确匹配的文件: {file_path}")
+                    logger.info(f"精确匹配文件的绝对路径: {os.path.abspath(file_path)}")
                 else:
-                    # 如果没有匹配的文件，尝试查找任何docx文件
-                    docx_files = [f for f in files_in_dir if f.endswith('.docx')]
-                    if docx_files:
-                        file_path = os.path.join(pdf_output_dir, docx_files[0])
-                        filename = docx_files[0]
-                        logger.info(f"使用目录中的第一个docx文件: {file_path}")
-                        logger.info(f"第一个docx文件的绝对路径: {os.path.abspath(file_path)}")
+                    # 尝试模糊匹配文件名
+                    matched_files = [f for f in files_in_dir if filename in f or f.startswith(filename.split('.')[0])]
+                    logger.info(f"模糊匹配的文件: {matched_files}")
+                    
+                    if matched_files:
+                        # 使用第一个匹配的文件
+                        file_path = os.path.join(pdf_output_dir, matched_files[0])
+                        filename = matched_files[0]
+                        logger.info(f"使用模糊匹配的文件: {file_path}")
+                        logger.info(f"模糊匹配文件的绝对路径: {os.path.abspath(file_path)}")
+                    else:
+                        # 如果没有匹配的文件，尝试查找任何docx文件
+                        docx_files = [f for f in files_in_dir if f.endswith('.docx')]
+                        if docx_files:
+                            file_path = os.path.join(pdf_output_dir, docx_files[0])
+                            filename = docx_files[0]
+                            logger.info(f"使用目录中的第一个docx文件: {file_path}")
+                            logger.info(f"第一个docx文件的绝对路径: {os.path.abspath(file_path)}")
             else:
                 logger.error("PDF输出目录不存在")
                 return jsonify({'success': False, 'error': '文件目录不存在'}), 404
@@ -3204,6 +3220,9 @@ def download_translated_pdf(filename):
         # 确保文件扩展名正确
         if not filename.endswith('.docx'):
             logger.warning(f"下载文件扩展名不正确: {filename}")
+            # 修正文件扩展名
+            if not filename.endswith('.docx') and os.path.exists(file_path):
+                filename += '.docx'
         
         logger.info(f"发送文件给用户: {file_path}")
         logger.info(f"文件大小: {os.path.getsize(file_path)} 字节")

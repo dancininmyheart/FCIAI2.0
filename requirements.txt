@@ -1,3 +1,6 @@
+# ===== 阿里云服务 =====
+alibabacloud-oss-v2==1.1.0
+
 # ===== 核心Web框架 =====
 Flask==3.0.3
 Flask-SQLAlchemy==3.1.1

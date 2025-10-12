@@ -547,7 +547,7 @@ def process_folder_with_mapping(folder_path, json_path, api_key):
 # 使用示例
 if __name__ == "__main__":
     # 替换为你的实际API Key
-    API_KEY = "sk-6e997759431e40618537526776967f17"
+    API_KEY = "sk-"
     
     # 设置文件夹路径和JSON文件路径
     folder_path = "/home/a937911378/AIGC/ppt_ocr_8vu7ritd"  # 替换为你的图片文件夹路径

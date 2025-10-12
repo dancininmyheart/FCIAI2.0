@@ -380,6 +380,65 @@
         transform: translateY(-1px);
     }
 
+    /* 词汇表配置按钮样式 */
+    #vocabularyConfigBtn {
+        text-align: left;
+        background: #f8f9fa;
+        color: rgb(110,111,114);
+        border: 1px solid #dee2e6;
+        padding: 0.6vw 0.8vw;
+        border-radius: 0.5vw;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    #vocabularyConfigBtn:hover {
+        background: #e9ecef;
+        color: rgb(110,111,114);
+        border-color: #caced1;
+    }
+
+    #vocabularyConfigBtn:focus {
+        outline: none;
+        box-shadow: 0 0 0 0.2rem rgba(0,148,217,0.25);
+    }
+
+    #vocabularyConfigBtn.configured {
+        background-color: #28a745;
+    }
+
+    #vocabularyConfigBtn.configured:hover {
+        background-color: #218838;
+    }
+
+    /* 词汇表模态框样式 */
+    #vocabularyModal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 800px;
+        max-width: 90vw;
+        max-height: 80vh;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #modalOverlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 9999;
+    }
+
     /* 响应式设计 - 调整比例 */
     @media (max-width: 1200px) {
         .container {
@@ -493,6 +552,14 @@
                     对PDF中的图片启用OCR识别功能（需要网络连接）
                 {% endif %}
             </small>
+        </div>
+        
+        <!-- 新增的词汇表部分 -->
+        <div class="form-group">
+            <label>{% if session.get('language') == 'en' %}Vocabulary{% else %}词汇表{% endif %}</label>
+            <button type="button" class="btn btn-secondary" id="vocabularyConfigBtn" onclick="openVocabularyConfig()">
+                {% if session.get('language') == 'en' %}Not Configured{% else %}未配置{% endif %}
+            </button>
         </div>
     </div>
 
@@ -665,6 +732,11 @@
         formData.append('model', model);
         formData.append('enable_image_ocr', enableImageOcr);
         
+        // 添加选中的词汇表ID
+        if (window.selectedVocabulary && window.selectedVocabulary.length > 0) {
+            formData.append('selected_vocabulary', window.selectedVocabulary.join(','));
+        }
+        
         // 发送请求到后端
         fetch('/translate_pdf', {
             method: 'POST',
@@ -779,5 +851,360 @@
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
+
+    // 新增词汇表配置功能
+    function openVocabularyConfig() {
+        // 创建浮动窗口
+        const modal = document.createElement('div');
+        modal.id = 'vocabularyModal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 800px;
+            max-width: 90vw;
+            max-height: 80vh;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+        `;
+        
+        // 添加窗口内容
+        modal.innerHTML = `
+            <div style="padding: 20px; flex: 1; overflow-y: auto;">
+                <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; color: #333;">${currentLanguage === 'en' ? 'Vocabulary Configuration' : '词汇表配置'}</h4>
+                <div style="margin-bottom: 15px; display: flex; gap: 10px;">
+                    <input type="text" id="vocabularySearch" placeholder="${currentLanguage === 'en' ? 'Search vocabulary...' : '搜索词汇...'}" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <button id="searchBtn" style="padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">${currentLanguage === 'en' ? 'Search' : '搜索'}</button>
+                </div>
+                <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+                    <select id="categoryFilter" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        <option value="">${currentLanguage === 'en' ? 'Select Category' : '添加标签'}</option>
+                    </select>
+                    <button id="addCategoryBtn" style="padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">${currentLanguage === 'en' ? 'Add' : '添加'}</button>
+                </div>
+                <div id="selectedCategoryTags" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 5px;">
+                    <!-- 分类标签将在这里动态显示 -->
+                </div>
+                <div style="margin-bottom: 15px; display: flex; align-items: center;">
+                    <input type="checkbox" id="selectAllCheckbox" style="margin-right: 10px;">
+                    <label for="selectAllCheckbox" style="color: #333 !important; font-weight: 500;">${currentLanguage === 'en' ? 'Select All' : '全选'}</label>
+                </div>
+                <div id="vocabularyList" style="min-height: 300px; border: 1px solid #ddd; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto;">
+                    <p>${currentLanguage === 'en' ? 'Loading...' : '加载中...'}</p>
+                </div>
+            </div>
+            <div style="padding: 15px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary" onclick="closeVocabularyConfig()">${currentLanguage === 'en' ? 'Cancel' : '取消'}</button>
+                <button class="btn btn-primary" onclick="saveVocabularyConfig()">${currentLanguage === 'en' ? 'OK' : '确定'}</button>
+            </div>
+        `;
+
+        // 添加遮罩层
+        const overlay = document.createElement('div');
+        overlay.id = 'modalOverlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+        `;
+        
+        // 添加到页面
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        
+        // 加载词汇表数据
+        loadVocabularyData();
+        
+        // 绑定事件
+        document.getElementById('searchBtn').addEventListener('click', () => {
+            const searchTerm = document.getElementById('vocabularySearch').value;
+            loadVocabularyData(searchTerm);
+        });
+        
+        document.getElementById('vocabularySearch').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const searchTerm = document.getElementById('vocabularySearch').value;
+                loadVocabularyData(searchTerm);
+            }
+        });
+        
+        // 分类筛选事件
+        document.getElementById('addCategoryBtn').addEventListener('click', addCategoryFilter);
+        
+        document.getElementById('categoryFilter').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addCategoryFilter();
+            }
+        });
+        
+        // 全选/取消全选功能
+        document.getElementById('selectAllCheckbox').addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+        
+        // 为每个词汇条目添加事件监听器，更新主全选框状态
+        const vocabularyList = document.getElementById('vocabularyList');
+        const observer = new MutationObserver(() => {
+            const checkboxes = vocabularyList.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateSelectAllCheckbox);
+                
+                // 恢复之前选中的状态
+                if (window.selectedVocabulary && window.selectedVocabulary.includes(String(checkbox.value))) {
+                    checkbox.checked = true;
+                }
+            });
+            
+            // 更新全选框状态
+            updateSelectAllCheckbox();
+        });
+        
+        observer.observe(vocabularyList, { childList: true, subtree: true });
+    }
+
+    function updateSelectAllCheckbox() {
+        const allCheckboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]');
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const allChecked = allCheckboxes.length > 0 && Array.from(allCheckboxes).every(cb => cb.checked);
+        selectAllCheckbox.checked = allChecked;
+        
+        // 如果没有复选框，确保全选框未选中
+        if (allCheckboxes.length === 0) {
+            selectAllCheckbox.checked = false;
+        }
+    }
+
+    // 全局存储所有词汇数据
+    let allVocabularyData = [];
+    // 存储当前选中的分类
+    let selectedCategories = [];
+
+    async function loadVocabularyData(searchTerm = '') {
+        try {
+            // Load all translations (private and public)
+            const response = await fetch(`/api/translations?search=${encodeURIComponent(searchTerm)}&page=1&per_page=1000&visibility=all`);
+            if (!response.ok) {
+                throw new Error(currentLanguage === 'en' ? 'Failed to get vocabulary data' : '获取词汇表数据失败');
+            }
+            const data = await response.json();
+            
+            // 保存所有数据用于筛选
+            allVocabularyData = data.translations;
+            
+            // 填充分类筛选下拉框
+            populateCategoryFilter(data.translations);
+            
+            // 显示数据
+            displayVocabularyData(data.translations);
+        } catch (error) {
+            console.error('加载词汇表数据失败:', error);
+            document.getElementById('vocabularyList').innerHTML = `<p>${currentLanguage === 'en' ? 'Failed to load data' : '加载数据失败'}</p>`;
+        }
+    }
+
+    // 填充分类筛选下拉框
+    function populateCategoryFilter(data) {
+        const categorySet = new Set();
+        
+        data.forEach(item => {
+            if (item.category) {
+                // 分割分类字符串（使用分号分隔）
+                const categories = item.category.split(';').map(cat => cat.trim()).filter(cat => cat);
+                categories.forEach(cat => categorySet.add(cat));
+            }
+        });
+        
+        const categoryFilter = document.getElementById('categoryFilter');
+        if (categoryFilter) {
+            // 清空选项
+            categoryFilter.innerHTML = `<option value="">${currentLanguage === 'en' ? 'Select Category' : '添加标签'}</option>`;
+            
+            // 添加分类选项
+            Array.from(categorySet).sort().forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categoryFilter.appendChild(option);
+            });
+        }
+    }
+
+    // 添加分类到筛选条件
+    function addCategoryFilter() {
+        const categoryFilter = document.getElementById('categoryFilter');
+        const selectedCategory = categoryFilter.value;
+        
+        if (selectedCategory && !selectedCategories.includes(selectedCategory)) {
+            selectedCategories.push(selectedCategory);
+            updateCategoryTags();
+            applyFilters();
+        }
+        
+        // 重置选择框
+        categoryFilter.selectedIndex = 0;
+    }
+
+    // 移除分类筛选条件
+    function removeCategoryFilter(category) {
+        selectedCategories = selectedCategories.filter(cat => cat !== category);
+        updateCategoryTags();
+        applyFilters();
+    }
+
+    // 清除所有分类筛选条件
+    function clearCategoryFilters() {
+        selectedCategories = [];
+        updateCategoryTags();
+        applyFilters();
+    }
+
+    // 更新分类标签显示
+    function updateCategoryTags() {
+        const tagsContainer = document.getElementById('selectedCategoryTags');
+        if (!tagsContainer) return;
+        
+        if (selectedCategories.length === 0) {
+            tagsContainer.innerHTML = '';
+            return;
+        }
+        
+        let html = '';
+        selectedCategories.forEach(category => {
+            html += `
+                <span style="display: inline-flex; align-items: center; background: #007bff; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                    ${category}
+                    <button type="button" onclick="removeCategoryFilter('${category}')" style="margin-left: 5px; background: none; border: none; color: white; cursor: pointer; font-weight: bold;">×</button>
+                </span>
+            `;
+        });
+        
+        // 添加清除按钮
+        html += `<button type="button" onclick="clearCategoryFilters()" style="background: #6c757d; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer;">${currentLanguage === 'en' ? 'Clear Filters' : '清除筛选'}</button>`;
+        
+        tagsContainer.innerHTML = html;
+    }
+
+    // 应用所有筛选条件
+    function applyFilters() {
+        let filteredData = [...allVocabularyData];
+        
+        // 应用分类筛选（并集模式）
+        if (selectedCategories.length > 0) {
+            filteredData = filteredData.filter(item => {
+                if (!item.category) return false;
+                
+                const itemCategories = item.category.split(';').map(cat => cat.trim()).filter(cat => cat);
+                return selectedCategories.some(selectedCat => itemCategories.includes(selectedCat));
+            });
+        }
+        
+        displayVocabularyData(filteredData);
+    }
+
+    function displayVocabularyData(data) {
+        const vocabularyList = document.getElementById('vocabularyList');
+        if (!data || data.length === 0) {
+            vocabularyList.innerHTML = `<p>${currentLanguage === 'en' ? 'No related vocabulary found' : '未找到相关词汇'}</p>`;
+            return;
+        }
+        
+        // 添加表头（不包含全选复选框）
+        let html = `
+            <div style="display: flex; align-items: center; padding: 8px 0; border-bottom: 2px solid #333; font-weight: bold; background-color: #f8f9fa;">
+                <div style="width: 30px; padding-left: 10px;">
+                    <!-- 移除了表头的全选复选框 -->
+                </div>
+                <div style="flex: 1; display: flex;">
+                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'English' : '英文'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'Chinese' : '中文'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'Dutch' : '荷兰语'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'Category' : '分类'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'Type' : '类型'}</div>
+                </div>
+            </div>
+        `;
+        
+        // 添加数据行
+        html += data.map(item => `
+            <div style="display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
+                <div style="width: 30px; padding-left: 10px;">
+                    <input type="checkbox" id="vocab_${item.id}" value="${item.id}" style="margin-right: 10px;" ${window.selectedVocabulary && window.selectedVocabulary.includes(String(item.id)) ? 'checked' : ''}>
+                </div>
+                <div style="flex: 1; display: flex; font-size: 14px; color: #333;">
+                    <div style="flex: 1; padding: 0 5px;">${item.english}</div>
+                    <div style="flex: 1; padding: 0 5px;">${item.chinese}</div>
+                    <div style="flex: 1; padding: 0 5px;">${item.dutch || ''}</div>
+                    <div style="flex: 1; padding: 0 5px;">${item.category || ''}</div>
+                    <div style="flex: 1; padding: 0 5px;">${item.is_public ? `<span style="color: #007bff;">${currentLanguage === 'en' ? 'Public' : '公共'}</span>` : (currentLanguage === 'en' ? 'Private' : '私人')}</div>
+                </div>
+            </div>
+        `).join('');
+        
+        vocabularyList.innerHTML = html;
+        
+        // 全选/取消全选功能
+        document.getElementById('selectAllCheckbox').addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            // 更新全选框状态
+            updateSelectAllCheckbox();
+        });
+        
+        // 为每个复选框添加事件监听器
+        const checkboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelectAllCheckbox);
+        });
+        
+        // 更新主界面的全选框状态
+        updateSelectAllCheckbox();
+    }
+
+    function closeVocabularyConfig() {
+        const modal = document.getElementById('vocabularyModal');
+        const overlay = document.getElementById('modalOverlay');
+        if (modal) modal.remove();
+        if (overlay) overlay.remove();
+    }
+
+    // 更新词汇表配置按钮显示
+    function saveVocabularyConfig() {
+        // 获取选中的词汇（移除了对表头全选复选框的排除）
+        const selectedCheckboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]:checked');
+        const selectedVocabIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+        
+        // 存储选中的词汇ID到全局变量
+        window.selectedVocabulary = selectedVocabIds;
+        
+        // 更新词汇表配置按钮的文本和样式
+        const vocabConfigBtn = document.getElementById('vocabularyConfigBtn');
+        if (selectedVocabIds.length > 0) {
+            vocabConfigBtn.textContent = currentLanguage === 'en' ? 
+                `Configured (${selectedVocabIds.length})` : 
+                `已配置 (${selectedVocabIds.length})`;
+            vocabConfigBtn.classList.add('configured');
+        } else {
+            vocabConfigBtn.textContent = currentLanguage === 'en' ? 'Not Configured' : '未配置';
+            vocabConfigBtn.classList.remove('configured');
+        }
+        
+        // 关闭配置窗口
+        closeVocabularyConfig();
+    }
+
 </script>
 {% endblock %}

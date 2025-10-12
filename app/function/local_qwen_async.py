@@ -237,7 +237,7 @@ async def get_field_async(text: str) -> str:
         return "其他"  # 返回默认领域
 
 # 创建翻译文本的异步函数
-async def translate_by_fields_async(field, text, stop_words, custom_translations, source_language, target_language):
+async def translate_by_fields_async(field, text, stop_words, custom_translations, source_language, target_language, vocabulary_prompt=None):
     """
     异步调用Qwen API翻译文本
     
@@ -248,6 +248,7 @@ async def translate_by_fields_async(field, text, stop_words, custom_translations
         custom_translations: 自定义翻译字典
         source_language: 源语言
         target_language: 目标语言
+        vocabulary_prompt: 词汇表提示词
 
     Returns:
         翻译结果
@@ -256,16 +257,19 @@ async def translate_by_fields_async(field, text, stop_words, custom_translations
     stop_words_str = ", ".join(f'"{word}"' for word in stop_words) if stop_words else ""
     custom_translations_str = ", ".join(f'"{k}": "{v}"' for k, v in custom_translations.items()) if custom_translations else ""
 
+    # 如果没有提供vocabulary_prompt，则从custom_translations构建
+    if not vocabulary_prompt and custom_translations:
+        vocabulary_prompt = "专业词汇表（请在翻译中优先使用以下术语的对应翻译）:\n" + "\n".join(f'"{k}": "{v}"' for k, v in custom_translations.items())
+
     # 在异步函数中使用同步客户端，使用线程池执行
     loop = asyncio.get_event_loop()
 
     def _translate():
         try:
             client = get_openai_client()
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": f"""您是翻译{field}领域文本的专家。接下来，您将获得一系列{source_language}文本（包括短语、句子和单词）。
+            
+            # 构建系统提示词
+            system_content = f"""您是翻译{field}领域文本的专家。接下来，您将获得一系列{source_language}文本（包括短语、句子和单词）。
 请将每一段文本翻译成专业的{target_language}。
 
 ### **格式要求**：
@@ -294,9 +298,18 @@ async def translate_by_fields_async(field, text, stop_words, custom_translations
 
 4. **翻译风格**：
     - 请保持翻译的专业性，并符合 {field} 领域的语言习惯。
+    """
+            
+            # 如果有词汇表提示词，则添加到系统提示中
+            if vocabulary_prompt:
+                system_content += f"\n2. 自定义翻译：\n如果遇到以下词汇，在保持语义通顺的前提下使用提供的翻译做参考：\n{vocabulary_prompt}\n\n"
+                
+            system_content += "现在，请按照上述规则翻译文本"
 
-现在，请按照上述规则翻译文本
-"""},
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": system_content},
                     {"role": "user", "content": text}
                 ],
                 temperature=0.7,
@@ -395,7 +408,7 @@ def re_parse_formatted_text_async(text: str):
 async def translate_async(text: str, field: str = None, stop_words: List[str] = None,
                        custom_translations: Dict[str, str] = None,
                        source_language: str = "en", target_language: str = "zh",
-                       clean_markdown: bool = True):
+                       clean_markdown: bool = True, vocabulary_prompt: str = None):
     """
     异步翻译功能主函数
 
@@ -407,6 +420,7 @@ async def translate_async(text: str, field: str = None, stop_words: List[str] = 
         source_language: 源语言代码
         target_language: 目标语言代码
         clean_markdown: 是否清理Markdown符号（PDF翻译需要，PPT翻译不需要）
+        vocabulary_prompt: 词汇表提示词
 
     Returns:
         翻译映射字典（原文->译文）
@@ -414,7 +428,7 @@ async def translate_async(text: str, field: str = None, stop_words: List[str] = 
     try:
         # 设置默认值
         stop_words = stop_words or []
-        custom_translations = custom_translations or []
+        custom_translations = custom_translations or {}
 
         # 根据参数决定是否清理Markdown符号
         if clean_markdown:
@@ -433,7 +447,7 @@ async def translate_async(text: str, field: str = None, stop_words: List[str] = 
 
         # 翻译文本
         translation_result = await translate_by_fields_async(
-            field, cleaned_text, stop_words, custom_translations, source_language, target_language
+            field, cleaned_text, stop_words, custom_translations, source_language, target_language, vocabulary_prompt
         )
         logger.info(f"翻译API返回结果类型: {type(translation_result)}")
         logger.info(f"翻译API返回结果长度: {len(translation_result) if hasattr(translation_result, '__len__') else 'N/A'}")

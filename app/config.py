@@ -40,6 +40,25 @@ class Config:
         'temp': {'*'}  # 允许所有类型
     }
     
+    # 阿里云OSS配置
+    OSS_REGION = os.environ.get('OSS_REGION', 'cn-beijing')
+    OSS_BUCKET = os.environ.get('OSS_BUCKET', 'fci')
+    
+    @classmethod
+    def get_oss_config(cls):
+        """获取OSS配置字典"""
+        return {
+            'access_key_id': cls.OSS_ACCESS_KEY_ID,
+            'access_key_secret': cls.OSS_ACCESS_KEY_SECRET,
+            'region': cls.OSS_REGION,
+            'bucket': cls.OSS_BUCKET
+        }
+    
+    @classmethod
+    def is_oss_configured(cls):
+        """检查OSS是否已正确配置"""
+        return bool(cls.OSS_ACCESS_KEY_ID and cls.OSS_ACCESS_KEY_SECRET)
+    
     # 数据库配置
     DB_TYPE = os.environ.get('DB_TYPE') or 'mysql'
     DB_USER = os.environ.get('DB_USER') or 'root'

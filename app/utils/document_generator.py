@@ -445,7 +445,8 @@ def process_markdown_to_bilingual_doc(
 
 def _sync_translate_single_text(text: str,
                                 source_language: str = "en",
-                                target_language: str = "zh") -> str:
+                                target_language: str = "zh",
+                                custom_translations: Dict[str, str] = None) -> str:
     """
     使用现有的异步翻译接口对单条文本进行同步翻译，返回译文。
 
@@ -461,7 +462,7 @@ def _sync_translate_single_text(text: str,
                 text.strip(),
                 field="通用",  # PDF翻译使用通用领域，跳过领域检测
                 stop_words=[],
-                custom_translations={},
+                custom_translations=custom_translations or {},
                 source_language=source_language,
                 target_language=target_language
             )
@@ -516,10 +517,11 @@ def translate_markdown_to_bilingual_doc(
     output_path: str,
     source_language: str = "en",
     target_language: str = "zh",
-    image_base_dir: str | None = None
+    image_base_dir: str | None = None,
+    custom_translations: Dict[str, str] = None
 ) -> bool:
     """
-    将Markdown内容按“标题/段落 → 逐条翻译 → 立即写入Word（原文在前，译文在后）”的方式生成双语Word文档。
+    将Markdown内容按"标题/段落 → 逐条翻译 → 立即写入Word(原文在前，译文在后)"的方式生成双语Word文档。
 
     - 标题(`#`级别)写入为对应Heading，然后紧跟译文段落
     - 无序/有序列表项写入列表项，然后紧跟译文段落
@@ -535,7 +537,7 @@ def translate_markdown_to_bilingual_doc(
 
         lines = markdown_content.split('\n')
 
-        # 简单的中文检测（用于跳过已是中文的文本）
+        # 简单的中文检测(用于跳过已是中文的文本)
         def is_mostly_chinese(s: str) -> bool:
             if not s:
                 return False
@@ -546,7 +548,7 @@ def translate_markdown_to_bilingual_doc(
             cjk = len(re.findall(r"[\u4e00-\u9fff]", s))
             return (cjk / total) > 0.5
 
-        # 解析 markdown 为块：标题、列表项、图片、普通段落（合并连续行）
+        # 解析 markdown 为块：标题、列表项、图片、普通段落(合并连续行)
         blocks: list[dict] = []
         i = 0
         while i < len(lines):
@@ -558,7 +560,7 @@ def translate_markdown_to_bilingual_doc(
                 i += 1
                 continue
 
-            # 图片行（只处理整行图片语法）: ![alt](path)
+            # 图片行(只处理整行图片语法): ![alt](path)
             stripped = line.lstrip()
             if stripped.startswith('![') and '](' in stripped and stripped.endswith(')'):
                 try:
@@ -665,7 +667,7 @@ def translate_markdown_to_bilingual_doc(
                 generator.add_heading(text, level)
                 translated = cache.get(text)
                 if translated is None:
-                    translated = _sync_translate_single_text(text, source_language, target_language)
+                    translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
                     cache[text] = translated
                 if translated:
                     generator.add_translated_text(translated)
@@ -676,7 +678,7 @@ def translate_markdown_to_bilingual_doc(
                 generator.add_list_item(text, numbered=False)
                 translated = cache.get(text)
                 if translated is None:
-                    translated = _sync_translate_single_text(text, source_language, target_language)
+                    translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
                     cache[text] = translated
                 if translated:
                     generator.add_translated_text(translated)
@@ -687,7 +689,7 @@ def translate_markdown_to_bilingual_doc(
                 generator.add_list_item(text, numbered=True)
                 translated = cache.get(text)
                 if translated is None:
-                    translated = _sync_translate_single_text(text, source_language, target_language)
+                    translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
                     cache[text] = translated
                 if translated:
                     generator.add_translated_text(translated)
@@ -697,13 +699,15 @@ def translate_markdown_to_bilingual_doc(
             # 普通段落
             translated = cache.get(text)
             if translated is None:
-                translated = _sync_translate_single_text(text, source_language, target_language)
+                translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
                 cache[text] = translated
-            generator.add_bilingual_pair(text, translated)
-
+            if translated:
+                generator.add_bilingual_pair(text, translated)
+            else:
+                generator.add_original_text(text)
         return generator.save(output_path)
     except Exception as e:
-        logger.error(f"按段落翻译并生成双语文档失败: {e}")
+        logger.error(f"translate_markdown_to_bilingual_doc处理失败: {e}")
         import traceback
-        logger.error(f"错误详情: {traceback.format_exc()}")
+        logger.error(traceback.format_exc())
         return False

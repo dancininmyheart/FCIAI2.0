@@ -11,6 +11,7 @@ import logging
 import zipfile
 import platform
 import subprocess
+import mimetypes
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
@@ -91,6 +92,74 @@ class MinerUAPI:
             return None
         
         logger.info(f"文件上传成功，URL: {pdf_url}")
+        
+        # 2. 创建MinerU任务
+        logger.info("📄 创建解析任务...")
+        task_url = 'https://mineru.net/api/v4/extract/task'
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.token}'
+        }
+        data = {
+            'url': pdf_url,
+            'is_ocr': True,
+            'enable_formula': True,
+            'enable_table': True,
+            'language': 'auto'
+        }
+        
+        try:
+            logger.info("发送创建任务请求...")
+            response = self.session.post(
+                task_url,
+                headers=headers,
+                json=data,
+                timeout=(30, 60)
+            )
+            result = response.json()
+
+            # 检查API响应的格式和内容
+            if not isinstance(result, dict):
+                logger.error(f"❌ API响应格式错误: {result}")
+                return None
+
+            if 'code' not in result:
+                logger.error(f"❌ API响应缺少'code'字段: {result}")
+                return None
+
+            if result['code'] != 0:
+                error_msg = result.get('msg', '未知错误')
+                logger.error(f"❌ 创建任务失败: {error_msg}")
+                return None
+
+            if 'data' not in result:
+                logger.error(f"❌ API响应缺少'data'字段: {result}")
+                return None
+
+            if 'task_id' not in result['data']:
+                logger.error(f"❌ API响应缺少task_id字段: {result}")
+                return None
+
+            task_id = result['data']['task_id']
+            logger.info(f"✅ 任务ID: {task_id}")
+
+            # 3. 等待处理完成
+            logger.info("⏳ 等待处理...")
+            return self._wait_for_task_completion(task_id, headers)
+        except Exception as e:
+            logger.error(f"❌ 创建任务时出错: {e}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            return None
+    
+    def process_pdf_with_url(self, pdf_url):
+        """通过URL处理PDF文件"""
+        # 1. 验证URL
+        if not pdf_url:
+            logger.error("PDF URL不能为空")
+            return None
+        
+        logger.info(f"开始处理PDF URL: {pdf_url}")
         
         # 2. 创建MinerU任务
         logger.info("📄 创建解析任务...")
@@ -243,8 +312,12 @@ class MinerUAPI:
             logger.error(f"文件为空: {file_path}")
             return None
         
-        # 尝试多个上传服务
+        # 尝试多个上传服务，gofile作为首选
         upload_services = [
+            {
+                'name': 'gofile',
+                'method': self._upload_to_gofile
+            },
             {
                 'name': 'tmpfiles.org',
                 'url': 'https://tmpfiles.org/api/v1/upload',
@@ -271,6 +344,63 @@ class MinerUAPI:
                 continue
         
         logger.error("所有上传服务都失败了")
+        return None
+    
+    def _upload_to_gofile(self, file_path):
+        """上传到gofile"""
+        try:
+            # 1. 获取服务器列表
+            logger.info("正在获取gofile服务器列表...")
+            server_response = self.session.get("https://api.gofile.io/servers", timeout=30)
+            if server_response.status_code != 200:
+                logger.error(f"❌ 获取服务器列表失败，状态码: {server_response.status_code}")
+                return None
+                
+            server_data = server_response.json()
+            if server_data.get("status") != "ok":
+                logger.error(f"❌ 服务器响应状态不正确: {server_data}")
+                return None
+                
+            # 选择第一个服务器
+            server = server_data["data"]["servers"][0]["name"]
+            logger.info(f"使用服务器: {server}")
+            
+            # 2. 上传文件
+            filename = os.path.basename(file_path)
+            # 获取文件MIME类型
+            mime_type, _ = mimetypes.guess_type(file_path)
+            if mime_type is None:
+                mime_type = 'application/octet-stream'
+            
+            with open(file_path, 'rb') as f:
+                files = {'file': (filename, f, mime_type)}
+                upload_response = self.session.post(
+                    f'https://{server}.gofile.io/uploadFile',
+                    files=files,
+                    timeout=60
+                )
+                
+            logger.info(f"上传响应状态: {upload_response.status_code}")
+            
+            if upload_response.status_code == 200:
+                upload_data = upload_response.json()
+                logger.info(f"上传响应: {upload_data}")
+                if upload_data.get("status") == "ok":
+                    # 根据API响应构造直链
+                    file_id = upload_data["data"]["id"]
+                    direct_url = f"https://store1.gofile.io/download/{file_id}/{filename}"
+                    logger.info(f"✅ 上传成功: {direct_url}")
+                    return direct_url
+                else:
+                    logger.error(f"❌ 上传失败: {upload_data}")
+            else:
+                logger.error(f"❌ 上传请求失败，状态码: {upload_response.status_code}")
+                
+        except Exception as e:
+            logger.error(f"❌ 上传到gofile时出错: {e}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
+        
         return None
     
     def _upload_to_tmpfiles(self, file_path):
@@ -325,10 +455,8 @@ class MinerUAPI:
                     if chunk:  # 过滤掉keep-alive chunks
                         f.write(chunk)
             logger.info(f"✅ 结果已保存到: {save_path}")
-            return save_path
         except Exception as e:
             logger.error(f"❌ 下载失败: {e}")
-            return None
 
 # 导入日志系统
 try:
@@ -473,23 +601,59 @@ class OCRProcessor:
         """上传本地文件到临时存储"""
         logger.info(f"📤 正在上传文件: {os.path.basename(file_path)}")
         
-        # 使用 tmpfiles.org
+        # 使用 gofile 作为首选上传服务
         try:
+            logger.info("尝试上传到gofile...")
+            # 1. 获取服务器列表
+            server_response = self.session.get("https://api.gofile.io/servers", timeout=30)
+            if server_response.status_code != 200:
+                logger.error(f"❌ 获取服务器列表失败，状态码: {server_response.status_code}")
+                return None
+                
+            server_data = server_response.json()
+            if server_data.get("status") != "ok":
+                logger.error(f"❌ 服务器响应状态不正确: {server_data}")
+                return None
+                
+            # 选择第一个服务器
+            server = server_data["data"]["servers"][0]["name"]
+            logger.info(f"使用服务器: {server}")
+            
+            # 2. 上传文件
+            filename = os.path.basename(file_path)
+            # 获取文件MIME类型
+            mime_type, _ = mimetypes.guess_type(file_path)
+            if mime_type is None:
+                mime_type = 'application/octet-stream'
+            
             with open(file_path, 'rb') as f:
-                response = self.session.post(
-                    'https://tmpfiles.org/api/v1/upload',
-                    files={'file': f},
-                    timeout=(30, 60)
+                files = {'file': (filename, f, mime_type)}
+                upload_response = self.session.post(
+                    f'https://{server}.gofile.io/uploadFile',
+                    files=files,
+                    timeout=60
                 )
-                if response.status_code == 200:
-                    result = response.json()
-                    # 获取直接下载链接
-                    url = result['data']['url']
-                    direct_url = url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
+                
+            logger.info(f"上传响应状态: {upload_response.status_code}")
+            
+            if upload_response.status_code == 200:
+                upload_data = upload_response.json()
+                logger.info(f"上传响应: {upload_data}")
+                if upload_data.get("status") == "ok":
+                    # 根据API响应构造直链
+                    file_id = upload_data["data"]["id"]
+                    direct_url = f"https://store1.gofile.io/download/{file_id}/{filename}"
                     logger.info(f"✅ 上传成功: {direct_url}")
                     return direct_url
+                else:
+                    logger.error(f"❌ 上传失败: {upload_data}")
+            else:
+                logger.error(f"❌ 上传请求失败，状态码: {upload_response.status_code}")
+                
         except Exception as e:
-            logger.error(f"❌ 上传失败: {e}")
+            logger.error(f"❌ 上传到gofile时出错: {e}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
         
         return None
     
@@ -632,8 +796,10 @@ class OCRProcessor:
                     if chunk:  # 过滤掉keep-alive chunks
                         f.write(chunk)
             logger.info(f"✅ 结果已保存到: {save_path}")
+            return save_path
         except Exception as e:
             logger.error(f"❌ 下载失败: {e}")
+            return None
 
     def batch_process_pdfs(self, file_paths, data_ids=None):
         """批量处理PDF文件"""

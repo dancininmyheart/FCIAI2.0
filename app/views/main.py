@@ -2079,6 +2079,9 @@ def translate_pdf():
     try:
         logger.info("收到PDF翻译请求")
         
+        # 初始化自定义翻译词典
+        custom_translations = {}
+        
         # 检查是否有文件上传
         if 'file' not in request.files:
             logger.error("未找到上传的文件")
@@ -2088,6 +2091,56 @@ def translate_pdf():
         if original_file.filename == '':
             logger.error("文件名为空")
             return jsonify({'success': False, 'error': '文件名为空'}), 400
+
+        # 生成唯一文件名
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_filename = f"{timestamp}_{secure_filename(original_file.filename)}"
+        logger.info(f"生成唯一文件名: {unique_filename}")
+        
+        # 获取选中的词汇表ID
+        selected_vocabulary = request.form.get('selected_vocabulary', '')
+        vocabulary_ids = []
+        if selected_vocabulary:
+            try:
+                vocabulary_ids = [int(x.strip()) for x in selected_vocabulary.split(',') if x.strip()]
+                logger.info(f"接收到词汇表ID: {vocabulary_ids}")
+            except ValueError as e:
+                logger.error(f"词汇表ID解析失败: {selected_vocabulary}, 错误: {str(e)}")
+                vocabulary_ids = []
+        
+        # 构建自定义翻译词典
+        if vocabulary_ids:
+            try:
+                # 查询词汇表数据（包含权限检查）
+                from app.models import Translation
+                translations = Translation.query.filter(
+                    Translation.id.in_(vocabulary_ids),
+                    db.or_(
+                        Translation.user_id == current_user.id,  # 用户自己的词汇
+                        Translation.is_public == True  # 公共词汇
+                    )
+                ).all()
+                
+                # 构建自定义翻译词典
+                for translation in translations:
+                    # 根据当前语言设置确定使用哪种语言字段作为源语言和目标语言
+                    source_lang = request.form.get('source_lang', 'EN')
+                    target_lang = request.form.get('target_lang', 'ZH')
+                    
+                    # 确定源语言和目标语言字段
+                    source_field = {'EN': 'english', 'ZH': 'chinese', 'JA': 'japanese'}.get(source_lang, 'english')
+                    target_field = {'EN': 'english', 'ZH': 'chinese', 'JA': 'japanese'}.get(target_lang, 'chinese')
+                    
+                    source_text = getattr(translation, source_field, '')
+                    target_text = getattr(translation, target_field, '')
+                    
+                    if source_text and target_text:
+                        custom_translations[source_text] = target_text
+                        
+                logger.info(f"构建自定义词典完成，共 {len(custom_translations)} 个词汇")
+            except Exception as e:
+                logger.error(f"构建自定义词典失败: {str(e)}")
+                custom_translations = {}
 
         # 生成唯一文件名
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -2130,26 +2183,39 @@ def translate_pdf():
             logger.error("保存的文件为空")
             return jsonify({'success': False, 'error': '上传的文件为空'}), 400
         
-        # 尝试使用MinerU API，如果失败则使用本地处理器
+        # 首选方案：使用OSS直链处理PDF
         result = None
         try:
+            from app.function.image_ocr.oss_pdf_processor import OSSPDFProcessor
             from app.function.image_ocr.ocr_api import MinerUAPI
+            
+            logger.info("初始化OSS PDF处理器")
+            oss_processor = OSSPDFProcessor()
+            logger.info("OSS PDF处理器初始化成功")
+            
             logger.info("初始化MinerU API")
             mineru_api = MinerUAPI()
             logger.info("MinerU API初始化成功")
             
-            # 使用MinerU处理PDF
-            logger.info(f"开始使用MinerU处理PDF: {pdf_path}")
-            result = mineru_api.process_pdf(pdf_path)
-            logger.info(f"MinerU处理结果: {result}")
+            # 使用OSS直链处理PDF
+            logger.info(f"开始使用OSS直链处理PDF: {pdf_path}")
+            result = oss_processor.process_pdf_with_mineru(pdf_path, mineru_api, bucket="fci", region="cn-beijing")
             
+            # 根据MinerU API规范，使用code字段判断处理结果（0表示成功）
+            if result and isinstance(result, dict) and result.get('code') == 0:
+                logger.info("OSS直链方案处理成功")
+                # 继续执行后续步骤，而不是直接返回结果
+                pass
+            else:
+                logger.warning("OSS直链方案处理失败，尝试使用本地PDF处理器...")
+                result = None
         except Exception as e:
-            logger.warning(f"MinerU API处理失败: {e}")
+            logger.warning(f"OSS直链方案处理失败: {e}")
             result = None
         
-        # 如果MinerU失败或返回空结果，使用本地PDF处理器
+        # 如果OSS直链方案失败或返回空结果，使用本地PDF处理器
         if not result:
-            logger.info("MinerU处理失败，尝试使用本地PDF处理器...")
+            logger.info("OSS直链方案处理失败，尝试使用本地PDF处理器...")
             try:
                 from app.function.local_pdf_processor import LocalPDFProcessor
                 local_processor = LocalPDFProcessor()
@@ -2359,7 +2425,7 @@ def translate_pdf():
                         else:
                             image_path = match
                         if os.path.exists(image_path):
-                            original_image_paths.append((match, image_path))  # (markdown中的路径, 实际文件路径)
+                            original_image_paths.append((match, image_path))  # (原始路径, 实际文件路径)
                     
                     logger.info(f"找到 {len(original_image_paths)} 个原始图片路径用于匹配")
                     for orig_path, actual_path in original_image_paths:
@@ -2456,6 +2522,12 @@ def translate_pdf():
                     processed_lines = []
                     i = 0
                     
+                    # 将custom_translations转换为vocabulary_prompt格式
+                    vocabulary_prompt = ""
+                    if custom_translations:
+                        vocabulary_items = [f'"{k}": "{v}"' for k, v in custom_translations.items()]
+                        vocabulary_prompt = "专业词汇表（请在翻译中优先使用以下术语的对应翻译）:\n" + "\n".join(vocabulary_items)
+                    
                     while i < len(lines):
                         line = lines[i].strip()
                         
@@ -2479,7 +2551,7 @@ def translate_pdf():
                                 asyncio.set_event_loop(loop)
                                 try:
                                     translated_dict = loop.run_until_complete(
-                                        translate_async(line, "通用", [], {}, source_lang, target_lang)
+                                        translate_async(line, "通用", [], custom_translations or {}, source_lang, target_lang, vocabulary_prompt=vocabulary_prompt)
                                     )
                                 finally:
                                     loop.close()
@@ -2689,7 +2761,8 @@ def translate_pdf():
                     docx_path,
                     source_language='en',
                     target_language='zh',
-                    image_base_dir=md_dir
+                    image_base_dir=md_dir,
+                    custom_translations=custom_translations  # 传递词汇表翻译
                 )
                 if ok:
                     return jsonify({

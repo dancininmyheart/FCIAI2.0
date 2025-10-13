@@ -1,0 +1,100 @@
+@main.route('/api/translation_history')
+@login_required
+def translation_history():
+    """鑾峰彇缈昏瘧鍘嗗彶璁板綍"""
+    try:
+        # 鑾峰彇鏌ヨ鍙傛暟
+        file_type = request.args.get('type', '')
+        
+        # 鏋勫缓鏌ヨ - 鍏堟寜鐢ㄦ埛绛涢€夛紝涓嶅己鍒剁姸鎬?completed锛岄伩鍏嶅啓搴撳紓甯稿鑷村巻鍙茬己澶?        query = UploadRecord.query.filter_by(user_id=current_user.id)
+        
+        # 鎸変笂浼犳椂闂村€掑簭鎺掑垪
+        records = query.order_by(UploadRecord.upload_time.desc()).all()
+
+        # 鏍煎紡鍖栬褰?        history_records = []
+        for record in records:
+            # 浠呬繚鐣橮DF缈昏瘧鐢熸垚鐨勮褰曪紙鐩綍鍖呭惈 pdf_outputs锛?            try:
+                if 'pdf_outputs' not in (record.file_path or ''):
+                    continue
+            except Exception:
+                pass
+            # 妫€鏌ユ枃浠舵槸鍚︿粛鐒跺瓨鍦?            file_path = os.path.join(record.file_path, record.stored_filename)
+            file_exists = os.path.exists(file_path)
+            
+            # 濡傛灉鏂囦欢涓嶅瓨鍦紝灏濊瘯鍦╬df_outputs鐩綍涓煡鎵?            if not file_exists:
+                try:
+                    # 鏋勫缓椤圭洰鏍圭洰褰曞拰pdf_outputs璺緞
+                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    upload_folder = current_app.config['UPLOAD_FOLDER']
+                    if not os.path.isabs(upload_folder):
+                        upload_folder = os.path.join(project_root, upload_folder)
+                    pdf_output_dir = os.path.join(upload_folder, 'pdf_outputs')
+                    
+                    # 鍦╬df_outputs鐩綍涓煡鎵炬枃浠?                    potential_file_path = os.path.join(pdf_output_dir, record.stored_filename)
+                    if os.path.exists(potential_file_path):
+                        file_exists = True
+                        file_path = potential_file_path
+                        logger.info(f"鍦╬df_outputs鐩綍涓壘鍒板巻鍙叉枃浠? {file_path}")
+                except Exception as e:
+                    logger.warning(f"鏌ユ壘鍘嗗彶鏂囦欢鏃跺嚭閿? {e}")
+
+            # 浣跨敤ISO鏍煎紡杩斿洖鏃堕棿锛岃鍓嶇姝ｇ‘澶勭悊鏃跺尯
+            upload_time = datetime_to_isoformat(record.upload_time)
+            
+            # 鐩存帴浣跨敤鏁版嵁搴撲腑瀛樺偍鐨勬枃浠跺悕
+            history_records.append({
+                'id': record.id,
+                'filename': record.filename,  # 浣跨敤鏁版嵁搴撲腑瀛樺偍鐨勬枃浠跺悕
+                'stored_filename': getattr(record, 'stored_filename', None),
+                'file_size': record.file_size,
+                'upload_time': upload_time,
+                'status': record.status,
+                'file_exists': file_exists
+            })
+
+        # 濡傛灉鎸囧畾浜嗘枃浠剁被鍨嬶紝鍒欏湪Python灞傞潰杩涜杩囨护锛堥伩鍏峉QL灞傞潰鐨勫瓧娈典笉瀛樺湪閿欒锛?        if file_type:
+            filtered_records = []
+            for record in history_records:
+                # 鐢变簬鏁版嵁搴撲腑鍙兘娌℃湁file_type瀛楁锛屾垜浠彧鑳介€氳繃鏂囦欢鍚嶅悗缂€绛夋柟寮忓ぇ鑷村垽鏂?                # 杩欓噷绠€鍖栧鐞嗭紝濡傛灉闇€瑕佺簿纭繃婊わ紝闇€瑕佸湪鏁版嵁搴撲腑娣诲姞file_type瀛楁
+                if file_type == 'pdf_translation':
+                    # 绠€鍗曞湴閫氳繃鏂囦欢鍚嶅垽鏂槸鍚︿负PDF缈昏瘧璁板綍
+                    if record['filename'].endswith('.docx') or 'translated' in record['filename']:
+                        filtered_records.append(record)
+                else:
+                    # 瀵逛簬鍏朵粬绫诲瀷锛屾殏鏃朵笉杩囨护
+                    filtered_records.append(record)
+            history_records = filtered_records
+
+        return jsonify(history_records)
+        
+    except Exception as e:
+        logger.error(f"鑾峰彇PDF缈昏瘧鍘嗗彶璁板綍澶辫触: {e}")
+        import traceback
+        logger.error(f"閿欒璇︽儏: {traceback.format_exc()}")
+        return jsonify({
+            'status': 'error',
+            'message': '鑾峰彇鍘嗗彶璁板綍澶辫触'
+        }), 500
+
+        import traceback
+        logger.error(f"閿欒璇︽儏: {traceback.format_exc()}")
+        return jsonify({
+            'status': 'error',
+            'message': '鑾峰彇鍘嗗彶璁板綍澶辫触'
+        }), 500
+        template_path = './鎵归噺涓婁紶璇嶆眹(妯℃澘).xlsx'
+
+        if not os.path.exists(template_path):
+            # 濡傛灉妯℃澘鏂囦欢涓嶅瓨鍦紝鍒涘缓瀹?            create_template_file(template_path)
+
+        return send_file(
+            template_path,
+            as_attachment=True,
+            download_name='鎵归噺涓婁紶璇嶆眹妯℃澘.xlsx',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        logger.error(f"涓嬭浇妯℃澘鏂囦欢澶辫触: {str(e)}")
+        return jsonify({'error': f'涓嬭浇妯℃澘鏂囦欢澶辫触: {str(e)}'}), 500
+
+

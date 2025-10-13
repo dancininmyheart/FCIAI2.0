@@ -789,21 +789,31 @@
                 if (data.length > 0) {
                     data.forEach(record => {
                         const row = document.createElement('tr');
+                        const storedFilename = record.stored_filename || '';
+                        const canDownload = Boolean(storedFilename) && record.file_exists;
+                        const downloadLabel = canDownload
+                            ? (currentLanguage === 'en' ? 'Download' : '下载')
+                            : (currentLanguage === 'en' ? 'File not found' : '文件不存在或已清理');
+                        const downloadHtml = canDownload
+                            ? `<a href="/download_translated_pdf/${encodeURIComponent(storedFilename)}" class="action-btn download" title="${downloadLabel}" target="_blank">
+                                    <i class="bi bi-download"></i>
+                                </a>`
+                            : `<span class="text-muted">${downloadLabel}</span>`;
+                        const deleteHtml = storedFilename
+                            ? `<button class="action-btn" style="background:#dc3545;color:#fff;" title="${currentLanguage === 'en' ? 'Delete' : '删除'}" onclick="deleteHistory('${storedFilename}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>`
+                            : `<button class="action-btn" style="background:#dc3545;color:#fff; opacity:0.4; cursor:not-allowed;" title="${currentLanguage === 'en' ? 'Cannot delete: missing file info' : '无法删除：缺少文件信息'}" disabled>
+                                    <i class="bi bi-trash"></i>
+                                </button>`;
                         row.innerHTML = `
                             <td title="${record.filename}">${record.filename}</td>
                             <td>${record.upload_time}</td>
                             <td>${formatFileSize(record.file_size)}</td>
                             <td><span class="status-badge completed">${currentLanguage === 'en' ? 'Completed' : '已完成'}</span></td>
-                            <td>
-                                ${record.file_exists ? 
-                                    `<a href="/download_translated_pdf/${encodeURIComponent(record.stored_filename || record.filename)}" class="action-btn download" title="${currentLanguage === 'en' ? 'Download' : '下载'}" target="_blank">
-                                        <i class="bi bi-download"></i>
-                                    </a>` : 
-                                    `<span class="text-muted">${currentLanguage === 'en' ? 'File not found' : '文件不存在'}</span>`
-                                }
-                                <button class="action-btn" style="background:#dc3545;color:#fff;" title="${currentLanguage === 'en' ? 'Delete' : '删除'}" onclick="deleteHistory('${record.stored_filename || record.filename}')">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                            <td class="history-actions">
+                                ${downloadHtml}
+                                ${deleteHtml}
                             </td>
                         `;
                         tbody.appendChild(row);

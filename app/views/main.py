@@ -2093,8 +2093,9 @@ def translate_pdf():
             return jsonify({'success': False, 'error': '文件名为空'}), 400
 
         # 生成唯一文件名
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        unique_filename = f"{timestamp}_{secure_filename(original_file.filename)}"
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        unique_suffix = uuid.uuid4().hex[:8]
+        unique_filename = f"{timestamp}_{unique_suffix}_{secure_filename(original_file.filename)}"
         logger.info(f"生成唯一文件名: {unique_filename}")
         
         # 获取选中的词汇表ID
@@ -2141,11 +2142,6 @@ def translate_pdf():
             except Exception as e:
                 logger.error(f"构建自定义词典失败: {str(e)}")
                 custom_translations = {}
-
-        # 生成唯一文件名
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        unique_filename = f"{timestamp}_{secure_filename(original_file.filename)}"
-        logger.info(f"生成唯一文件名: {unique_filename}")
 
         # 获取上传文件夹路径
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -3207,115 +3203,56 @@ def download_translated_pdf(filename):
     try:
         logger.info(f"用户 {current_user.username} 请求下载文件: {filename}")
         
-        # 确保文件名是安全的
         from werkzeug.utils import secure_filename
         filename = secure_filename(filename)
         logger.info(f"安全文件名: {filename}")
         
-        # 构建文件路径 - 使用项目根目录下的uploads文件夹
         project_root = (os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         upload_folder = current_app.config['UPLOAD_FOLDER']
-        
-        # 确保使用正确的上传文件夹路径
-        # UPLOAD_FOLDER配置是相对于项目根目录的
         if not os.path.isabs(upload_folder):
             upload_folder = os.path.join(project_root, upload_folder)
         
         pdf_output_dir = os.path.join(upload_folder, 'pdf_outputs')
-        file_path = os.path.join(pdf_output_dir, filename)
+        expected_path = os.path.join(pdf_output_dir, filename)
+        absolute_expected_path = os.path.abspath(expected_path)
         
         logger.info(f"项目根目录: {project_root}")
         logger.info(f"上传文件夹配置: {current_app.config['UPLOAD_FOLDER']}")
         logger.info(f"实际上传文件夹路径: {upload_folder}")
         logger.info(f"PDF输出目录: {pdf_output_dir}")
-        logger.info(f"期望的文件路径: {file_path}")
-        logger.info(f"文件绝对路径: {os.path.abspath(file_path)}")
+        logger.info(f"期望的文件路径: {expected_path}")
+        logger.info(f"文件绝对路径: {absolute_expected_path}")
         
-        # 检查目录是否存在
         if not os.path.exists(pdf_output_dir):
             logger.error(f"PDF输出目录不存在: {pdf_output_dir}")
-            os.makedirs(pdf_output_dir, exist_ok=True)
-            logger.info(f"已创建PDF输出目录: {pdf_output_dir}")
+            return jsonify({'success': False, 'error': '文件目录不存在'}), 404
         
-        # 检查文件是否存在
-        if not os.path.exists(file_path):
-            logger.error(f"下载文件不存在: {file_path}")
-            logger.error(f"文件绝对路径: {os.path.abspath(file_path)}")
-            
-            # 列出输出目录中的所有文件
-            if os.path.exists(pdf_output_dir):
-                files_in_dir = os.listdir(pdf_output_dir)
-                logger.info(f"目录中的文件列表: {files_in_dir}")
-                
-                # 尝试精确匹配文件名（不带路径）
-                matched_files = [f for f in files_in_dir if f == filename]
-                logger.info(f"精确匹配的文件: {matched_files}")
-                
-                if matched_files:
-                    # 使用第一个匹配的文件
-                    file_path = os.path.join(pdf_output_dir, matched_files[0])
-                    filename = matched_files[0]
-                    logger.info(f"使用精确匹配的文件: {file_path}")
-                    logger.info(f"精确匹配文件的绝对路径: {os.path.abspath(file_path)}")
-                else:
-                    # 尝试模糊匹配文件名
-                    matched_files = [f for f in files_in_dir if filename in f or f.startswith(filename.split('.')[0])]
-                    logger.info(f"模糊匹配的文件: {matched_files}")
-                    
-                    if matched_files:
-                        # 使用第一个匹配的文件
-                        file_path = os.path.join(pdf_output_dir, matched_files[0])
-                        filename = matched_files[0]
-                        logger.info(f"使用模糊匹配的文件: {file_path}")
-                        logger.info(f"模糊匹配文件的绝对路径: {os.path.abspath(file_path)}")
-                    else:
-                        # 如果没有匹配的文件，尝试查找任何docx文件
-                        docx_files = [f for f in files_in_dir if f.endswith('.docx')]
-                        if docx_files:
-                            file_path = os.path.join(pdf_output_dir, docx_files[0])
-                            filename = docx_files[0]
-                            logger.info(f"使用目录中的第一个docx文件: {file_path}")
-                            logger.info(f"第一个docx文件的绝对路径: {os.path.abspath(file_path)}")
-            else:
-                logger.error("PDF输出目录不存在")
-                return jsonify({'success': False, 'error': '文件目录不存在'}), 404
+        candidate_paths = [absolute_expected_path]
+        if not filename.lower().endswith('.docx'):
+            candidate_paths.append(os.path.abspath(os.path.join(pdf_output_dir, f"{filename}.docx")))
         
-        # 再次检查文件是否存在
-        if not os.path.exists(file_path):
-            logger.error(f"文件仍然不存在: {file_path}")
-            logger.error(f"文件绝对路径: {os.path.abspath(file_path)}")
-            # 列出所有可能的文件
-            if os.path.exists(pdf_output_dir):
-                all_files = os.listdir(pdf_output_dir)
-                logger.info(f"输出目录中所有文件: {all_files}")
+        file_path = next((path for path in candidate_paths if os.path.exists(path)), None)
+        if not file_path:
+            logger.error(f"下载文件不存在或不匹配: {absolute_expected_path}")
+            logger.info(f"候选路径: {candidate_paths}")
+            try:
+                logger.info(f"目录现有文件: {os.listdir(pdf_output_dir)}")
+            except Exception as list_error:
+                logger.warning(f"列出目录失败: {list_error}")
             return jsonify({'success': False, 'error': '文件不存在'}), 404
         
-        # 确保文件扩展名正确
-        if not filename.endswith('.docx'):
-            logger.warning(f"下载文件扩展名不正确: {filename}")
-            # 修正文件扩展名
-            if not filename.endswith('.docx') and os.path.exists(file_path):
-                filename += '.docx'
+        download_name = os.path.basename(file_path)
         
-        logger.info(f"发送文件给用户: {file_path}")
+        logger.info(f"准备发送文件给用户: {file_path}")
         logger.info(f"文件大小: {os.path.getsize(file_path)} 字节")
         logger.info(f"文件绝对路径: {os.path.abspath(file_path)}")
         
-        # 确保使用绝对路径发送文件
-        absolute_file_path = os.path.abspath(file_path)
-        if os.path.exists(absolute_file_path):
-            logger.info(f"使用绝对路径发送文件: {absolute_file_path}")
-            return send_file(absolute_file_path, as_attachment=True, download_name=filename)
-        else:
-            logger.error(f"绝对路径文件也不存在: {absolute_file_path}")
-            return jsonify({'success': False, 'error': '文件不存在'}), 404
-            
+        return send_file(file_path, as_attachment=True, download_name=download_name)
     except Exception as e:
         logger.error(f"下载文件时出错: {e}")
         import traceback
         logger.error(f"错误详情: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': f'下载文件时出错: {str(e)}'}), 500
-
 
 @main.route('/api/pdf_translation/delete', methods=['POST'])
 @login_required

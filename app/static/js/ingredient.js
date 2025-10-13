@@ -172,7 +172,8 @@ function displayResults(data, pagination) {
   resultsContainer.innerHTML = html;
 
   // 事件委托：绑定下载按钮
-  resultsContainer.addEventListener('click', onResultsClick, { once: true });
+  resultsContainer.removeEventListener('click', onResultsClick);
+  resultsContainer.addEventListener('click', onResultsClick);
 }
 
 // 处理点击事件（下载）

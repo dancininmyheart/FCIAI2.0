@@ -1,0 +1,382 @@
+@main.route('/api/pdf_translation_history')
+@login_required
+def pdf_translation_history():
+    """鑾峰彇PDF缈昏瘧鍘嗗彶璁板綍"""
+    try:
+        logger.info("[PDF History] 寮€濮嬫煡璇㈠巻鍙茶褰?)
+        # 鏋勫缓鏌ヨ - 鍙繑鍥炵姸鎬佷负 completed 鐨勮褰?        query = UploadRecord.query.filter_by(user_id=current_user.id, status='completed')
+        
+        # 鎸変笂浼犳椂闂村€掑簭鎺掑垪
+        records = query.order_by(UploadRecord.upload_time.desc()).all()
+        logger.info(f"[PDF History] 鏌ヨ鍒扮敤鎴疯褰曟暟: {len(records)}")
+
+        # 鏍煎紡鍖栬褰?        history_records = []
+        for record in records:
+            try:
+                logger.info(f"[PDF History] 璁板綍: id={record.id}, filename={record.filename}, stored={record.stored_filename}, path={record.file_path}")
+            except Exception:
+                pass
+
+            # 浠呬繚鐣橮DF缈昏瘧鐢熸垚鐨勮褰曪紙鐩綍鍖呭惈 pdf_outputs锛?            try:
+                if 'pdf_outputs' not in (record.file_path or ''):
+                    logger.info(f"[PDF History] 杩囨护闈瀙df_outputs璁板綍: id={record.id}, path={record.file_path}")
+                    continue
+            except Exception:
+                pass
+
+            # 妫€鏌ユ枃浠舵槸鍚︿粛鐒跺瓨鍦?            file_path = os.path.join(record.file_path, record.stored_filename)
+            file_exists = os.path.exists(file_path)
+            logger.info(f"[PDF History] 鏂囦欢瀛樺湪: {file_exists}, full_path={file_path}")
+            
+            # 濡傛灉鏂囦欢涓嶅瓨鍦紝灏濊瘯鍦╬df_outputs鐩綍涓煡鎵?            if not file_exists:
+                try:
+                    # 鏋勫缓椤圭洰鏍圭洰褰曞拰pdf_outputs璺緞
+                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    upload_folder = current_app.config['UPLOAD_FOLDER']
+                    if not os.path.isabs(upload_folder):
+                        upload_folder = os.path.join(project_root, upload_folder)
+                    pdf_output_dir = os.path.join(upload_folder, 'pdf_outputs')
+                    
+                    # 鍦╬df_outputs鐩綍涓煡鎵炬枃浠?                    potential_file_path = os.path.join(pdf_output_dir, record.stored_filename)
+                    if os.path.exists(potential_file_path):
+                        file_exists = True
+                        file_path = potential_file_path
+                        logger.info(f"鍦╬df_outputs鐩綍涓壘鍒板巻鍙叉枃浠? {file_path}")
+                except Exception as e:
+                    logger.warning(f"鏌ユ壘鍘嗗彶鏂囦欢鏃跺嚭閿? {e}")
+
+            # 浣跨敤ISO鏍煎紡杩斿洖鏃堕棿锛岃鍓嶇姝ｇ‘澶勭悊鏃跺尯
+            upload_time = datetime_to_isoformat(record.upload_time)
+            
+            # 鐩存帴浣跨敤鏁版嵁搴撲腑瀛樺偍鐨勬枃浠跺悕
+            history_records.append({
+                'id': record.id,
+                'filename': record.filename,  # 浣跨敤鏁版嵁搴撲腑瀛樺偍鐨勬枃浠跺悕
+                'stored_filename': getattr(record, 'stored_filename', None),
+                'file_size': record.file_size,
+                'upload_time': upload_time,
+                'status': record.status,
+                'file_exists': file_exists
+            })
+
+        # 濡傛灉閫氳繃鏁版嵁搴撴病鏈夎幏鍙栧埌浠讳綍PDF鍘嗗彶锛屽洖閫€鍒版枃浠剁郴缁熸壂鎻?        if len(history_records) == 0:
+            try:
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                upload_folder = current_app.config['UPLOAD_FOLDER']
+                if not os.path.isabs(upload_folder):
+                    upload_folder = os.path.join(project_root, upload_folder)
+                pdf_output_dir = os.path.join(upload_folder, 'pdf_outputs')
+                logger.info(f"[PDF History] 鏁版嵁搴撲负绌猴紝鏀逛负鎵弿鐩綍: {pdf_output_dir}")
+                if os.path.exists(pdf_output_dir):
+                    files = [f for f in os.listdir(pdf_output_dir) if f.lower().endswith('.docx')]
+                    files.sort(key=lambda f: os.path.getmtime(os.path.join(pdf_output_dir, f)), reverse=True)
+                    for fname in files[:50]:  # 闄愬埗鏈€澶?0鏉?                        fpath = os.path.join(pdf_output_dir, fname)
+                        try:
+                            history_records.append({
+                                'id': None,
+                                'filename': fname,
+                                'stored_filename': fname,
+                                'file_size': os.path.getsize(fpath),
+                                'upload_time': datetime_to_isoformat(datetime.fromtimestamp(os.path.getmtime(fpath))),
+                                'status': 'completed',
+                                'file_exists': True
+                            })
+                        except Exception:
+                            continue
+            except Exception as e:
+                logger.warning(f"[PDF History] 鎵弿鐩綍澶辫触: {e}")
+
+        logger.info(f"[PDF History] 杩斿洖璁板綍鏁? {len(history_records)}")
+        return jsonify(history_records)
+        
+    except Exception as e:
+        logger.error(f"鑾峰彇PDF缈昏瘧鍘嗗彶璁板綍澶辫触: {e}")
+        import traceback
+        logger.error(f"閿欒璇︽儏: {traceback.format_exc()}")
+        return jsonify({
+            'status': 'error',
+            'message': '鑾峰彇鍘嗗彶璁板綍澶辫触'
+        }), 500
+
+
+def create_template_file(file_path):
+    """鍒涘缓妯℃澘 Excel 鏂囦欢"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+
+    # 璁剧疆琛ㄥご
+    headers = ['english', 'chinese', 'dutch', 'category', 'is_public']
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.value = header
+        cell.font = openpyxl.styles.Font(bold=True)
+        cell.fill = openpyxl.styles.PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+
+    # 娣诲姞绀轰緥鏁版嵁
+    sample_data = [
+        ['hello', '浣犲ソ', 'Hallo', '鏃ュ父锛涢棶鍊?, 1],
+        ['sorry', '鎶辨瓑', 'Pardon', '鏃ュ父锛涢棶鍊?, 0]
+    ]
+
+    for row_num, row_data in enumerate(sample_data, 2):
+        for col_num, value in enumerate(row_data, 1):
+            ws.cell(row=row_num, column=col_num, value=value)
+
+    # 璁剧疆鍒楀搴?    column_widths = [20, 20, 20, 30, 10]
+    for i, width in enumerate(column_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = width
+
+    # 淇濆瓨鏂囦欢
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    wb.save(file_path)
+
+@main.route('/api/translations/batch_upload', methods=['POST'])
+@login_required
+def batch_upload_translations():
+    """鎵归噺涓婁紶缈昏瘧鏂囦欢骞跺鐞?""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': '娌℃湁鏂囦欢'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': '娌℃湁閫夋嫨鏂囦欢'}), 400
+
+        if not allowed_excel_file(file.filename):
+            return jsonify({'error': '鍙敮鎸?Excel 鏂囦欢 (.xlsx, .xls)'}), 400
+
+        # 鑾峰彇鏂囦欢鎵╁睍鍚嶅苟楠岃瘉
+        if '.' not in file.filename:
+            return jsonify({'error': '鏂囦欢鍚嶅繀椤诲寘鍚墿灞曞悕'}), 400
+
+        file_ext = file.filename.rsplit('.', 1)[1].lower()
+        if file_ext not in EXCEL_ALLOWED_EXTENSIONS:
+            return jsonify({'error': f'涓嶆敮鎸佺殑鏂囦欢鏍煎紡: .{file_ext}銆傚彧鏀寔: {", ".join(EXCEL_ALLOWED_EXTENSIONS)}'}), 400
+
+        # 淇濆瓨涓婁紶鐨勬枃浠?        upload_folder = current_app.config['UPLOAD_FOLDER']
+        user_upload_dir = os.path.join(upload_folder, f"user_{current_user.id}")
+        os.makedirs(user_upload_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = secure_filename(file.filename)
+        # 纭繚鏂囦欢鍚嶅寘鍚纭殑鎵╁睍鍚?        if not filename.lower().endswith(f'.{file_ext}'):
+            filename = f"{filename}.{file_ext}"
+
+        file_path = os.path.join(user_upload_dir, f"batch_upload_{timestamp}_{filename}")
+        file_path = os.path.abspath(file_path)  # 杞崲涓虹粷瀵硅矾寰?        logger.info(f"鏂囦欢灏嗕繚瀛樺埌: {file_path}")
+        logger.info(f"鏂囦欢鎵╁睍鍚? {file_ext}")
+
+        file.save(file_path)
+        logger.info("鏂囦欢淇濆瓨鎴愬姛")
+
+        # 楠岃瘉鏂囦欢鏄惁涓烘湁鏁堢殑 Excel 鏂囦欢
+        try:
+            import zipfile
+            if file_ext == 'xlsx':
+                # 妫€鏌ユ槸鍚︿负鏈夋晥鐨?ZIP 鏂囦欢锛坸lsx 瀹為檯涓婃槸 ZIP 鏍煎紡锛?                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.testzip()
+                logger.info("鏂囦欢鏄湁鏁堢殑 xlsx 鏍煎紡")
+            elif file_ext == 'xls':
+                # 瀵逛簬 xls 鏂囦欢锛屾鏌ユ枃浠跺ご
+                with open(file_path, 'rb') as f:
+                    header = f.read(8)
+                    # Excel 97-2003 鐨勬枃浠跺ご
+                    if not header.startswith(b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'):
+                        raise ValueError("涓嶆槸鏈夋晥鐨?xls 鏂囦欢")
+                logger.info("鏂囦欢鏄湁鏁堢殑 xls 鏍煎紡")
+        except Exception as e:
+            logger.error(f"鏂囦欢鏍煎紡楠岃瘉澶辫触: {str(e)}")
+            os.remove(file_path)  # 鍒犻櫎鏃犳晥鏂囦欢
+            return jsonify({'error': f'鏂囦欢鏍煎紡鏃犳晥: {str(e)}'}), 400
+
+        # 瑙ｆ瀽 Excel 鏂囦欢
+        translations_data, errors = parse_excel_file(file_path)
+
+        if errors:
+            # 鍒犻櫎涓存椂鏂囦欢
+            os.remove(file_path)
+            return jsonify({
+                'error': '鏂囦欢瑙ｆ瀽澶辫触',
+                'details': errors[:10]  # 鍙繑鍥炲墠10涓敊璇?            }), 400
+
+        if not translations_data:
+            # 鍒犻櫎涓存椂鏂囦欢
+            os.remove(file_path)
+            return jsonify({'error': '鏂囦欢涓病鏈夋湁鏁堢殑缈昏瘧鏁版嵁'}), 400
+
+        # 鎵归噺鎻掑叆鏁版嵁搴?        success_count, error_count, error_details = batch_insert_translations(translations_data, current_user.id)
+
+        # 鍒犻櫎涓存椂鏂囦欢
+        os.remove(file_path)
+
+        result = {
+            'message': f'鎵归噺涓婁紶瀹屾垚銆傛垚鍔? {success_count}, 澶辫触: {error_count}',
+            'success_count': success_count,
+            'error_count': error_count
+        }
+
+        if error_details:
+            result['errors'] = error_details[:10]  # 鍙繑鍥炲墠10涓敊璇鎯?
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"鎵归噺涓婁紶缈昏瘧澶辫触: {str(e)}")
+        logger.error(f"閿欒绫诲瀷: {type(e).__name__}")
+        import traceback
+        logger.error(f"瀹屾暣閿欒淇℃伅:\n{traceback.format_exc()}")
+        return jsonify({
+            'error': f'鎵归噺涓婁紶澶辫触: {str(e)}',
+            'error_type': type(e).__name__,
+            'file_path': file_path if 'file_path' in locals() else None
+        }), 500
+
+def parse_excel_file(file_path):
+    """瑙ｆ瀽 Excel 鏂囦欢锛岃繑鍥炵炕璇戞暟鎹拰閿欒淇℃伅"""
+    translations = []
+    errors = []
+
+    try:
+        logger.info(f"寮€濮嬭В鏋?Excel 鏂囦欢: {file_path}")
+
+        # 妫€鏌ユ枃浠舵槸鍚﹀瓨鍦?        if not os.path.exists(file_path):
+            errors.append(f"鏂囦欢涓嶅瓨鍦? {file_path}")
+            return [], errors
+
+        # 妫€鏌ユ枃浠跺ぇ灏?        file_size = os.path.getsize(file_path)
+        logger.info(f"鏂囦欢澶у皬: {file_size} bytes")
+
+        if file_size == 0:
+            errors.append("鏂囦欢涓虹┖")
+            return [], errors
+
+        logger.info("灏濊瘯鍔犺浇 Excel 鏂囦欢...")
+        wb = openpyxl.load_workbook(file_path, data_only=True)
+        logger.info("Excel 鏂囦欢鍔犺浇鎴愬姛")
+
+        ws = wb.active
+        logger.info("鑾峰彇娲诲姩宸ヤ綔琛ㄦ垚鍔?)
+
+        logger.info(f"宸ヤ綔琛ㄥ悕绉? {ws.title}")
+        logger.info(f"鏈€澶ц鏁? {ws.max_row}, 鏈€澶у垪鏁? {ws.max_column}")
+
+        # 妫€鏌ヨ〃澶?        expected_headers = ['english', 'chinese', 'dutch', 'category', 'is_public']
+        actual_headers = []
+
+        for col in range(1, len(expected_headers) + 1):
+            cell_value = ws.cell(row=1, column=col).value
+            if cell_value:
+                actual_headers.append(str(cell_value).strip().lower())
+            else:
+                actual_headers.append('')
+
+        logger.info(f"鏈熸湜琛ㄥご: {expected_headers}")
+        logger.info(f"瀹為檯琛ㄥご: {actual_headers}")
+
+        if actual_headers != expected_headers:
+            errors.append(f"琛ㄥご涓嶅尮閰嶃€傛湡鏈? {expected_headers}, 瀹為檯: {actual_headers}")
+            return [], errors
+
+        # 瑙ｆ瀽鏁版嵁琛?        for row_num in range(2, ws.max_row + 1):
+            try:
+                row_data = {}
+                has_data = False
+
+                for col_num, header in enumerate(expected_headers, 1):
+                    cell_value = ws.cell(row=row_num, column=col_num).value
+                    if cell_value is not None:
+                        if isinstance(cell_value, str):
+                            cell_value = cell_value.strip()
+                        row_data[header] = cell_value
+                        if header in ['english', 'chinese'] and cell_value:
+                            has_data = True
+                    else:
+                        row_data[header] = None
+
+                # 妫€鏌ュ繀濉瓧娈?                if not row_data.get('english') or not row_data.get('chinese'):
+                    if has_data:  # 濡傛灉鏈夊叾浠栨暟鎹絾蹇呭～瀛楁涓虹┖
+                        errors.append(f"绗瑊row_num}琛? 鑻辨枃鍜屼腑鏂囦负蹇呭～瀛楁")
+                    continue
+
+                # 澶勭悊 is_public 瀛楁
+                if row_data.get('is_public') is not None:
+                    if isinstance(row_data['is_public'], str):
+                        row_data['is_public'] = row_data['is_public'].lower() in ('1', 'true', 'yes', '鏄?)
+                    elif isinstance(row_data['is_public'], (int, float)):
+                        row_data['is_public'] = bool(row_data['is_public'])
+                    else:
+                        row_data['is_public'] = False
+                else:
+                    row_data['is_public'] = False
+
+                # 鏅€氱敤鎴蜂笉鑳芥坊鍔犲叕鍏辩炕璇?                if row_data['is_public'] and not current_user.is_administrator():
+                    row_data['is_public'] = False
+
+                translations.append(row_data)
+
+            except Exception as e:
+                errors.append(f"绗瑊row_num}琛岃В鏋愬け璐? {str(e)}")
+                continue
+
+    except Exception as e:
+        logger.error(f"Excel 鏂囦欢瑙ｆ瀽寮傚父: {str(e)}")
+        logger.error(f"寮傚父绫诲瀷: {type(e).__name__}")
+        import traceback
+        logger.error(f"瀹屾暣鍫嗘爤璺熻釜:\n{traceback.format_exc()}")
+        errors.append(f"鏂囦欢瑙ｆ瀽澶辫触: {str(e)}")
+
+    return translations, errors
+
+def batch_insert_translations(translations_data, user_id):
+    """鎵归噺鎻掑叆缈昏瘧鏁版嵁鍒版暟鎹簱"""
+    success_count = 0
+    error_count = 0
+    error_details = []
+
+    for item in translations_data:
+        try:
+            # 妫€鏌ユ槸鍚﹀凡瀛樺湪鐩稿悓鐨勭炕璇?            existing = None
+            if item.get('is_public') and current_user.is_administrator():
+                # 绠＄悊鍛樻鏌ュ叕鍏辩炕璇?                existing = Translation.query.filter_by(
+                    english=item['english'],
+                    is_public=True
+                ).first()
+            else:
+                # 鏅€氱敤鎴锋鏌ヨ嚜宸辩殑绉佹湁缈昏瘧
+                existing = Translation.query.filter_by(
+                    user_id=user_id,
+                    english=item['english']
+                ).first()
+
+            if existing:
+                error_count += 1
+                error_details.append(f"鑻辨枃 '{item['english']}' 宸插瓨鍦?)
+                continue
+
+            # 鍒涘缓鏂扮殑缈昏瘧璁板綍
+            translation = Translation(
+                english=item['english'],
+                chinese=item['chinese'],
+                dutch=item.get('dutch'),
+                category=item.get('category'),
+                is_public=item['is_public'],
+                user_id=user_id
+            )
+
+            db.session.add(translation)
+            success_count += 1
+
+        except Exception as e:
+            error_count += 1
+            error_details.append(f"鎻掑叆 '{item.get('english', 'N/A')}' 澶辫触: {str(e)}")
+            continue
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        error_details.append(f"鏁版嵁搴撴彁浜ゅけ璐? {str(e)}")
+        success_count = 0
+        error_count = len(translations_data)
+
+    return success_count, error_count, error_details

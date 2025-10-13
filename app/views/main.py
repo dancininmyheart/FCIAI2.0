@@ -2155,6 +2155,11 @@ def translate_pdf():
         # 确保目录存在
         os.makedirs(pdf_upload_dir, exist_ok=True)
         os.makedirs(pdf_output_dir, exist_ok=True)
+        task_work_dir = os.path.join(
+            pdf_output_dir,
+            f"{os.path.splitext(unique_filename)[0]}_work"
+        )
+        os.makedirs(task_work_dir, exist_ok=True)
         
         logger.info(f"项目根目录: {project_root}")
         logger.info(f"上传文件夹配置: {current_app.config['UPLOAD_FOLDER']}")
@@ -2250,7 +2255,7 @@ def translate_pdf():
         
         # 下载结果
         zip_filename = f"mineru_result_{task_id}.zip"
-        zip_path = os.path.join(pdf_output_dir, zip_filename)
+        zip_path = os.path.join(task_work_dir, zip_filename)
         
         # 下载或复制ZIP文件
         try:
@@ -2298,9 +2303,9 @@ def translate_pdf():
                 file_list = zip_ref.namelist()
                 logger.info(f"ZIP文件包含以下文件: {file_list}")
                 
-                # 解压所有文件
-                zip_ref.extractall(pdf_output_dir)
-                logger.info(f"ZIP文件已解压到: {pdf_output_dir}")
+                # 解压所有文件到任务隔离目录
+                zip_ref.extractall(task_work_dir)
+                logger.info(f"ZIP文件已解压到: {task_work_dir}")
         except Exception as e:
             logger.error(f"解压文件失败: {e}")
             import traceback
@@ -2309,14 +2314,14 @@ def translate_pdf():
         
         # 查找markdown文件
         md_file = None
-        logger.info(f"在目录 {pdf_output_dir} 中查找markdown文件")
+        logger.info(f"在目录 {task_work_dir} 中查找markdown文件")
         
         # 获取解压后的所有文件列表
         extracted_files = []
-        for root, dirs, files in os.walk(pdf_output_dir):
+        for root, dirs, files in os.walk(task_work_dir):
             for file in files:
                 full_path = os.path.join(root, file)
-                relative_path = os.path.relpath(full_path, pdf_output_dir)
+                relative_path = os.path.relpath(full_path, task_work_dir)
                 extracted_files.append(relative_path)
                 logger.info(f"  解压文件: {relative_path}")
                 
@@ -2326,7 +2331,7 @@ def translate_pdf():
         # 1. 首先查找包含task_id的markdown文件
         for file in extracted_files:
             if file.endswith('.md') and task_id in file:
-                md_file = os.path.join(pdf_output_dir, file)
+                md_file = os.path.join(task_work_dir, file)
                 logger.info(f"找到匹配task_id的markdown文件: {md_file}")
                 break
         
@@ -2334,7 +2339,7 @@ def translate_pdf():
         if not md_file:
             for file in extracted_files:
                 if file.endswith('.md'):
-                    md_file = os.path.join(pdf_output_dir, file)
+                    md_file = os.path.join(task_work_dir, file)
                     logger.info(f"找到md文件: {md_file}")
                     break
         
@@ -2342,7 +2347,7 @@ def translate_pdf():
         if not md_file:
             for file in extracted_files:
                 if file.endswith('.md'):
-                    md_file = os.path.join(pdf_output_dir, file)
+                    md_file = os.path.join(task_work_dir, file)
                     logger.info(f"找到md文件: {md_file}")
                     break
         
@@ -2350,7 +2355,7 @@ def translate_pdf():
         if not md_file:
             for file in extracted_files:
                 if file.endswith('.txt'):
-                    md_file = os.path.join(pdf_output_dir, file)
+                    md_file = os.path.join(task_work_dir, file)
                     logger.info(f"找到txt文件: {md_file}")
                     break
         

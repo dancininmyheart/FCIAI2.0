@@ -599,11 +599,7 @@
             <div id="pdfResultContainer" style="display: none; margin-top: 20px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <i class="bi bi-check-circle-fill" style="color: #28a745; font-size: 24px;"></i>
-                    <span id="pdfResultText">{% if session.get('language') == 'en' %}Translation completed successfully!{% else %}翻译完成！{% endif %}</span>
-                    <a href="#" class="btn btn-secondary" id="pdfDownloadLink" style="margin-left: auto;">
-                        <i class="bi bi-download"></i>
-                        {% if session.get('language') == 'en' %}Download{% else %}下载{% endif %}
-                    </a>
+                    <span id="pdfResultText">{% if session.get('language') == 'en' %}Translation completed. Please download from the history list below.{% else %}翻译完成，请在下方历史记录中下载。{% endif %}</span>
                 </div>
             </div>
         </div>
@@ -748,9 +744,16 @@
                 // 处理成功
                 document.getElementById('pdfProgressContainer').style.display = 'none';
                 document.getElementById('pdfResultContainer').style.display = 'block';
-                document.getElementById('pdfDownloadLink').href = data.download_url;
-                document.getElementById('pdfDownloadLink').setAttribute('download', data.filename);
-                document.getElementById('pdfDownloadLink').textContent = (currentLanguage === 'en' ? 'Download ' : '下载 ') + data.filename;
+                const resultTextEl = document.getElementById('pdfResultText');
+                if (resultTextEl) {
+                    if (currentLanguage === 'en') {
+                        const name = data.filename ? ` "${data.filename}"` : '';
+                        resultTextEl.textContent = `Translation finished. Download${name} from the history list below.`;
+                    } else {
+                        const name = data.filename ? ` (${data.filename})` : '';
+                        resultTextEl.textContent = `\u7ffb\u8bd1\u5b8c\u6210\uff0c\u8bf7\u5728\u4e0b\u65b9\u5386\u53f2\u8bb0\u5f55\u4e2d\u4e0b\u8f7d${name}\u3002`;
+                    }
+                }
                 // 翻译完成后刷新历史记录
                 loadHistory();
             } else {

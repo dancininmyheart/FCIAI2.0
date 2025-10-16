@@ -5,7 +5,7 @@ import pytz
 
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app, send_from_directory, \
-    jsonify, session, send_file
+    jsonify, session, send_file, abort
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from sqlalchemy.exc import SQLAlchemyError
@@ -1029,6 +1029,14 @@ def train_model():
 @login_required
 def ingredient():
     return render_template('main/ingredient.html')
+
+
+@main.route('/ingredient/upload')
+@login_required
+def ingredient_upload_page():
+    if not current_user.is_administrator():
+        abort(403)
+    return render_template('main/ingredient_upload.html')
 
 
 # 加载JSON数据

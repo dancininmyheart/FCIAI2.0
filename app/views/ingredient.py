@@ -1,8 +1,11 @@
 import os
 import json
 import mimetypes
+import tempfile
+import zipfile
+from datetime import datetime
 from urllib.parse import quote  # 用于在生成 URL 时编码中文
-from flask import Blueprint, request, jsonify, current_app, send_file
+from flask import Blueprint, request, jsonify, current_app, send_file, after_this_request
 from flask_login import login_required
 
 ingredient = Blueprint('ingredient', __name__)
@@ -13,6 +16,7 @@ _cached_filing_data = None
 _cached_combined_data = None
 _cache_registration_file_path = None
 _cache_filing_file_path = None
+_ALLOWED_INGREDIENT_EXTENSIONS = {'.json', '.xlsx', '.xls', '.csv', '.zip', '.rar', '.7z'}
 
 def load_registration_data():
     """加载保健食品注册数据"""
@@ -174,6 +178,46 @@ def _resolve_safe_path(rel_path: str, base_dir: str) -> str:
 
     return full_path
 
+
+def _get_storage_dir() -> str:
+    """成分搜索数据文件存储目录"""
+    return os.path.join(current_app.root_path, 'Ingredient_Search')
+
+
+def _compute_directory_size(path: str) -> int:
+    """计算目录大小"""
+    total = 0
+    for root, _, files in os.walk(path):
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+            try:
+                total += os.path.getsize(file_path)
+            except OSError:
+                continue
+    return total
+
+
+def _build_file_info(entry: os.DirEntry, stat_res=None) -> dict:
+    """构造统一的文件信息响应"""
+    if stat_res is None:
+        stat_res = entry.stat()
+    rel_path = entry.name
+    full_path = getattr(entry, 'path', None) or os.path.join(_get_storage_dir(), rel_path)
+    is_directory = entry.is_dir()
+    if is_directory:
+        size_value = _compute_directory_size(full_path)
+    else:
+        size_value = stat_res.st_size
+
+    return {
+        'name': entry.name,
+        'size': size_value,
+        'modified_at': datetime.fromtimestamp(stat_res.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+        'relative_path': rel_path,
+        'download_url': f"/ingredient/api/ingredient/download?path={quote(rel_path)}&download=1",
+        'is_directory': is_directory
+    }
+
 @ingredient.route('/image/<path:image_path>')
 @login_required
 def serve_ingredient_image(image_path):
@@ -227,8 +271,14 @@ def _download_impl(rel_path: str):
 
     full_path = _resolve_safe_path(rel_path, base_dir)
     print(full_path)
-    if not os.path.exists(full_path) or not os.path.isfile(full_path):
+    if not os.path.exists(full_path):
         return jsonify({'error': '文件不存在'}), 404
+
+    if os.path.isdir(full_path):
+        return _send_directory_as_zip(full_path)
+
+    if not os.path.isfile(full_path):
+        return jsonify({'error': '不支持的路径类型'}), 400
 
     filename = os.path.basename(full_path)
     guessed_mime, _ = mimetypes.guess_type(full_path)
@@ -240,3 +290,137 @@ def _download_impl(rel_path: str):
         download_name=filename,
         mimetype=guessed_mime
     )
+
+
+def _send_directory_as_zip(directory_path: str):
+    """将目录压缩为临时ZIP并返回下载响应"""
+    base_name = os.path.basename(directory_path.rstrip(os.sep)) or 'archive'
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+    tmp_file_path = tmp_file.name
+    tmp_file.close()
+
+    with zipfile.ZipFile(tmp_file_path, 'w', zipfile.ZIP_DEFLATED) as zip_buffer:
+        for root, dirs, files in os.walk(directory_path):
+            relative_dir = os.path.relpath(root, directory_path)
+            if relative_dir == '.':
+                arc_root = base_name
+            else:
+                arc_root = os.path.join(base_name, relative_dir)
+
+            arc_root_posix = arc_root.replace('\\', '/')
+
+            if not files and not dirs:
+                zip_buffer.writestr(f"{arc_root_posix}/", '')
+
+            for file_name in files:
+                abs_path = os.path.join(root, file_name)
+                arcname = f"{arc_root_posix}/{file_name}"
+                zip_buffer.write(abs_path, arcname)
+
+    @after_this_request
+    def cleanup(response):
+        try:
+            os.remove(tmp_file_path)
+        except OSError:
+            pass
+        return response
+
+    return send_file(
+        tmp_file_path,
+        as_attachment=True,
+        download_name=f"{base_name}.zip",
+        mimetype='application/zip'
+    )
+
+
+@ingredient.route('/api/ingredient/upload-file', methods=['POST'])
+@login_required
+def upload_ingredient_file():
+    """上传用于成分搜索的数据文件"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'message': '未找到上传文件'}), 400
+
+        file = request.files['file']
+        original_name = (file.filename or '').strip()
+        if not original_name:
+            return jsonify({'success': False, 'message': '文件名不能为空'}), 400
+
+        safe_name = os.path.basename(original_name.replace('\\', '/'))
+        if not safe_name or safe_name in {'.', '..'}:
+            return jsonify({'success': False, 'message': '非法的文件名'}), 400
+
+        _, ext = os.path.splitext(safe_name)
+        ext = ext.lower()
+        if ext not in _ALLOWED_INGREDIENT_EXTENSIONS:
+            allowed_list = ', '.join(sorted(_ALLOWED_INGREDIENT_EXTENSIONS))
+            return jsonify({'success': False, 'message': f'文件类型不被支持，仅允许: {allowed_list}'}), 400
+
+        storage_dir = _get_storage_dir()
+        os.makedirs(storage_dir, exist_ok=True)
+
+        target_path = os.path.join(storage_dir, safe_name)
+        backup_name = None
+        if os.path.exists(target_path):
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            backup_name = f"{safe_name}.{timestamp}.bak"
+            os.replace(target_path, os.path.join(storage_dir, backup_name))
+
+        file.save(target_path)
+
+        _refresh_cached_data()
+
+        stat_res = os.stat(target_path)
+        file_info = {
+            'name': safe_name,
+            'size': stat_res.st_size,
+            'modified_at': datetime.fromtimestamp(stat_res.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            'relative_path': safe_name,
+            'download_url': f"/ingredient/api/ingredient/download?path={quote(safe_name)}&download=1",
+            'backup': backup_name,
+            'is_directory': False
+        }
+
+        return jsonify({'success': True, 'message': '文件上传成功', 'data': file_info})
+
+    except Exception as exc:  # pylint: disable=broad-except
+        current_app.logger.error('上传成分数据文件失败: %s', exc, exc_info=True)
+        return jsonify({'success': False, 'message': f'文件上传失败: {exc}'}), 500
+
+
+def _refresh_cached_data():
+    """刷新内存缓存，确保最新文件立即生效"""
+    global _cached_registration_data, _cached_filing_data, _cached_combined_data
+    global _cache_registration_file_path, _cache_filing_file_path
+    _cached_registration_data = None
+    _cached_filing_data = None
+    _cached_combined_data = None
+    _cache_registration_file_path = None
+    _cache_filing_file_path = None
+
+
+@ingredient.route('/api/ingredient/files', methods=['GET'])
+@login_required
+def list_ingredient_files():
+    """列出当前成分搜索目录下的数据文件"""
+    try:
+        storage_dir = _get_storage_dir()
+        if not os.path.exists(storage_dir):
+            return jsonify({'success': True, 'data': []})
+
+        file_items = []
+        with os.scandir(storage_dir) as it:
+            for entry in it:
+                stat_res = entry.stat()
+                info = _build_file_info(entry, stat_res)
+                info['_modified_ts'] = stat_res.st_mtime
+                file_items.append(info)
+
+        file_items.sort(key=lambda x: x['_modified_ts'], reverse=True)
+        for item in file_items:
+            item.pop('_modified_ts', None)
+
+        return jsonify({'success': True, 'data': file_items})
+    except Exception as exc:  # pylint: disable=broad-except
+        current_app.logger.error('读取成分数据文件列表失败: %s', exc, exc_info=True)
+        return jsonify({'success': False, 'message': f'获取文件列表失败: {exc}'}), 500

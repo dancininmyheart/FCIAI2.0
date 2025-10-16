@@ -307,6 +307,11 @@
                             {% if session.get('language') == 'en' %}User Management{% else %}用户管理{% endif %}
                         </a>
 
+                        <a href="{{ url_for('main.ingredient_upload_page') }}" class="nav-link {% if request.endpoint == 'main.ingredient_upload_page' %}active{% endif %}">
+                            <i class="bi bi-cloud-upload"></i>
+                            {% if session.get('language') == 'en' %}Ingredient Files{% else %}成分文件{% endif %}
+                        </a>
+
                         <!-- 文件管理页面 -->
                         <a href="{{ url_for('main.file_management') }}" class="nav-link {% if request.endpoint == 'main.file_management' %}active{% endif %}">
                             <i class="bi bi-file-earmark-ppt"></i>

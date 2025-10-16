@@ -95,23 +95,23 @@
             {% endif %}
         </div>
 
-        <div class="dev-login-section">
-            <h2><i class="fas fa-terminal"></i> 开发人员登录</h2>
-            <p class="dev-login-note">仅限开发或测试环境使用，使用账户密码直接登录。</p>
-            <form class="dev-login-form" action="{{ url_for('auth.login') }}" method="post" autocomplete="off" novalidate>
-                <div>
-                    <label for="dev-username">账户</label>
-                    <input id="dev-username" name="username" type="text" placeholder="请输入账号" required autocomplete="username">
-                </div>
-                <div>
-                    <label for="dev-password">密码</label>
-                    <input id="dev-password" name="password" type="password" placeholder="请输入密码" required autocomplete="current-password">
-                </div>
-                <button type="submit" class="btn btn-secondary dev-login-submit">
-                    <i class="fas fa-sign-in-alt"></i> 账号密码登录
-                </button>
-            </form>
-        </div>
+{#        <div class="dev-login-section">#}
+{#            <h2><i class="fas fa-terminal"></i> 开发人员登录</h2>#}
+{#            <p class="dev-login-note">仅限开发或测试环境使用，使用账户密码直接登录。</p>#}
+{#            <form class="dev-login-form" action="{{ url_for('auth.login') }}" method="post" autocomplete="off" novalidate>#}
+{#                <div>#}
+{#                    <label for="dev-username">账户</label>#}
+{#                    <input id="dev-username" name="username" type="text" placeholder="请输入账号" required autocomplete="username">#}
+{#                </div>#}
+{#                <div>#}
+{#                    <label for="dev-password">密码</label>#}
+{#                    <input id="dev-password" name="password" type="password" placeholder="请输入密码" required autocomplete="current-password">#}
+{#                </div>#}
+{#                <button type="submit" class="btn btn-secondary dev-login-submit">#}
+{#                    <i class="fas fa-sign-in-alt"></i> 账号密码登录#}
+{#                </button>#}
+{#            </form>#}
+{#        </div>#}
 
         <div class="links">
             <span>遇到问题？请联系系统管理员。</span>

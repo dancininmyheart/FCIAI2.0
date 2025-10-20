@@ -100,7 +100,8 @@ def translate(text: str,
                                                   现在，请按照上述规则翻译文本"""},
                 {"role": "user", "content": text}
             ],
-            stream=False
+            stream=False,
+            max_tokens = 32768
         )
         return response.choices[0].message.content
     

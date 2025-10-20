@@ -2774,36 +2774,34 @@ def translate_pdf():
                     custom_translations=custom_translations  # 传递词汇表翻译
                 )
                 if ok:
-                    return jsonify({
-                        'success': True,
-                        'message': 'PDF处理完成',
-                        'filename': os.path.basename(docx_path),
-                        'download_url': url_for('main.download_translated_pdf', filename=os.path.basename(docx_path), _external=True)
-                    })
+                    # 在这里不直接返回，而是设置标志位，继续执行保存数据库记录的代码
+                    conversion_success = True
+                    logger.info("逐段翻译生成Word成功")
                 else:
                     logger.warning('逐段翻译生成Word失败')
-                    return jsonify({'success': False, 'error': '翻译处理失败'}), 500
+                    # 不直接返回错误，继续执行后续流程
             except Exception as e:
                 logger.error(f"逐段翻译流程异常: {e}")
                 import traceback
                 logger.error(f"错误详情: {traceback.format_exc()}")
-                return jsonify({'success': False, 'error': f'翻译处理异常: {str(e)}'}), 500
+                # 不直接返回错误，继续执行后续流程
             
             # 转换markdown为Word文档
             # 尝试使用pypandoc转换内容到docx
-            conversion_success = False  # 初始化变量
-            try:
-                import pypandoc
-                logger.info(f"使用pypandoc转换内容到 {docx_path}")
-                logger.info(f"转换前内容长度: {len(content)} 字符")
-                logger.info(f"转换前内容前200字符: {content[:200]}")
-                pypandoc.convert_text(content, 'docx', format='md', outputfile=docx_path)
-                conversion_success = True
-                logger.info("pypandoc转换成功")
-            except Exception as e:
-                logger.warning(f"使用pypandoc转换失败: {e}")
-                import traceback
-                logger.warning(f"错误详情: {traceback.format_exc()}")
+            if not conversion_success:  # 只有在前面步骤失败时才执行这部分
+                conversion_success = False  # 初始化变量
+                try:
+                    import pypandoc
+                    logger.info(f"使用pypandoc转换内容到 {docx_path}")
+                    logger.info(f"转换前内容长度: {len(content)} 字符")
+                    logger.info(f"转换前内容前200字符: {content[:200]}")
+                    pypandoc.convert_text(content, 'docx', format='md', outputfile=docx_path)
+                    conversion_success = True
+                    logger.info("pypandoc转换成功")
+                except Exception as e:
+                    logger.warning(f"使用pypandoc转换失败: {e}")
+                    import traceback
+                    logger.warning(f"错误详情: {traceback.format_exc()}")
             
             # 如果pypandoc不可用或转换失败，使用python-docx手动转换
             if not conversion_success:
@@ -2970,19 +2968,20 @@ def translate_pdf():
             
             # 转换markdown为Word文档
             # 尝试使用pypandoc转换内容到docx
-            conversion_success = False  # 初始化变量
-            try:
-                import pypandoc
-                logger.info(f"使用pypandoc转换内容到 {docx_path}")
-                logger.info(f"转换前内容长度: {len(content)} 字符")
-                logger.info(f"转换前内容前200字符: {content[:200]}")
-                pypandoc.convert_text(content, 'docx', format='md', outputfile=docx_path)
-                conversion_success = True
-                logger.info("pypandoc转换成功")
-            except Exception as e:
-                logger.warning(f"使用pypandoc转换失败: {e}")
-                import traceback
-                logger.warning(f"错误详情: {traceback.format_exc()}")
+            if not conversion_success:  # 只有在前面步骤失败时才执行这部分
+                conversion_success = False  # 初始化变量
+                try:
+                    import pypandoc
+                    logger.info(f"使用pypandoc转换内容到 {docx_path}")
+                    logger.info(f"转换前内容长度: {len(content)} 字符")
+                    logger.info(f"转换前内容前200字符: {content[:200]}")
+                    pypandoc.convert_text(content, 'docx', format='md', outputfile=docx_path)
+                    conversion_success = True
+                    logger.info("pypandoc转换成功")
+                except Exception as e:
+                    logger.warning(f"使用pypandoc转换失败: {e}")
+                    import traceback
+                    logger.warning(f"错误详情: {traceback.format_exc()}")
             
             # 如果pypandoc不可用或转换失败，使用python-docx手动转换
             if not conversion_success:
@@ -3169,38 +3168,106 @@ def translate_pdf():
                         logger.error(f"创建包含内容的文档也失败了: {e3}")
                         import traceback
                         logger.error(f"错误详情: {traceback.format_exc()}")
-                        return jsonify({'success': False, 'error': '转换Word文档失败'}), 500
+                        conversion_success = False
+                        
+                # 如果所有转换方法都失败了，则返回错误
+                if not conversion_success:
+                    return jsonify({'success': False, 'error': '转换Word文档失败'}), 500
+                
+        logger.info("开始执行保存记录到数据库的流程")
         
         # 记录到数据库
         try:
             from app.models.upload_record import UploadRecord
+            from app.models.user import User
+            
+            logger.info(f"开始保存上传记录到数据库: user_id={current_user.id}, filename={original_file.filename}")
+            logger.info(f"当前用户ID: {current_user.id}, 用户对象: {current_user}")
+            
+            # 检查用户是否存在
+            user = User.query.get(current_user.id)
+            logger.info(f"查询用户结果: {user}")
+            if not user:
+                logger.error(f"用户ID {current_user.id} 不存在")
+                raise ValueError(f"用户ID {current_user.id} 不存在")
+            
+            logger.info(f"确认用户存在: id={user.id}, username={user.username}")
+            
+            # 打印数据库连接信息
+            logger.info(f"当前数据库连接: {db.engine.url}")
+            
+            # 检查文件是否存在
+            logger.info(f"检查文件是否存在: {docx_path}")
+            if not os.path.exists(docx_path):
+                logger.error(f"翻译后的文件不存在: {docx_path}")
+                raise FileNotFoundError(f"翻译后的文件不存在: {docx_path}")
+            
+            # 获取文件大小
+            file_size = os.path.getsize(docx_path)
+            logger.info(f"文件大小: {file_size} 字节")
+            
+            # 创建记录对象
+            logger.info("准备创建UploadRecord对象")
             record = UploadRecord(
                 filename=original_file.filename,  # 原始文件名
                 stored_filename=docx_filename,
                 file_path=pdf_output_dir,
                 user_id=current_user.id,
-                file_size=os.path.getsize(docx_path),
+                file_size=file_size,
                 status='completed'
             )
+            
+            logger.info(f"创建UploadRecord对象完成: {record}")
+            logger.info(f"UploadRecord属性: filename={record.filename}, stored_filename={record.stored_filename}, file_path={record.file_path}, user_id={record.user_id}, file_size={record.file_size}, status={record.status}")
+            logger.info(f"准备添加记录到会话")
             db.session.add(record)
-            db.session.commit()
-            logger.info("上传记录已保存到数据库")
-            logger.info(f"记录ID: {record.id}")
+            logger.info(f"记录已添加到会话")
+            logger.info(f"准备提交记录: filename={record.filename}, stored_filename={record.stored_filename}, file_path={record.file_path}, user_id={record.user_id}, file_size={record.file_size}, status={record.status}")
+            
+            # 检查会话状态后再提交
+            logger.info(f"检查会话状态: is_active={db.session.is_active}")
+            if db.session.is_active:
+                logger.info("会话活跃，准备提交")
+                db.session.commit()
+                logger.info("上传记录已保存到数据库")
+                logger.info(f"记录ID: {record.id}")
+                
+                # 验证记录是否真的保存成功
+                logger.info("开始验证记录是否保存成功")
+                fresh_record = UploadRecord.query.get(record.id)
+                if fresh_record:
+                    logger.info(f"验证成功，数据库中存在记录ID: {fresh_record.id}")
+                else:
+                    logger.error(f"验证失败，数据库中不存在记录ID: {record.id}")
+                    raise Exception(f"验证失败，数据库中不存在记录ID: {record.id}")
+            else:
+                logger.error("会话已失效，回滚事务")
+                db.session.rollback()
+                raise Exception("数据库会话已失效")
+                
         except Exception as e:
             logger.error(f"保存上传记录失败: {e}")
             import traceback
-            logger.error(f"错误详情: {traceback.format_exc()}")
+            error_details = traceback.format_exc()
+            logger.error(f"错误详情: {error_details}")
+            print(f"保存上传记录失败: {e}")  # 强制打印到控制台
+            print(f"错误详情: {error_details}")  # 强制打印到控制台
             # 即使数据库记录失败，我们仍然返回成功，因为文件已生成
             db.session.rollback()
+            # 修改这里：当数据库记录保存失败时，返回错误而不是继续执行
+            return jsonify({'success': False, 'error': f'保存上传记录失败: {str(e)}'}), 500
         
         logger.info(f"PDF翻译完成，生成文件: {docx_path}")
-        return jsonify({
+        logger.info("准备返回JSON响应")
+        response = jsonify({
             'success': True, 
             'message': 'PDF翻译完成', 
             'filename': os.path.basename(docx_path),
             'file_path': docx_path,
             'download_url': url_for('main.download_translated_pdf', filename=os.path.basename(docx_path), _external=True)
         })
+        logger.info("JSON响应已创建")
+        return response
         
     except Exception as e:
         logger.error(f"处理PDF翻译时出错: {e}")
@@ -3603,13 +3670,11 @@ def pdf_translation_history():
             except Exception:
                 pass
 
-            # 仅保留PDF翻译生成的记录（目录包含 pdf_outputs）
-            try:
-                if 'pdf_outputs' not in (record.file_path or ''):
-                    logger.info(f"[PDF History] 过滤非pdf_outputs记录: id={record.id}, path={record.file_path}")
-                    continue
-            except Exception:
-                pass
+            # 通过存储文件的后缀来判断是否为PDF翻译记录（PDF翻译结果是.docx文件）
+            stored_file_ext = os.path.splitext(record.stored_filename)[1].lower() if record.stored_filename else ''
+            if stored_file_ext != '.docx':
+                logger.info(f"[PDF History] 过滤非PDF翻译记录: id={record.id}, stored_filename={record.stored_filename}")
+                continue
 
             # 检查文件是否仍然存在
             file_path = os.path.join(record.file_path, record.stored_filename)
@@ -3649,35 +3714,6 @@ def pdf_translation_history():
                 'file_exists': file_exists
             })
 
-        # 如果通过数据库没有获取到任何PDF历史，回退到文件系统扫描
-        if len(history_records) == 0:
-            try:
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                upload_folder = current_app.config['UPLOAD_FOLDER']
-                if not os.path.isabs(upload_folder):
-                    upload_folder = os.path.join(project_root, upload_folder)
-                pdf_output_dir = os.path.join(upload_folder, 'pdf_outputs')
-                logger.info(f"[PDF History] 数据库为空，改为扫描目录: {pdf_output_dir}")
-                if os.path.exists(pdf_output_dir):
-                    files = [f for f in os.listdir(pdf_output_dir) if f.lower().endswith('.docx')]
-                    files.sort(key=lambda f: os.path.getmtime(os.path.join(pdf_output_dir, f)), reverse=True)
-                    for fname in files[:50]:  # 限制最多50条
-                        fpath = os.path.join(pdf_output_dir, fname)
-                        try:
-                            history_records.append({
-                                'id': None,
-                                'filename': fname,
-                                'stored_filename': fname,
-                                'file_size': os.path.getsize(fpath),
-                                'upload_time': datetime_to_isoformat(datetime.fromtimestamp(os.path.getmtime(fpath))),
-                                'status': 'completed',
-                                'file_exists': True
-                            })
-                        except Exception:
-                            continue
-            except Exception as e:
-                logger.warning(f"[PDF History] 扫描目录失败: {e}")
-
         logger.info(f"[PDF History] 返回记录数: {len(history_records)}")
         return jsonify(history_records)
         
@@ -3691,14 +3727,140 @@ def pdf_translation_history():
         }), 500
 
 
-def create_template_file(file_path):
-    """创建模板 Excel 文件"""
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Sheet1"
+@main.route('/api/ppt_translation_history')
+@login_required
+def ppt_translation_history():
+    """获取PPT翻译历史记录"""
+    try:
+        logger.info("[PPT History] 开始查询历史记录")
+        # 构建查询 - 只返回状态为 completed 的记录
+        query = UploadRecord.query.filter_by(user_id=current_user.id, status='completed')
 
-    # 设置表头
-    headers = ['english', 'chinese', 'dutch', 'category', 'is_public']
+        # 按上传时间倒序排列
+        records = query.order_by(UploadRecord.upload_time.desc()).all()
+        logger.info(f"[PPT History] 查询到用户记录数: {len(records)}")
+
+        # 格式化记录
+        history_records = []
+        for record in records:
+            try:
+                logger.info(f"[PPT History] 记录: id={record.id}, filename={record.filename}, stored={record.stored_filename}, path={record.file_path}")
+            except Exception:
+                pass
+
+            # 通过原始文件的后缀来判断是否为PPT翻译记录
+            original_file_ext = os.path.splitext(record.filename)[1].lower() if record.filename else ''
+            if original_file_ext not in ['.ppt', '.pptx']:
+                logger.info(f"[PPT History] 过滤非PPT翻译记录: id={record.id}, filename={record.filename}")
+                continue
+
+            # 检查文件是否仍然存在
+            file_path = os.path.join(record.file_path, record.stored_filename)
+            file_exists = os.path.exists(file_path)
+            logger.info(f"[PPT History] 文件存在: {file_exists}, full_path={file_path}")
+
+            # 如果文件不存在，尝试在ppt_outputs目录中查找
+            if not file_exists:
+                try:
+                    # 构建项目根目录和ppt_outputs路径
+                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    upload_folder = current_app.config['UPLOAD_FOLDER']
+                    if not os.path.isabs(upload_folder):
+                        upload_folder = os.path.join(project_root, upload_folder)
+                    ppt_output_dir = os.path.join(upload_folder, 'ppt_outputs')
+
+                    # 在ppt_outputs目录中查找文件
+                    potential_file_path = os.path.join(ppt_output_dir, record.stored_filename)
+                    if os.path.exists(potential_file_path):
+                        file_exists = True
+                        file_path = potential_file_path
+                        logger.info(f"在ppt_outputs目录中找到历史文件: {file_path}")
+                except Exception as e:
+                    logger.warning(f"查找历史文件时出错: {e}")
+
+            # 使用ISO格式返回时间，让前端正确处理时区
+            upload_time = datetime_to_isoformat(record.upload_time)
+
+            # 直接使用数据库中存储的文件名
+            history_records.append({
+                'id': record.id,
+                'filename': record.filename,  # 使用数据库中存储的文件名
+                'stored_filename': getattr(record, 'stored_filename', None),
+                'file_size': record.file_size,
+                'upload_time': upload_time,
+                'status': record.status,
+                'file_exists': file_exists
+            })
+
+        logger.info(f"[PPT History] 返回记录数: {len(history_records)}")
+        return jsonify(history_records)
+
+    except Exception as e:
+        logger.error(f"获取PPT翻译历史记录失败: {e}")
+        import traceback
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        return jsonify({
+            'status': 'error',
+            'message': '获取历史记录失败'
+        }), 500
+
+
+@main.route('/api/delete_pdf_translation/<int:record_id>', methods=['DELETE'])
+@login_required
+def delete_pdf_translation_by_id(record_id):
+    """删除PDF翻译记录和文件"""
+    try:
+        # 查询记录，确保是PDF翻译记录
+        record = UploadRecord.query.filter_by(
+            id=record_id, 
+            user_id=current_user.id,
+            status='completed'
+        ).first()
+        
+        # 再次确认是PDF翻译记录（通过文件扩展名）
+        if record:
+            stored_file_ext = os.path.splitext(record.stored_filename)[1].lower() if record.stored_filename else ''
+            if stored_file_ext != '.docx':
+                record = None
+        
+        if not record:
+            return jsonify({'status': 'error', 'message': '记录不存在'}), 404
+
+        # 构建文件路径
+        file_path = os.path.join(record.file_path, record.stored_filename)
+        
+        # 删除文件（如果存在）
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"已删除PDF翻译文件: {file_path}")
+        else:
+            # 如果在记录的路径中找不到文件，尝试在pdf_outputs目录中查找
+            try:
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                upload_folder = current_app.config['UPLOAD_FOLDER']
+                if not os.path.isabs(upload_folder):
+                    upload_folder = os.path.join(project_root, upload_folder)
+                pdf_output_dir = os.path.join(upload_folder, 'pdf_outputs')
+                potential_file_path = os.path.join(pdf_output_dir, record.stored_filename)
+                
+                if os.path.exists(potential_file_path):
+                    os.remove(potential_file_path)
+                    logger.info(f"在pdf_outputs目录中删除PDF翻译文件: {potential_file_path}")
+            except Exception as e:
+                logger.warning(f"在pdf_outputs目录中查找或删除文件时出错: {e}")
+
+        # 删除数据库记录
+        db.session.delete(record)
+        db.session.commit()
+        
+        return jsonify({'status': 'success', 'message': '删除成功'})
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"删除PDF翻译记录失败: {e}")
+        import traceback
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        return jsonify({'status': 'error', 'message': '删除失败'}), 500
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_num)
         cell.value = header

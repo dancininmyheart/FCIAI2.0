@@ -1588,7 +1588,7 @@ async function startTranslation() {
 
     // 加载历史记录
     function loadHistory() {
-        fetch('/history')
+        fetch('/api/ppt_translation_history')
             .then(response => response.json())
             .then(records => {
                 const tbody = document.getElementById('historyTableBody');

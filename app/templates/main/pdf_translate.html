@@ -199,6 +199,125 @@
         transition: width 0.3s ease;
     }
 
+    /* 加载动画样式 */
+    .processing-container {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 20px;
+        margin-top: 20px;
+    }
+
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid rgba(0,148,217,0.2);
+        border-top: 5px solid rgb(0,148,217);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 20px;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .processing-text {
+        font-size: 16px;
+        color: rgb(110,111,114);
+        margin-top: 10px;
+    }
+
+    /* 翻译完成弹窗样式 */
+    .completion-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0,0,0,0.5);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        background-color: white;
+        border-radius: 8px;
+        width: 400px;
+        max-width: 90%;
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+
+    .modal-icon {
+        width: 60px;
+        height: 60px;
+        background-color: rgba(40,167,69,0.1);
+        border-radius: 50%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 0 auto 20px;
+    }
+
+    .modal-icon i {
+        font-size: 30px;
+        color: #28a745;
+    }
+
+    .modal-title {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        color: #333;
+    }
+
+    .modal-message {
+        font-size: 16px;
+        margin-bottom: 25px;
+        color: #666;
+    }
+
+    .modal-buttons {
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+    }
+
+    .modal-btn {
+        padding: 10px 25px;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: none;
+    }
+
+    .modal-btn-primary {
+        background-color: rgb(0,148,217);
+        color: white;
+    }
+
+    .modal-btn-primary:hover {
+        background-color: rgb(0,130,190);
+    }
+
+    .modal-btn-secondary {
+        background-color: #f8f9fa;
+        color: #333;
+        border: 1px solid #dee2e6;
+    }
+
+    .modal-btn-secondary:hover {
+        background-color: #e9ecef;
+    }
+
     /* 历史记录表格 - 优化行高和列宽 */
     .history-card {
         background: white;
@@ -585,21 +704,42 @@
                 </div>
             </div>
             
-            <!-- 进度条 -->
-            <div id="pdfProgressContainer" style="display: none; margin-top: 20px;">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="pdfProgressFill" style="width: 0%"></div>
-                    </div>
-                    <span id="pdfProgressText">0%</span>
+            <!-- 处理中提示 -->
+            <div class="processing-container" id="processingContainer">
+                <div class="spinner"></div>
+                <div class="processing-text">
+                    {% if session.get('language') == 'en' %}Processing, please wait...{% else %}正在处理中，请稍后...{% endif %}
                 </div>
             </div>
-            
+
             <!-- 结果展示 -->
             <div id="pdfResultContainer" style="display: none; margin-top: 20px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <i class="bi bi-check-circle-fill" style="color: #28a745; font-size: 24px;"></i>
                     <span id="pdfResultText">{% if session.get('language') == 'en' %}Translation completed. Please download from the history list below.{% else %}翻译完成，请在下方历史记录中下载。{% endif %}</span>
+                </div>
+            </div>
+
+            <!-- 翻译完成弹窗 -->
+            <div class="completion-modal" id="completionModal">
+                <div class="modal-content">
+                    <div class="modal-icon">
+                        <i class="bi bi-check-circle-fill"></i>
+                    </div>
+                    <h3 class="modal-title">
+                        {% if session.get('language') == 'en' %}Translation Completed{% else %}翻译完成{% endif %}
+                    </h3>
+                    <p class="modal-message" id="modalMessage">
+                        {% if session.get('language') == 'en' %}Your PDF has been translated successfully. You can download it from the history list below.{% else %}您的PDF已成功翻译完成，您可以在下方历史记录中下载。{% endif %}
+                    </p>
+                    <div class="modal-buttons">
+                        <a href="#" id="modalDownloadBtn" class="modal-btn modal-btn-primary" style="text-decoration: none; display:none;" rel="noopener">
+                            {% if session.get('language') == 'en' %}Download{% else %}下载{% endif %}
+                        </a>
+                        <button class="modal-btn modal-btn-secondary" id="modalConfirmBtn">
+                            {% if session.get('language') == 'en' %}OK{% else %}确定{% endif %}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -709,10 +849,9 @@
     
     // 翻译PDF文件
     function translatePDF(file) {
-        // 显示进度条
-        document.getElementById('pdfProgressContainer').style.display = 'block';
+        // 显示处理中提示
+        document.getElementById('processingContainer').style.display = 'flex';
         document.getElementById('pdfResultContainer').style.display = 'none';
-        updateProgress(0, currentLanguage === 'en' ? 'Starting translation...' : '开始翻译...');
         
         // 获取源语言、目标语言和模型选择
         const sourceLanguage = document.getElementById('sourceLanguage').value;
@@ -740,30 +879,65 @@
         })
         .then(response => response.json())
         .then(data => {
+            // 清除进度动画
+            if (window.progressInterval) {
+                clearInterval(window.progressInterval);
+            }
+            
             if (data.success) {
                 // 处理成功
-                document.getElementById('pdfProgressContainer').style.display = 'none';
-                document.getElementById('pdfResultContainer').style.display = 'block';
-                const resultTextEl = document.getElementById('pdfResultText');
-                if (resultTextEl) {
+                document.getElementById('processingContainer').style.display = 'none';
+                
+                // 更新弹窗消息
+                const modalMessage = document.getElementById('modalMessage');
+                if (modalMessage) {
                     if (currentLanguage === 'en') {
                         const name = data.filename ? ` "${data.filename}"` : '';
-                        resultTextEl.textContent = `Translation finished. Download${name} from the history list below.`;
+                        modalMessage.textContent = `Your PDF${name} has been translated successfully. You can download it from the history list below.`;
                     } else {
                         const name = data.filename ? ` (${data.filename})` : '';
-                        resultTextEl.textContent = `\u7ffb\u8bd1\u5b8c\u6210\uff0c\u8bf7\u5728\u4e0b\u65b9\u5386\u53f2\u8bb0\u5f55\u4e2d\u4e0b\u8f7d${name}\u3002`;
+                        modalMessage.textContent = `您的PDF${name}已成功翻译完成，您可以在下方历史记录中下载。`;
                     }
                 }
+                
+                // 设置下载链接
+                const downloadBtn = document.getElementById('modalDownloadBtn');
+                if (downloadBtn) {
+                    if (data.stored_filename) {
+                        const href = `/download_translated_pdf/${encodeURIComponent(data.stored_filename)}`;
+                        downloadBtn.href = href;
+                        downloadBtn.setAttribute('download', data.filename || 'translated.pdf');
+                        downloadBtn.style.display = 'inline-block';
+                        downloadBtn.setAttribute('rel', 'noopener');
+                        console.log('[PDF] set modalDownloadBtn href:', href);
+                    } else {
+                        // 未返回下载地址则隐藏下载按钮
+                        downloadBtn.removeAttribute('href');
+                        downloadBtn.removeAttribute('download');
+                        downloadBtn.style.display = 'none';
+                        console.warn('[PDF] no stored_filename in response, hide download button');
+                    }
+                }
+                
+                // 显示完成弹窗
+                document.getElementById('completionModal').style.display = 'flex';
+                
                 // 翻译完成后刷新历史记录
                 loadHistory();
             } else {
                 // 处理失败
-                updateProgress(0, currentLanguage === 'en' ? 'Processing failed: ' + data.error : '处理失败: ' + data.error);
+                document.getElementById('processingContainer').style.display = 'none';
+                alert(currentLanguage === 'en' ? 'Processing failed: ' + data.error : '处理失败: ' + data.error);
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            updateProgress(0, currentLanguage === 'en' ? 'Processing failed' : '处理失败');
+            // 清除进度动画
+            if (window.progressInterval) {
+                clearInterval(window.progressInterval);
+            }
+            document.getElementById('processingContainer').style.display = 'none';
+            alert(currentLanguage === 'en' ? 'Processing failed' : '处理失败');
         })
         .finally(() => {
             // 重置文件输入，允许用户选择同一个文件再次上传
@@ -1219,5 +1393,72 @@
         closeVocabularyConfig();
     }
 
+    // 模拟进度动画
+    function simulateProgress() {
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += Math.random() * 10;
+            if (progress > 90) progress = 90; // 最多到90%，等待真实完成
+        }, 500);
+        
+        // 存储interval ID以便在需要时清除
+        window.progressInterval = interval;
+    }
+    
+    // 初始化弹窗事件
+    document.addEventListener('DOMContentLoaded', function() {
+        // 确定按钮点击事件
+        const confirmBtn = document.getElementById('modalConfirmBtn');
+        if (confirmBtn) {
+            confirmBtn.addEventListener('click', function() {
+                document.getElementById('completionModal').style.display = 'none';
+            });
+        }
+        
+        // 下载按钮点击事件
+        const downloadBtn = document.getElementById('modalDownloadBtn');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', function(e) {
+                // 仅当存在有效链接时拦截默认行为
+                const href = downloadBtn.getAttribute('href');
+                if (href && href !== '#' && href !== window.location.href + '#') {
+                    e.preventDefault();
+                    console.log('[PDF] download click with href:', href);
+                    // 先关闭模态框
+                    document.getElementById('completionModal').style.display = 'none';
+                    try {
+                        // 创建临时链接元素来触发下载
+                        const link = document.createElement('a');
+                        link.href = href;
+                        const filename = downloadBtn.getAttribute('download') || 'translated.pdf';
+                        link.setAttribute('download', filename);
+                        link.rel = 'noopener';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    } catch (err) {
+                        console.warn('[PDF] link.click failed, fallback to window.open', err);
+                        window.open(href, '_blank', 'noopener');
+                    }
+                    return true;
+                } else {
+                    // 无有效链接时，避免显示无效按钮
+                    e.preventDefault();
+                    alert(currentLanguage === 'en' ? 'Download link is not available' : '下载链接不可用');
+                    return false;
+                }
+            });
+        }
+        
+        // 点击模态框外部关闭
+        const modal = document.getElementById('completionModal');
+        if (modal) {
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+    });
 </script>
 {% endblock %}

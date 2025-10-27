@@ -3,61 +3,6 @@
 {% block title %}登录{% endblock %}
 
 {% block content %}
-<style>
-.dev-login-section {
-    margin-top: 24px;
-    padding: 16px;
-    border: 1px dashed rgba(0, 148, 217, 0.25);
-    border-radius: 12px;
-    background-color: #f8fbff;
-}
-
-.dev-login-section h2 {
-    margin: 0;
-    font-size: 1rem;
-    color: #1f2933;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.dev-login-note {
-    margin: 8px 0 0 0;
-    font-size: 0.85rem;
-    color: #6b7280;
-}
-
-.dev-login-form {
-    margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.dev-login-form label {
-    font-size: 0.85rem;
-    color: #4b5563;
-}
-
-.dev-login-form input {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    transition: border-color 0.2s ease;
-}
-
-.dev-login-form input:focus {
-    outline: none;
-    border-color: rgb(0,148,217);
-    box-shadow: 0 0 0 2px rgba(0,148,217,0.15);
-}
-
-.dev-login-submit {
-    align-self: flex-start;
-}
-</style>
 <div class="auth-shell">
     <div class="auth-card">
         <div class="auth-card-header">
@@ -66,14 +11,14 @@
             </span>
             <div>
                 <h1 class="auth-card-title">欢迎登录</h1>
-                <p class="auth-card-subtitle">统一账号接入 FrieslandCampina AI 平台</p>
+                <p class="auth-card-subtitle">统一账号接入 FrieslandCampina AI 平台</p >
             </div>
         </div>
 
         <div class="auth-body">
             {% if sso_enabled %}
             <div class="sso-stack">
-                <a href="/auth/sso/login" class="btn btn-primary sso-btn">
+                <a href=" " class="btn btn-primary sso-btn">
                     <span class="icon">
                         {% if sso_provider == 'oauth2' %}
                             <i class="fab fa-openid"></i>
@@ -85,33 +30,36 @@
                     </span>
                     <span class="btn-text">使用 SSO 登录</span>
                     <span class="chevron"><i class="fas fa-arrow-right"></i></span>
-                </a>
-                <p class="sso-caption">系统与企业身份平台同步，请使用公司账号登录系统。</p>
+                </a >
+                <p class="sso-caption">系统与企业身份平台同步，使用公司账号即可进入系统。</p >
             </div>
             {% else %}
             <div class="sso-stack">
-                <p class="sso-caption">当前未启用统一登录，请联系系统管理员获取访问方式。</p>
+                <p class="sso-caption">当前未启用统一登录，请联系系统管理员获取访问方式。</p >
             </div>
             {% endif %}
-        </div>
 
-{#        <div class="dev-login-section">#}
-{#            <h2><i class="fas fa-terminal"></i> 开发人员登录</h2>#}
-{#            <p class="dev-login-note">仅限开发或测试环境使用，使用账户密码直接登录。</p>#}
-{#            <form class="dev-login-form" action="{{ url_for('auth.login') }}" method="post" autocomplete="off" novalidate>#}
-{#                <div>#}
-{#                    <label for="dev-username">账户</label>#}
-{#                    <input id="dev-username" name="username" type="text" placeholder="请输入账号" required autocomplete="username">#}
-{#                </div>#}
-{#                <div>#}
-{#                    <label for="dev-password">密码</label>#}
-{#                    <input id="dev-password" name="password" type="password" placeholder="请输入密码" required autocomplete="current-password">#}
-{#                </div>#}
-{#                <button type="submit" class="btn btn-secondary dev-login-submit">#}
-{#                    <i class="fas fa-sign-in-alt"></i> 账号密码登录#}
-{#                </button>#}
-{#            </form>#}
-{#        </div>#}
+            <!-- 临时账号密码登录入口，生产环境下会注释掉 -->
+            <div class="local-login">
+                <div class="section-divider">
+                    <span>或使用临时账号登录</span>
+                </div>
+                <form class="login-form" method="post" action="/auth/login">
+                    {% if csrf_token is defined %}
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% endif %}
+                    <div class="form-group">
+                        <label for="username">账号</label>
+                        <input type="text" id="username" name="username" placeholder="输入账号" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input type="password" id="password" name="password" placeholder="输入密码" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-secondary w-100">账号密码登录</button>
+                </form>
+            </div>
+        </div>
 
         <div class="links">
             <span>遇到问题？请联系系统管理员。</span>

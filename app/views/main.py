@@ -3260,9 +3260,10 @@ def translate_pdf():
         logger.info(f"PDF翻译完成，生成文件: {docx_path}")
         logger.info("准备返回JSON响应")
         response = jsonify({
-            'success': True, 
-            'message': 'PDF翻译完成', 
+            'success': True,
+            'message': 'PDF翻译完成',
             'filename': os.path.basename(docx_path),
+            'stored_filename': os.path.basename(docx_path),
             'file_path': docx_path,
             'download_url': url_for('main.download_translated_pdf', filename=os.path.basename(docx_path), _external=True)
         })

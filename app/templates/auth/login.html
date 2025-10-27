@@ -40,26 +40,26 @@
             {% endif %}
 
             <!-- 临时账号密码登录入口，生产环境下会注释掉 -->
-            <div class="local-login">
-                <div class="section-divider">
-                    <span>或使用临时账号登录</span>
-                </div>
-                <form class="login-form" method="post" action="/auth/login">
-                    {% if csrf_token is defined %}
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    {% endif %}
-                    <div class="form-group">
-                        <label for="username">账号</label>
-                        <input type="text" id="username" name="username" placeholder="输入账号" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="password">密码</label>
-                        <input type="password" id="password" name="password" placeholder="输入密码" autocomplete="current-password" required>
-                    </div>
-                    <button type="submit" class="btn btn-secondary w-100">账号密码登录</button>
-                </form>
-            </div>
-        </div>
+{#            <div class="local-login">#}
+{#                <div class="section-divider">#}
+{#                    <span>或使用临时账号登录</span>#}
+{#                </div>#}
+{#                <form class="login-form" method="post" action="/auth/login">#}
+{#                    {% if csrf_token is defined %}#}
+{#                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">#}
+{#                    {% endif %}#}
+{#                    <div class="form-group">#}
+{#                        <label for="username">账号</label>#}
+{#                        <input type="text" id="username" name="username" placeholder="输入账号" required>#}
+{#                    </div>#}
+{#                    <div class="form-group">#}
+{#                        <label for="password">密码</label>#}
+{#                        <input type="password" id="password" name="password" placeholder="输入密码" autocomplete="current-password" required>#}
+{#                    </div>#}
+{#                    <button type="submit" class="btn btn-secondary w-100">账号密码登录</button>#}
+{#                </form>#}
+{#            </div>#}
+{#        </div>#}
 
         <div class="links">
             <span>遇到问题？请联系系统管理员。</span>

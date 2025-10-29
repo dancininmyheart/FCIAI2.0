@@ -784,7 +784,33 @@
         initializePDFTranslation();
         loadHistory();
     });
-    
+        function toDateFromInput(input) {
+  if (input == null) return null;
+  // 数字：当作时间戳（优先毫秒，若像 10 位则按秒）
+  if (typeof input === 'number') {
+    return new Date(input > 1e12 ? input : input * 1000);
+  }
+  // 字符串：交给 Date 解析（建议后端返回 ISO，如 2025-10-29T05:21:00Z）
+  const d = new Date(input);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatShanghaiTime(input) {
+  const date = toDateFromInput(input);
+  if (!date) return '';
+  const fmt = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  });
+  const parts = fmt.formatToParts(date).reduce((acc, p) => {
+    acc[p.type] = p.value; return acc;
+  }, {});
+  // 输出：YYYY-MM-DD HH:mm:ss（不带任何时区文案）
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
     // 初始化PDF翻译功能
     function initializePDFTranslation() {
         const uploadZone = document.getElementById('pdfUploadZone');
@@ -985,7 +1011,7 @@
                                 </button>`;
                         row.innerHTML = `
                             <td title="${record.filename}">${record.filename}</td>
-                            <td>${record.upload_time}</td>
+                            <td>${formatShanghaiTime(record.upload_time)}</td>
                             <td>${formatFileSize(record.file_size)}</td>
                             <td><span class="status-badge completed">${currentLanguage === 'en' ? 'Completed' : '已完成'}</span></td>
                             <td class="history-actions">

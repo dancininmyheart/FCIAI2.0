@@ -5,8 +5,23 @@
   const selectedInfo = document.getElementById('selectedFileInfo');
   const dropzone = document.getElementById('uploadDropzone');
   const fileListContainer = document.getElementById('fileListContainer');
+  const progressWrap = document.getElementById('uploadProgressWrap');
+  const progressBar = document.getElementById('uploadProgressBar');
+  const progressLabel = document.getElementById('uploadProgressLabel');
+  const progressSpeed = document.getElementById('uploadProgressSpeed');
 
-  if (!fileInput || !selectButton || !uploadButton || !selectedInfo || !dropzone || !fileListContainer) {
+  if (
+    !fileInput ||
+    !selectButton ||
+    !uploadButton ||
+    !selectedInfo ||
+    !dropzone ||
+    !fileListContainer ||
+    !progressWrap ||
+    !progressBar ||
+    !progressLabel ||
+    !progressSpeed
+  ) {
     return;
   }
 
@@ -72,7 +87,7 @@
 
   function formatSize(size) {
     if (typeof size !== 'number' || Number.isNaN(size)) {
-      return '—';
+      return '未知';
     }
     if (size >= 1024 * 1024 * 1024) {
       return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
@@ -84,6 +99,67 @@
       return `${(size / 1024).toFixed(2)} KB`;
     }
     return `${size} B`;
+  }
+
+  function formatSpeed(bytesPerSecond) {
+    if (typeof bytesPerSecond !== 'number' || !Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
+      return '';
+    }
+    if (bytesPerSecond >= 1024 * 1024 * 1024) {
+      return `${(bytesPerSecond / (1024 * 1024 * 1024)).toFixed(2)} GB/s`;
+    }
+    if (bytesPerSecond >= 1024 * 1024) {
+      return `${(bytesPerSecond / (1024 * 1024)).toFixed(2)} MB/s`;
+    }
+    if (bytesPerSecond >= 1024) {
+      return `${(bytesPerSecond / 1024).toFixed(2)} KB/s`;
+    }
+    return `${bytesPerSecond} B/s`;
+  }
+
+  function resetProgress() {
+    progressWrap.classList.remove('active', 'error');
+    progressBar.style.width = '0%';
+    progressLabel.textContent = '';
+    progressSpeed.textContent = '';
+  }
+
+  function showProgress() {
+    progressWrap.classList.add('active');
+    progressWrap.classList.remove('error');
+  }
+
+  function updateProgress(percent, infoText, speedText) {
+    showProgress();
+    if (typeof percent === 'number' && Number.isFinite(percent)) {
+      const clamped = Math.max(0, Math.min(100, percent));
+      progressBar.style.width = `${clamped}%`;
+    }
+    if (typeof infoText === 'string') {
+      progressLabel.textContent = infoText;
+    }
+    if (typeof speedText === 'string') {
+      progressSpeed.textContent = speedText;
+    } else {
+      progressSpeed.textContent = '';
+    }
+  }
+
+  function markProgressError(message) {
+    progressWrap.classList.add('active', 'error');
+    progressBar.style.width = '0%';
+    progressLabel.textContent = message || '上传失败';
+    progressSpeed.textContent = '';
+  }
+
+  function hideProgress(delay = 0) {
+    if (delay > 0) {
+      setTimeout(() => {
+        progressWrap.classList.remove('active', 'error');
+      }, delay);
+      return;
+    }
+    progressWrap.classList.remove('active', 'error');
   }
 
   function setUploadingState(isUploading) {
@@ -100,30 +176,96 @@
 
   function uploadFile(file) {
     setUploadingState(true);
+    resetProgress();
+    updateProgress(0, '准备上传...', '');
+
     const formData = new FormData();
     formData.append('file', file);
 
-    fetch('/ingredient/api/ingredient/upload-file', {
-      method: 'POST',
-      body: formData,
-      credentials: 'same-origin'
-    })
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.success) {
-          throw new Error(data.message || '文件上传失败');
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/ingredient/api/ingredient/upload-file', true);
+    xhr.withCredentials = true;
+
+    let lastLoaded = 0;
+    let lastTimestamp = Date.now();
+    let hasError = false;
+    let uploadSucceeded = false;
+
+    function handleUploadError(message) {
+      if (hasError || uploadSucceeded) {
+        return;
+      }
+      hasError = true;
+      markProgressError(message);
+      console.error('Ingredient upload error:', message);
+      showToast(message || '文件上传失败，请稍后再试', 'error');
+    }
+
+    xhr.upload.onloadstart = () => {
+      updateProgress(0, '开始上传...', '');
+    };
+
+    xhr.upload.onprogress = (event) => {
+      if (!event) {
+        return;
+      }
+
+      if (event.lengthComputable) {
+        const now = Date.now();
+        const percent = Math.min(100, (event.loaded / event.total) * 100);
+        const info = `已上传 ${formatSize(event.loaded)} / ${formatSize(event.total)}`;
+
+        const deltaBytes = event.loaded - lastLoaded;
+        const deltaTime = (now - lastTimestamp) / 1000;
+        let speedLabel = '';
+        if (deltaBytes > 0 && deltaTime > 0) {
+          speedLabel = formatSpeed(deltaBytes / deltaTime);
         }
+
+        updateProgress(percent, info, speedLabel);
+        lastLoaded = event.loaded;
+        lastTimestamp = now;
+      } else {
+        updateProgress(undefined, '正在上传...', '');
+      }
+    };
+
+    xhr.onload = () => {
+      let data = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch (err) {
+        data = {};
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
+        uploadSucceeded = true;
+        updateProgress(100, `上传完成 · ${formatSize(file.size)}`, '');
         showToast(data.message || '文件上传成功', 'success');
         clearSelection();
         fetchFileList();
-      })
-      .catch((error) => {
-        console.error('Ingredient upload error:', error);
-        showToast(error.message || '文件上传失败，请稍后再试', 'error');
-      })
-      .finally(() => {
-        setUploadingState(false);
-      });
+      } else {
+        const message = (data && data.message) || `文件上传失败 (HTTP ${xhr.status})`;
+        handleUploadError(message);
+      }
+    };
+
+    xhr.onerror = () => {
+      handleUploadError('网络异常，上传失败');
+    };
+
+    xhr.onabort = () => {
+      handleUploadError('上传已取消');
+    };
+
+    xhr.onloadend = () => {
+      setUploadingState(false);
+      if (uploadSucceeded) {
+        hideProgress(1200);
+      }
+    };
+
+    xhr.send(formData);
   }
 
   function fetchFileList() {
@@ -195,5 +337,6 @@
       .replace(/'/g, '&#39;');
   }
 
+  resetProgress();
   fetchFileList();
 })();

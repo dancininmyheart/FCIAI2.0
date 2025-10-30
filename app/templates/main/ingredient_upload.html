@@ -88,6 +88,63 @@
     margin-top: 1.4vw;
 }
 
+.upload-progress {
+    display: none;
+    margin-top: 1.2vw;
+    padding: 1vw 1.2vw;
+    border-radius: 0.6vw;
+    border: 1px solid rgba(0,148,217,0.15);
+    background: rgba(0,148,217,0.05);
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.upload-progress.active {
+    display: block;
+}
+
+.upload-progress.error {
+    border-color: rgba(220,53,69,0.35);
+    background: rgba(220,53,69,0.08);
+}
+
+.upload-progress .progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6vw;
+    font-size: 0.95rem;
+    color: rgb(70,71,74);
+}
+
+.upload-progress.error .progress-header {
+    color: rgb(220,53,69);
+}
+
+.upload-progress .progress-bar {
+    width: 100%;
+    height: 0.8rem;
+    background: #e9ecef;
+    border-radius: 0.6rem;
+    overflow: hidden;
+    position: relative;
+}
+
+.upload-progress .progress-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: rgb(0,148,217);
+    transition: width 0.2s ease;
+}
+
+.upload-progress.error .progress-bar-fill {
+    background: rgb(220,53,69);
+}
+
+.upload-progress .progress-speed {
+    font-size: 0.85rem;
+    color: rgba(110,111,114,0.75);
+}
+
 .upload-submit-btn {
     background-color: rgb(40,167,69);
     color: #fff;
@@ -220,6 +277,15 @@
                 <i class="bi bi-upload"></i>
                 开始上传
             </button>
+        </div>
+        <div id="uploadProgressWrap" class="upload-progress">
+            <div class="progress-header">
+                <span id="uploadProgressLabel">准备上传...</span>
+                <span id="uploadProgressSpeed" class="progress-speed"></span>
+            </div>
+            <div class="progress-bar">
+                <div id="uploadProgressBar" class="progress-bar-fill"></div>
+            </div>
         </div>
     </div>
 

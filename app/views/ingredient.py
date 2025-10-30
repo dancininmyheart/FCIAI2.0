@@ -17,6 +17,7 @@ _cached_combined_data = None
 _cache_registration_file_path = None
 _cache_filing_file_path = None
 _ALLOWED_INGREDIENT_EXTENSIONS = {'.json', '.xlsx', '.xls', '.csv', '.zip', '.rar', '.7z'}
+_UPLOAD_STREAM_CHUNK_SIZE = 16 * 1024 * 1024  # 16MB chunks keep memory steady on large uploads
 
 def load_registration_data():
     """加载保健食品注册数据"""
@@ -182,6 +183,40 @@ def _resolve_safe_path(rel_path: str, base_dir: str) -> str:
 def _get_storage_dir() -> str:
     """成分搜索数据文件存储目录"""
     return os.path.join(current_app.root_path, 'Ingredient_Search')
+
+def _save_upload_stream(file_storage, destination_path: str, chunk_size: int = _UPLOAD_STREAM_CHUNK_SIZE) -> int:
+    """
+    将上传文件流以固定块写入目标路径，避免一次性占用大量内存。
+
+    Args:
+        file_storage: Flask FileStorage 对象
+        destination_path: 目标文件完整路径
+        chunk_size: 单次写盘块大小，默认16MB
+
+    Returns:
+        写入的总字节数
+    """
+    stream = getattr(file_storage, 'stream', None)
+    if stream is None:
+        raise ValueError('上传数据流不存在')
+
+    if hasattr(stream, 'seek'):
+        try:
+            stream.seek(0)
+        except (OSError, ValueError):
+            # 某些流不可回退，忽略即可
+            pass
+
+    total_written = 0
+    with open(destination_path, 'wb') as dest_fp:
+        while True:
+            chunk = stream.read(chunk_size)
+            if not chunk:
+                break
+            dest_fp.write(chunk)
+            total_written += len(chunk)
+
+    return total_written
 
 
 def _compute_directory_size(path: str) -> int:
@@ -366,7 +401,34 @@ def upload_ingredient_file():
             backup_name = f"{safe_name}.{timestamp}.bak"
             os.replace(target_path, os.path.join(storage_dir, backup_name))
 
-        file.save(target_path)
+        temp_target_path = f"{target_path}.uploading"
+        if os.path.exists(temp_target_path):
+            os.remove(temp_target_path)
+
+        try:
+            bytes_written = _save_upload_stream(file, temp_target_path)
+            os.replace(temp_target_path, target_path)
+            current_app.logger.info(
+                "成分文件上传完成: %s, 大小: %d 字节", safe_name, bytes_written
+            )
+        except Exception:
+            # 清理临时文件并尝试恢复备份
+            if os.path.exists(temp_target_path):
+                try:
+                    os.remove(temp_target_path)
+                except OSError:
+                    pass
+
+            if backup_name:
+                backup_path = os.path.join(storage_dir, backup_name)
+                if os.path.exists(backup_path):
+                    try:
+                        os.replace(backup_path, target_path)
+                    except OSError:
+                        current_app.logger.warning(
+                            "恢复备份文件失败: %s -> %s", backup_path, target_path, exc_info=True
+                        )
+            raise
 
         _refresh_cached_data()
 

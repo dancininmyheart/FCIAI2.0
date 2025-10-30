@@ -20,7 +20,7 @@ class Config:
     
     # 文件存储配置
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or 'uploads'
-    MAX_CONTENT_LENGTH = 400 * 1024 * 1024  # 最大文件大小：50MB
+    MAX_CONTENT_LENGTH = 12 * 1024 * 1024 * 1024  # 允许约12GB请求体，满足10GB上传需求
     USER_STORAGE_QUOTA = 1024 * 1024 * 1024  # 用户存储配额：1GB
     FILE_CLEANUP_DAYS = 7  # 文件保留天数
     TEMP_FILE_CLEANUP_HOURS = 24  # 临时文件保留小时数
@@ -241,7 +241,7 @@ class AppConfig:
         
         # 文件上传配置
         self.upload = {
-            'max_file_size': int(os.getenv('UPLOAD_MAX_FILE_SIZE', '52428800')),  # 50MB
+            'max_file_size': int(os.getenv('UPLOAD_MAX_FILE_SIZE', str(12 * 1024 * 1024 * 1024))),  # 默认支持约12GB
             'allowed_extensions': set(os.getenv('UPLOAD_ALLOWED_EXTENSIONS', 'ppt,pptx').split(',')),
             'upload_folder': os.getenv('UPLOAD_FOLDER', 'uploads')
         }
@@ -535,7 +535,7 @@ HTTP_CLIENT_CONFIG = {
 
 # 文件上传配置
 UPLOAD_CONFIG = {
-    'max_file_size': _get_env_int('MAX_FILE_SIZE', 50 * 1024 * 1024),
+    'max_file_size': _get_env_int('MAX_FILE_SIZE', 12 * 1024 * 1024 * 1024),
     'allowed_extensions': _parse_set(os.getenv('ALLOWED_EXTENSIONS', 'ppt,pptx')),
     'upload_folder': os.getenv('UPLOAD_FOLDER', 'uploads')
 }

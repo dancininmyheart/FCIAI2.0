@@ -33,7 +33,7 @@ def upload_file_and_get_url(file_path, object_key=None, bucket=None, region=None
     # 获取配置信息
     access_key_id = os.environ.get('OSS_ACCESS_KEY_ID')
     access_key_secret = os.environ.get('OSS_ACCESS_KEY_SECRET')
-    bucket = bucket or os.environ.get('OSS_BUCKET', 'fci')
+    bucket = bucket or os.environ.get('OSS_BUCKET', 'fciai')
     region = region or os.environ.get('OSS_REGION', 'cn-beijing')
     
     # 检查必要配置

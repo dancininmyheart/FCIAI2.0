@@ -63,10 +63,20 @@ class MinerUAPI:
         if not self.token:
             raise ValueError("MINERU_API_KEY环境变量未设置")
         
+        # 记录token信息用于调试（只显示部分）
+        logger.info(f"MinerU API Token loaded, length: {len(self.token)}")
+        logger.info(f"MinerU API Token prefix: {self.token[:50]}...")
+        
+        # 验证token格式
+        if not self.token.startswith('eyJ'):
+            logger.warning("Token格式可能不正确，应该以'eyJ'开头")
+        
         self.session = requests.Session()
+        # 根据官方文档设置请求头
         self.session.headers.update({
             'Authorization': f'Bearer {self.token}',
-            'User-Agent': 'FCIAI2.0/1.0'
+            'User-Agent': 'FCIAI2.0/1.0',
+            'Content-Type': 'application/json'
         })
         
         # 配置代理和SSL设置
@@ -81,6 +91,8 @@ class MinerUAPI:
         # 禁用SSL警告
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        logger.info("MinerU API客户端初始化完成")
     
     def process_pdf(self, file_path):
         """处理本地PDF文件"""
@@ -110,13 +122,32 @@ class MinerUAPI:
         
         try:
             logger.info("发送创建任务请求...")
+            logger.info(f"请求头信息: Authorization: Bearer {self.token[:10]}***")
+            logger.info(f"请求数据: {data}")
+            
+            # 使用官方文档中的认证方式和请求格式
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {self.token}'
+            }
+            
             response = self.session.post(
                 task_url,
                 headers=headers,
                 json=data,
                 timeout=(30, 60)
             )
-            result = response.json()
+            
+            logger.info(f"响应状态码: {response.status_code}")
+            logger.info(f"响应头: {dict(response.headers)}")
+            
+            try:
+                result = response.json()
+                logger.info(f"响应内容: {result}")
+            except Exception as e:
+                logger.error(f"响应解析失败: {e}")
+                logger.error(f"响应内容: {response.text}")
+                return None
 
             # 检查API响应的格式和内容
             if not isinstance(result, dict):
@@ -125,11 +156,21 @@ class MinerUAPI:
 
             if 'code' not in result:
                 logger.error(f"❌ API响应缺少'code'字段: {result}")
+                # 检查是否是认证错误的特殊情况
+                if 'msgCode' in result and result.get('msgCode') == 'A0202':
+                    logger.error("❌ 用户认证失败，请检查MINERU_API_KEY是否正确配置")
+                    logger.error("请确认以下几点:")
+                    logger.error("1. MINERU_API_KEY在.env文件中是否正确设置")
+                    logger.error("2. API密钥是否已过期")
+                    logger.error("3. 是否在MinerU平台正确配置了API访问权限")
+                    logger.error("4. 尝试访问 https://mineru.net/apiManage/docs 检查API密钥状态")
                 return None
 
             if result['code'] != 0:
                 error_msg = result.get('msg', '未知错误')
-                logger.error(f"❌ 创建任务失败: {error_msg}")
+                msg_code = result.get('msgCode', '未知错误代码')
+                trace_id = result.get('traceId', '未知traceId')
+                logger.error(f"❌ 创建任务失败: {error_msg}, 错误代码: {msg_code}, Trace ID: {trace_id}")
                 return None
 
             if 'data' not in result:
@@ -164,10 +205,6 @@ class MinerUAPI:
         # 2. 创建MinerU任务
         logger.info("📄 创建解析任务...")
         task_url = 'https://mineru.net/api/v4/extract/task'
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.token}'
-        }
         data = {
             'url': pdf_url,
             'is_ocr': True,
@@ -178,13 +215,32 @@ class MinerUAPI:
         
         try:
             logger.info("发送创建任务请求...")
+            logger.info(f"请求头信息: Authorization: Bearer {self.token[:10]}***")
+            logger.info(f"请求数据: {data}")
+            
+            # 使用官方文档中的认证方式和请求格式
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {self.token}'
+            }
+            
             response = self.session.post(
                 task_url,
                 headers=headers,
                 json=data,
                 timeout=(30, 60)
             )
-            result = response.json()
+            
+            logger.info(f"响应状态码: {response.status_code}")
+            logger.info(f"响应头: {dict(response.headers)}")
+            
+            try:
+                result = response.json()
+                logger.info(f"响应内容: {result}")
+            except Exception as e:
+                logger.error(f"响应解析失败: {e}")
+                logger.error(f"响应内容: {response.text}")
+                return None
 
             # 检查API响应的格式和内容
             if not isinstance(result, dict):
@@ -193,11 +249,21 @@ class MinerUAPI:
 
             if 'code' not in result:
                 logger.error(f"❌ API响应缺少'code'字段: {result}")
+                # 检查是否是认证错误的特殊情况
+                if 'msgCode' in result and result.get('msgCode') == 'A0202':
+                    logger.error("❌ 用户认证失败，请检查MINERU_API_KEY是否正确配置")
+                    logger.error("请确认以下几点:")
+                    logger.error("1. MINERU_API_KEY在.env文件中是否正确设置")
+                    logger.error("2. API密钥是否已过期")
+                    logger.error("3. 是否在MinerU平台正确配置了API访问权限")
+                    logger.error("4. 尝试访问 https://mineru.net/apiManage/docs 检查API密钥状态")
                 return None
 
             if result['code'] != 0:
                 error_msg = result.get('msg', '未知错误')
-                logger.error(f"❌ 创建任务失败: {error_msg}")
+                msg_code = result.get('msgCode', '未知错误代码')
+                trace_id = result.get('traceId', '未知traceId')
+                logger.error(f"❌ 创建任务失败: {error_msg}, 错误代码: {msg_code}, Trace ID: {trace_id}")
                 return None
 
             if 'data' not in result:
@@ -457,6 +523,66 @@ class MinerUAPI:
             logger.info(f"✅ 结果已保存到: {save_path}")
         except Exception as e:
             logger.error(f"❌ 下载失败: {e}")
+    
+    def validate_token(self):
+        """
+        验证API密钥是否有效
+        返回True表示有效，False表示无效
+        """
+        logger.info("开始验证MinerU API密钥有效性...")
+        
+        # 使用官方文档中的方式验证
+        url = 'https://mineru.net/api/v4/extract/tasks'
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'User-Agent': 'FCIAI2.0/1.0'
+        }
+        
+        try:
+            response = self.session.get(url, headers=headers, timeout=30)
+            logger.info(f"Token验证响应状态码: {response.status_code}")
+            
+            if response.status_code in [200, 201, 202, 204]:
+                logger.info("API密钥验证成功")
+                return True
+            elif response.status_code == 401:
+                logger.error("API密钥验证失败：认证错误")
+                logger.error(f"响应内容: {response.text}")
+                return False
+            else:
+                logger.warning(f"API密钥验证返回意外状态码: {response.status_code}")
+                logger.warning(f"响应内容: {response.text}")
+                # 对于其他状态码，我们不能确定密钥无效，所以返回True
+                return True
+        except Exception as e:
+            logger.error(f"验证API密钥时出错: {e}")
+            # 出错时我们不能确定密钥是否有效，所以返回True
+            return True
+    
+    def test_auth(self):
+        """测试认证"""
+        logger.info("开始测试MinerU API认证...")
+        url = 'https://mineru.net/api/v4/extract/tasks'
+        
+        # 使用官方文档中的认证方式
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'User-Agent': 'FCIAI2.0/1.0'
+        }
+        
+        try:
+            response = self.session.get(url, headers=headers, timeout=30)
+            logger.info(f"认证测试响应状态码: {response.status_code}")
+            if response.status_code in [200, 201, 202, 204]:
+                logger.info("认证测试成功")
+                return True
+            else:
+                logger.warning(f"认证测试失败: {response.status_code}")
+                logger.warning(f"响应内容: {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"认证测试异常: {e}")
+            return False
 
 # 导入日志系统
 try:

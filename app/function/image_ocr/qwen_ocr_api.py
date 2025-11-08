@@ -132,8 +132,9 @@ class QwenOCRProcessor:
                 # 清理文本内容，提取实际文本
                 cleaned_text = self.clean_text_content(text_content)
                 
-                # 如果清理后的文本为空，则不生成all_text字段
-                if not cleaned_text or (isinstance(cleaned_text, str) and cleaned_text.strip() == ""):
+                # 清理后的文本为空或为"0"，则不生成all_text字段
+                if (not cleaned_text or 
+                    (isinstance(cleaned_text, str) and (cleaned_text.strip() == "" or cleaned_text.strip() == "0"))):
                     return {
                         "image_path": image_path,
                         "all_text": {},
@@ -265,44 +266,58 @@ class QwenOCRProcessor:
         """
         text_dict = {}
         
+        def is_valid_text(text):
+            """检查文本是否有效（不为空且不为"0"）"""
+            if not text:
+                return False
+            text_str = str(text).strip()
+            return text_str != "" and text_str != "0"
+        
         # 如果text_content是一个列表
         if isinstance(text_content, list):
             if not text_content:
                 # 空列表
                 return {}
             elif len(text_content) == 1:
-                # 只有一个元素，将其作为text1
-                text_dict["text1"] = str(text_content[0]) if not isinstance(text_content[0], str) else text_content[0]
+                # 只有一个元素，如果有效则作为text1
+                text = str(text_content[0]) if not isinstance(text_content[0], str) else text_content[0]
+                if is_valid_text(text):
+                    text_dict["text1"] = text
             else:
-                # 多个元素，每个元素一个text字段
-                for i, item in enumerate(text_content, 1):
-                    if isinstance(item, str):
-                        text_dict[f"text{i}"] = item
-                    else:
-                        text_dict[f"text{i}"] = str(item)
+                # 多个元素，每个有效元素一个text字段
+                text_counter = 1
+                for item in text_content:
+                    text = item if isinstance(item, str) else str(item)
+                    if is_valid_text(text):
+                        text_dict[f"text{text_counter}"] = text
+                        text_counter += 1
         # 如果text_content是一个字符串
         elif isinstance(text_content, str):
             # 检查是否是JSON数组格式的内容
             if text_content.startswith('[') and text_content.endswith(']'):
                 try:
                     # 尝试解析为JSON数组
-                    import json
                     text_list = json.loads(text_content)
-                    # 为每个元素创建一个text字段
-                    for i, item in enumerate(text_list, 1):
-                        if isinstance(item, str):
-                            text_dict[f"text{i}"] = item
-                        else:
-                            text_dict[f"text{i}"] = str(item)
+                    text_counter = 1
+                    # 为每个有效元素创建一个text字段
+                    for item in text_list:
+                        text = item if isinstance(item, str) else str(item)
+                        if is_valid_text(text):
+                            text_dict[f"text{text_counter}"] = text
+                            text_counter += 1
                 except:
-                    # 如果解析失败，将整个内容作为text1
-                    text_dict["text1"] = text_content
+                    # 如果解析失败且文本有效，将整个内容作为text1
+                    if is_valid_text(text_content):
+                        text_dict["text1"] = text_content
             else:
-                # 将整个内容作为text1，不进行拆分
-                text_dict["text1"] = text_content
+                # 如果文本有效，将其作为text1
+                if is_valid_text(text_content):
+                    text_dict["text1"] = text_content
         else:
-            # 其他情况，将内容作为text1
-            text_dict["text1"] = str(text_content)
+            # 其他情况，如果转换为字符串后有效，将其作为text1
+            text = str(text_content)
+            if is_valid_text(text):
+                text_dict["text1"] = text
             
         return text_dict
 

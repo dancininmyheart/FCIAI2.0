@@ -2208,7 +2208,7 @@ def translate_pdf():
             
             # 使用OSS直链处理PDF
             logger.info(f"开始使用OSS直链处理PDF: {pdf_path}")
-            result = oss_processor.process_pdf_with_mineru(pdf_path, mineru_api, bucket="fci", region="cn-beijing")
+            result = oss_processor.process_pdf_with_mineru(pdf_path, mineru_api, bucket="fciai", region="cn-beijing")
             
             # 根据MinerU API规范，使用code字段判断处理结果（0表示成功）
             if result and isinstance(result, dict) and result.get('code') == 0:
@@ -2765,11 +2765,30 @@ def translate_pdf():
             # 新增：使用逐段翻译并写入Word的流程（原文+译文）
             try:
                 from app.utils.document_generator import translate_markdown_to_bilingual_doc
+                # 获取用户选择的语言参数
+                source_lang = request.form.get('source_lang', 'EN').lower()
+                target_lang = request.form.get('target_lang', 'ZH').lower()
+
+                # 将语言代码映射为内部使用的代码
+                lang_mapping = {
+                    'en': 'en',
+                    'zh': 'zh',
+                    'ja': 'ja',
+                    'english': 'en',
+                    'chinese': 'zh',
+                    'japanese': 'ja'
+                }
+
+                source_language = lang_mapping.get(source_lang, 'en')
+                target_language = lang_mapping.get(target_lang, 'zh')
+
+                logger.info(f"使用用户选择的语言参数: 源语言={source_language}, 目标语言={target_language}")
+
                 ok = translate_markdown_to_bilingual_doc(
                     content,
                     docx_path,
-                    source_language='en',
-                    target_language='zh',
+                    source_language=source_language,
+                    target_language=target_language,
                     image_base_dir=md_dir,
                     custom_translations=custom_translations  # 传递词汇表翻译
                 )

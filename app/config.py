@@ -42,7 +42,7 @@ class Config:
     
     # 阿里云OSS配置
     OSS_REGION = os.environ.get('OSS_REGION', 'cn-beijing')
-    OSS_BUCKET = os.environ.get('OSS_BUCKET', 'fci')
+    OSS_BUCKET = os.environ.get('OSS_BUCKET', 'fciai')
     
     @classmethod
     def get_oss_config(cls):

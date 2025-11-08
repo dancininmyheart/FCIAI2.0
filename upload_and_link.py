@@ -71,7 +71,7 @@ if __name__ == "__main__":
         """
     )
     parser.add_argument("file", help="本地文件路径")
-    parser.add_argument("--bucket", default="fci", help="目标 bucket")
+    parser.add_argument("--bucket", default="fciai", help="目标 bucket")
     parser.add_argument("--region", default="cn-beijing", help="地域")
     parser.add_argument("--expire", type=int, default=3600, help="链接有效期（秒）")
     args = parser.parse_args()

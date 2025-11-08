@@ -832,16 +832,20 @@ class PPTImageReplacer:
                     
                     if original_texts:
                         for key, original_text in original_texts.items():
-                            if original_text and original_text.strip():
+                            # 确保文本不是空或"0"
+                            cleaned_text = original_text.strip() if original_text else ""
+                            if cleaned_text and cleaned_text != "0":
                                 pair = {
                                     'key': key,
-                                    'original': original_text.strip(),
+                                    'original': cleaned_text,
                                     'translated': ''
                                 }
                                 
-                                # 查找对应的翻译
-                                if key in translated_texts and translated_texts[key]:
-                                    pair['translated'] = translated_texts[key].strip()
+                                # 查找对应的翻译，确保翻译文本也不是空或"0"
+                                if key in translated_texts:
+                                    cleaned_translation = translated_texts[key].strip() if translated_texts[key] else ""
+                                    if cleaned_translation and cleaned_translation != "0":
+                                        pair['translated'] = cleaned_translation
                                 
                                 text_pairs.append(pair)
                     

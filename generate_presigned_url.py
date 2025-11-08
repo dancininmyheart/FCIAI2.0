@@ -86,25 +86,21 @@ def example_usage():
     print("=== 预签名URL生成示例 ===")
     
     try:
-        # 示例1: 为test_file.txt生成临时下载链接
-        print("\n1. 生成临时下载链接:")
-        url = generate_presigned_url('test_file.txt', 3600, bucket='fci', region='cn-beijing')  # 1小时有效期
-        print(f"   临时下载链接: {url}")
+        # 生成临时下载的预签名URL
+        url = generate_presigned_url('test_file.txt', 3600, bucket='fciai', region='cn-beijing')  # 1小时有效期
+        print(f"生成的预签名URL: {url}")
         
-        # 示例2: 生成强制下载链接
-        print("\n2. 生成强制下载链接:")
-        url = generate_presigned_url('test_file.txt', 3600, force_download=True, bucket='fci', region='cn-beijing')
-        print(f"   强制下载链接: {url}")
+        # 生成强制下载的预签名URL
+        url = generate_presigned_url('test_file.txt', 3600, force_download=True, bucket='fciai', region='cn-beijing')
+        print(f"生成的强制下载URL: {url}")
         
-        # 示例3: 生成更长有效期的链接
-        print("\n3. 生成长期有效链接:")
-        url = generate_presigned_url('test_file.txt', 86400, bucket='fci', region='cn-beijing')  # 24小时有效期
-        print(f"   长期链接: {url}")
+        # 生成24小时有效期的预签名URL
+        url = generate_presigned_url('test_file.txt', 86400, bucket='fciai', region='cn-beijing')  # 24小时有效期
+        print(f"生成的24小时有效期URL: {url}")
         
-        # 示例4: 生成上传链接
-        print("\n4. 生成文件上传链接:")
-        url = generate_presigned_url('new_upload.txt', 3600, 'PUT', bucket='fci', region='cn-beijing')
-        print(f"   上传链接: {url}")
+        # 生成上传用的预签名URL（PUT请求）
+        url = generate_presigned_url('new_upload.txt', 3600, 'PUT', bucket='fciai', region='cn-beijing')
+        print(f"生成的上传URL: {url}")
         
     except Exception as e:
         print(f"示例执行失败: {e}")

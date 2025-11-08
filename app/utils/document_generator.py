@@ -13,6 +13,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.shared import qn
 from docx.enum.style import WD_STYLE_TYPE
 import asyncio
+from bs4 import BeautifulSoup
 
 # 为了按段落即时翻译，复用现有异步翻译能力
 try:
@@ -92,6 +93,53 @@ class BilingualDocumentGenerator:
             return
             
         try:
+            # 检测是否是HTML表格
+            if '<table' in text and '</table>' in text:
+                # 使用BeautifulSoup解析HTML表格
+                soup = BeautifulSoup(text, 'html.parser')
+                table = soup.find('table')
+                
+                if table:
+                    # 获取表格的行和列
+                    rows = table.find_all('tr')
+                    max_cols = 0
+                    cell_contents = []
+                    
+                    # 提取所有单元格内容
+                    for row in rows:
+                        cells = row.find_all(['td', 'th'])
+                        max_cols = max(max_cols, len(cells))
+                        row_contents = []
+                        for cell in cells:
+                            # 清理单元格文本
+                            cell_text = self._strip_inline_markdown(cell.get_text().strip())
+                            row_contents.append(cell_text)
+                        cell_contents.append(row_contents)
+                    
+                    # 创建原文表格
+                    word_table = self.document.add_table(rows=len(rows), cols=max_cols)
+                    word_table.style = 'Table Grid'
+                    
+                    # 填充原文表格内容
+                    for i, row_content in enumerate(cell_contents):
+                        for j, cell_text in enumerate(row_content):
+                            cell = word_table.cell(i, j)
+                            cell.text = cell_text
+                            # 设置单元格格式
+                            paragraphs = cell.paragraphs
+                            if paragraphs:
+                                for paragraph in paragraphs:
+                                    for run in paragraph.runs:
+                                        run.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    # 添加一个空行分隔
+                    self.document.add_paragraph()
+                    return
+                else:
+                    # 如果表格解析失败，降级为普通文本
+                    self.document.add_paragraph(text.strip())
+                    return
+                
             # 清理Markdown符号
             cleaned_text = self._strip_inline_markdown(text.strip())
             paragraph = self.document.add_paragraph()
@@ -166,6 +214,99 @@ class BilingualDocumentGenerator:
             logger.warning(f"添加列表项失败，使用普通段落: {e}")
             self.add_original_text(text)
     
+    def add_bilingual_table(self, html_table: str, source_language: str = "en", target_language: str = "zh", custom_translations: Dict[str, str] = None) -> None:
+        """
+        将HTML表格转换为双语Word表格并添加到文档
+        会创建两个表格：原文表格和译文表格
+
+        Args:
+            html_table: HTML格式的表格字符串
+            source_language: 源语言代码
+            target_language: 目标语言代码
+            custom_translations: 自定义翻译字典
+        """
+        try:
+            soup = BeautifulSoup(html_table, 'html.parser')
+            table = soup.find('table')
+            
+            if table:
+                # 获取所有行
+                rows = table.find_all('tr')
+                if rows:
+                    # 计算最大列数和提取单元格内容
+                    max_cols = 0
+                    cell_contents = []  # 原文内容
+                    translated_contents = []  # 译文内容
+                    translation_cache = {}  # 翻译缓存
+                    
+                    for row in rows:
+                        cells = row.find_all(['td', 'th'])
+                        max_cols = max(max_cols, len(cells))
+                        row_contents = []
+                        row_translations = []
+                        
+                        for cell in cells:
+                            # 清理单元格文本
+                            cell_text = self._strip_inline_markdown(cell.get_text().strip())
+                            row_contents.append(cell_text)
+                            
+                            # 获取翻译
+                            if cell_text in translation_cache:
+                                translated_text = translation_cache[cell_text]
+                            else:
+                                translated_text = _sync_translate_single_text(
+                                    cell_text,
+                                    source_language=source_language,
+                                    target_language=target_language,
+                                    custom_translations=custom_translations
+                                )
+                                translation_cache[cell_text] = translated_text
+                            
+                            row_translations.append(translated_text if translated_text else cell_text)
+                        
+                        cell_contents.append(row_contents)
+                        translated_contents.append(row_translations)
+                    
+                    # 创建并填充原文表格
+                    word_table = self.document.add_table(rows=len(rows), cols=max_cols)
+                    word_table.style = 'Table Grid'
+                    
+                    for i, row_content in enumerate(cell_contents):
+                        for j, cell_text in enumerate(row_content):
+                            cell = word_table.cell(i, j)
+                            cell.text = cell_text
+                            # 设置单元格格式
+                            for paragraph in cell.paragraphs:
+                                for run in paragraph.runs:
+                                    run.font.color.rgb = RGBColor(0, 0, 0)
+                    
+                    # 添加一个空行分隔
+                    self.document.add_paragraph()
+                    
+                    # 创建并填充译文表格
+                    trans_table = self.document.add_table(rows=len(rows), cols=max_cols)
+                    trans_table.style = 'Table Grid'
+                    
+                    for i, row_translations in enumerate(translated_contents):
+                        for j, trans_text in enumerate(row_translations):
+                            cell = trans_table.cell(i, j)
+                            cell.text = trans_text
+                            # 设置单元格格式
+                            for paragraph in cell.paragraphs:
+                                for run in paragraph.runs:
+                                    run.font.color.rgb = RGBColor(96, 96, 96)
+                    
+                    logger.info(f"成功添加双语HTML表格，行数: {len(rows)}, 列数: {max_cols}")
+                    return
+            
+            # 如果没有找到表格，降级处理为普通文本
+            logger.warning("未在HTML中找到有效表格，作为普通文本处理")
+            self.add_original_text(html_table)
+        except Exception as e:
+            logger.error(f"添加HTML表格失败: {e}")
+            # 降级处理，将HTML作为普通文本添加
+            self.add_original_text(html_table)
+
     def add_image(self, image_path: str, width_inches: float = 6.0) -> None:
         """
         添加图片到文档
@@ -657,19 +798,53 @@ def translate_markdown_to_bilingual_doc(
             if not text:
                 continue
 
-            # 跳过已是中文的原文，避免重复译文
-            if is_mostly_chinese(text):
-                generator.add_original_text(text)
-                continue
+            # 仅在英翻中场景下跳过已是中文的原文，避免重复译文
+            # 当目标语言是中文时，检测原文是否主要是中文，如果是则跳过翻译
+            # 注意：不要跳过中文内容，即使是英翻中场景，因为可能用户需要中英对照
+            # 注释掉跳过逻辑，确保所有内容都能被翻译并添加到文档中
+            # if target_language.lower().startswith('zh') and is_mostly_chinese(text):
+            #     generator.add_original_text(text)
+            #     continue
 
             if btype == 'heading':
                 level = int(blk.get('level', 1))
                 generator.add_heading(text, level)
+
+                # 检查文本语言特性
+                is_chinese_content = is_mostly_chinese(text)
+                is_target_english = target_language.lower().startswith('en')
+                is_target_chinese = target_language.lower().startswith('zh')
+
+                # 检查是否是英文内容（简单检测：包含较多拉丁字母）
+                def is_mostly_english(s: str) -> bool:
+                    if not s:
+                        return False
+                    total = len(s)
+                    if total == 0:
+                        return False
+                    import re
+                    latin = len(re.findall(r"[a-zA-Z]", s))
+                    return (latin / total) > 0.5
+
+                is_english_content = is_mostly_english(text)
+
+                # 根据翻译方向和内容语言决定是否跳过翻译
+                should_skip_translation = False
+                if is_target_chinese and is_chinese_content:
+                    # 英翻中场景，原文已经是中文，跳过翻译
+                    should_skip_translation = True
+                    logger.info(f"跳过已是中文的标题: {text[:30]}...")
+                elif is_target_english and is_english_content:
+                    # 中翻英场景，原文已经是英文，跳过翻译
+                    should_skip_translation = True
+                    logger.info(f"跳过已是英文的标题: {text[:30]}...")
+
                 translated = cache.get(text)
-                if translated is None:
+                if translated is None and not should_skip_translation:
                     translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
                     cache[text] = translated
-                if translated:
+
+                if translated and not should_skip_translation:
                     generator.add_translated_text(translated)
                 generator.document.add_paragraph()
                 continue
@@ -696,14 +871,66 @@ def translate_markdown_to_bilingual_doc(
                 generator.document.add_paragraph()
                 continue
 
+            # 检测是否是HTML表格
+            if '<table' in text and '</table>' in text:
+                # 添加双语表格（原文表格和译文表格）
+                generator.add_bilingual_table(
+                    text,
+                    source_language=source_language,
+                    target_language=target_language,
+                    custom_translations=custom_translations
+                )
+                continue
+
             # 普通段落
             translated = cache.get(text)
             if translated is None:
                 translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
                 cache[text] = translated
-            if translated:
-                generator.add_bilingual_pair(text, translated)
+
+            # 检查文本语言特性
+            is_chinese_content = is_mostly_chinese(text)
+            is_target_english = target_language.lower().startswith('en')
+            is_target_chinese = target_language.lower().startswith('zh')
+
+            # 检查是否是英文内容（简单检测：包含较多拉丁字母）
+            def is_mostly_english(s: str) -> bool:
+                if not s:
+                    return False
+                total = len(s)
+                if total == 0:
+                    return False
+                import re
+                latin = len(re.findall(r"[a-zA-Z]", s))
+                return (latin / total) > 0.5
+
+            is_english_content = is_mostly_english(text)
+
+            # 根据翻译方向和内容语言决定是否跳过翻译
+            should_skip_translation = False
+            if is_target_chinese and is_chinese_content:
+                # 英翻中场景，原文已经是中文，跳过翻译
+                should_skip_translation = True
+                logger.info(f"跳过已是中文的文本: {text[:30]}...")
+            elif is_target_english and is_english_content:
+                # 中翻英场景，原文已经是英文，跳过翻译
+                should_skip_translation = True
+                logger.info(f"跳过已是英文的文本: {text[:30]}...")
+
+            if translated and not should_skip_translation:
+                # 根据内容和目标语言选择合适的文档格式
+                if is_chinese_content and is_target_english:
+                    # 中文内容翻译为英文，确保原文在上，译文在下
+                    generator.add_original_text(text)  # 添加中文原文
+                    generator.add_translated_text(translated)  # 添加英文译文
+                elif is_english_content and is_target_chinese:
+                    # 英文内容翻译为中文，使用标准双语对格式
+                    generator.add_bilingual_pair(text, translated)
+                else:
+                    # 其他情况，使用标准双语对格式
+                    generator.add_bilingual_pair(text, translated)
             else:
+                # 跳过翻译或翻译失败，只添加原文
                 generator.add_original_text(text)
         return generator.save(output_path)
     except Exception as e:

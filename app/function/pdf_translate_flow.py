@@ -14,16 +14,16 @@ if image_ocr_results:
     for i, result in enumerate(image_ocr_results):
         if result.get("success") and result.get("ocr_text_combined"):
             image_path = result.get("image_path", "未知图片")
-            ocr_text = result.get("ocr_text_combined", "")
-            translation_text = result.get("translation_text_combined", "")
+            ocr_text = result.get("ocr_text_combined", "").strip()
+            translation_text = result.get("translation_text_combined", "").strip()
             
-            ocr_section += f"## 图片 {i+1}: {os.path.basename(image_path)}\n\n"
-            ocr_section += f"**OCR识别结果:**\n\n{ocr_text}\n\n"
-            # 检查是否有翻译文本，如果没有则添加提示
-            if translation_text and translation_text != ocr_text:
-                ocr_section += f"**翻译结果:**\n\n{translation_text}\n\n"
-            else:
-                ocr_section += "**翻译结果:**\n\n(翻译失败或未找到翻译结果)\n\n"
+            # 只有当OCR文本不为空且不为0时才显示结果
+            if ocr_text and ocr_text != "0":
+                ocr_section += f"## 图片 {i+1}: {os.path.basename(image_path)}\n\n"
+                ocr_section += f"**OCR识别结果:**\n\n{ocr_text}\n\n"
+                # 只有当翻译文本不为空且不为0时才显示翻译结果
+                if translation_text and translation_text != "0" and translation_text != ocr_text:
+                    ocr_section += f"**翻译结果:**\n\n{translation_text}\n\n"
             ocr_section += "---\n\n"
     
     # 在文档末尾添加OCR结果

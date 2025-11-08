@@ -142,8 +142,8 @@ def set_textbox_autofit_com(ppt_path: str) -> bool:
                         original_width = shape.Width
                         original_height = shape.Height
 
-                        shape.Width = original_width + 0.01
-                        shape.Height = original_height + 0.01
+                        shape.Width = original_width + 0.1
+                        shape.Height = original_height + 0.1
                         shape.Width = original_width
                         shape.Height = original_height
 

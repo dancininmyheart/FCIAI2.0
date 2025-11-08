@@ -1039,6 +1039,7 @@
     let enable_text_splitting = "False";
     let enable_uno_conversion = true;
     let currentTaskKey = 'GLOBAL';
+    const MAX_PPT_FILE_SIZE = 50 * 1024 * 1024;
 
     // 获取当前语言设置
     const currentLanguage = '{{ session.get("language", "zh") }}';
@@ -1048,6 +1049,7 @@
         zh: {
             fileProcessedTitle: '文件已准备好，请选择要翻译的页面',
             fileProcessError: '文件处理失败',
+            fileTooLarge: 'PPT文件超过50MB，请拆分或精简后再上传',
             selectPagesError: '请选择要翻译的页面',
             translationStarted: '翻译任务已启动，正在处理中...',
             translationLaunchFailed: '启动翻译失败: ',
@@ -1074,6 +1076,7 @@
         en: {
             fileProcessedTitle: 'File is ready, please select pages to translate',
             fileProcessError: 'File processing failed',
+            fileTooLarge: 'The PPT file exceeds the 50 MB limit. Please split or simplify it before uploading.',
             selectPagesError: 'Please select pages to translate',
             translationStarted: 'Translation task started, processing...',
             translationLaunchFailed: 'Failed to start translation: ',
@@ -1218,6 +1221,10 @@
     async function handleFile(file) {
         if (!file.name.match(/\.(ppt|pptx)$/i)) {
             showToast(currentLanguage === 'en' ? 'Please select a PPT file (.ppt or .pptx format)' : '请选择PPT文件(.ppt或.pptx格式)', 'error');
+            return;
+        }
+        if (file.size > MAX_PPT_FILE_SIZE) {
+            showToast(getText('fileTooLarge'), 'error');
             return;
         }
 

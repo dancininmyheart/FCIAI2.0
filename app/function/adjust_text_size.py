@@ -84,8 +84,63 @@ def set_textbox_autofit_pptx(ppt_path: str) -> bool:
         return False
 
 
+import os
+import gc
+import logging
+import platform
+
+try:
+    import pythoncom
+    import win32com.client as win32
+    from win32com.client import constants
+except Exception:
+    pass  # 维持你原来的 COM_AVAILABLE 逻辑
+
+def _iter_shapes(shape_or_shapes):
+    """递归遍历所有 shape（包含组合里的成员）"""
+    try:
+        for sh in shape_or_shapes:
+            try:
+                if getattr(sh, "Type", None) == getattr(constants, "msoGroup", 6):
+                    # 组合内递归
+                    for inner in _iter_shapes(sh.GroupItems):
+                        yield inner
+                    continue
+            except Exception:
+                pass
+            yield sh
+    except TypeError:
+        # 单个 shape
+        sh = shape_or_shapes
+        try:
+            if getattr(sh, "Type", None) == getattr(constants, "msoGroup", 6):
+                for inner in _iter_shapes(sh.GroupItems):
+                    yield inner
+            else:
+                yield sh
+        except Exception:
+            yield sh
+
+def _is_textual_shape(shape) -> bool:
+    """严格判断是否是值得处理的文本形状"""
+    try:
+        if getattr(shape, "HasTextFrame", 0) != -1:
+            return False
+        tf2 = shape.TextFrame2
+        if getattr(tf2, "HasText", 0) == 0:
+            return False
+        t = getattr(shape, "Type", None)
+        msoTable = getattr(constants, "msoTable", 19)
+        msoSmartArt = getattr(constants, "msoSmartArt", 24)
+        msoPlaceholder = getattr(constants, "msoPlaceholder", 14)
+        if t in (msoTable, msoSmartArt, msoPlaceholder):
+            return False
+        return True
+    except Exception:
+        return False
+
 def set_textbox_autofit_com(ppt_path: str) -> bool:
-    """使用COM接口设置文本框自适应（Windows专用，包含扰动触发渲染）"""
+    """使用COM接口设置文本框自适应（Windows专用，包含轻微扰动触发渲染）"""
     if not COM_AVAILABLE:
         logging.error("COM接口不可用")
         return False
@@ -94,72 +149,92 @@ def set_textbox_autofit_com(ppt_path: str) -> bool:
         logging.error("COM接口仅在Windows上可用")
         return False
 
-    # 设置文件权限
+    # 设置文件权限（保留你的逻辑）
     permission_result = set_file_permissions(ppt_path)
     if permission_result.get("status") == "error":
         logging.warning(f"权限设置失败: {permission_result.get('message')}")
 
-    pythoncom.CoInitialize()
     app = None
     presentation = None
+
+    # --- COM 初始化（优先 STA）---
+    try:
+        pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+    except Exception:
+        pythoncom.CoInitialize()
 
     try:
         # 连接或创建PowerPoint实例
         try:
-            app = win32com.client.GetActiveObject("PowerPoint.Application")
+            app = win32.GetActiveObject("PowerPoint.Application")
             logging.debug("连接到现有PowerPoint实例")
-        except:
-            app = win32com.client.Dispatch("PowerPoint.Application")
+        except Exception:
+            app = win32.Dispatch("PowerPoint.Application")
             logging.debug("创建新的PowerPoint实例")
 
-        # 设置PowerPoint可见
+        # 静默、屏蔽弹窗
         try:
             app.Visible = True
         except Exception as e:
             logging.warning(f"设置Visible属性失败: {e}")
+        try:
+            app.DisplayAlerts = constants.ppAlertsNone
+        except Exception:
+            pass
 
-        # 打开演示文稿
-        presentation = app.Presentations.Open(ppt_path)
+        # 打开演示文稿（后台窗口）
+        presentation = app.Presentations.Open(ppt_path, WithWindow=True)
         logging.info(f"成功打开演示文稿: {os.path.basename(ppt_path)}")
 
-        # 处理所有文本框
         slide_count = 0
-        shape_count = 0
+        handled_count = 0
+        skipped_count = 0
 
         for slide in presentation.Slides:
             slide_count += 1
-            for shape in slide.Shapes:
-                if shape.HasTextFrame:
-                    try:
-                        shape_count += 1
-                        text_frame = shape.TextFrame2
+            for shape in _iter_shapes(slide.Shapes):
+                if not _is_textual_shape(shape):
+                    skipped_count += 1
+                    continue
+                try:
+                    tf2 = shape.TextFrame2
 
-                        # 设置自适应：文字大小适应文本框
-                        text_frame.AutoSize = 2  # msoAutoSizeTextToFitShape
-                        text_frame.WordWrap = -1  # True
+                    # 记录原值，必要时可回滚
+                    orig_wrap = getattr(tf2, "WordWrap", None)
 
-                        # 关键：微调尺寸触发重新渲染（模拟PPT客户端扰动）
-                        original_width = shape.Width
-                        original_height = shape.Height
+                    # 设置自适应：文字大小适应文本框（只缩小不放大）
+                    tf2.AutoSize = constants.msoAutoSizeTextToFitShape  # 2
 
-                        shape.Width = original_width + 0.1
-                        shape.Height = original_height + 0.1
-                        shape.Width = original_width
-                        shape.Height = original_height
+                    # 换行策略：一般保留原值即可；若想强制换行可改为 True(-1)
+                    if orig_wrap is None:
+                        tf2.WordWrap = -1  # True
 
-                    except Exception as e:
-                        logging.debug(f"处理形状时出错: {e}")
+                    # 轻微扰动：移动位置而非改尺寸，避免布局抖动
+                    ol, ot = shape.Left, shape.Top
+                    shape.Left = ol + 0.1
+                    shape.Top = ot + 0.1
+                    shape.Left = ol
+                    shape.Top = ot
 
-        logging.info(f"COM处理完成: {slide_count} 张幻灯片, {shape_count} 个文本框")
+                    handled_count += 1
+                except Exception as e:
+                    logging.debug(f"处理形状时出错: {e}")
+                    skipped_count += 1
+
+        logging.info(
+            f"COM处理完成: {slide_count} 张幻灯片, 处理 {handled_count} 个文本框, 跳过 {skipped_count} 个"
+        )
 
         # 保存并关闭
         presentation.Save()
         presentation.Close()
+        presentation = None
 
         # 智能退出PowerPoint
         try:
             if app.Presentations.Count == 0:
                 app.Quit()
+                app = None
                 logging.debug("PowerPoint实例已退出")
         except Exception as e:
             logging.debug(f"退出PowerPoint时出错: {e}")
@@ -173,21 +248,31 @@ def set_textbox_autofit_com(ppt_path: str) -> bool:
         try:
             if presentation:
                 presentation.Close()
-        except:
+        except Exception:
             pass
 
         try:
             if app and app.Presentations.Count == 0:
                 app.Quit()
-        except:
+        except Exception:
             pass
 
         return False
 
     finally:
+        # 彻底释放 COM 对象，避免残留进程
+        try:
+            del presentation
+        except Exception:
+            pass
+        try:
+            del app
+        except Exception:
+            pass
+        gc.collect()
         try:
             pythoncom.CoUninitialize()
-        except:
+        except Exception:
             pass
 
 

@@ -493,6 +493,17 @@ def get_history():
             'message': '获取历史记录失败'
         }), 500
 
+@main.route('/delete/<int:record_id>', methods=['DELETE'])
+@login_required
+def delete_file(record_id):
+    try:
+        # 获取上传记录
+        record = UploadRecord.query.get_or_404(record_id)
+
+        # 验证用户权限
+        if record.user_id != current_user.id:
+            return jsonify({'error': '无权删除此文件'}), 403
+
         try:
             # 删除物理文件
             file_path = os.path.join(record.file_path, record.stored_filename)

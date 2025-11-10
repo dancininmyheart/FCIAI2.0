@@ -1019,23 +1019,6 @@ def update_translation(id):
         return jsonify({'error': str(e)}), 500
 
 
-@main.route('/api/translations/<int:id>', methods=['DELETE'])
-@login_required
-def delete_translation(id):
-    translation = Translation.query.get_or_404(id)
-
-    # 验证所有权
-    if translation.user_id != current_user.id:
-        return jsonify({'error': '无权删除此翻译'}), 403
-
-    try:
-        db.session.delete(translation)
-        db.session.commit()
-        return jsonify({'message': '删除成功'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
 
 @main.route('/api/translations/stats', methods=['GET'])
 @login_required

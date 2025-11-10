@@ -82,7 +82,7 @@ def page2():
 
 # 允许的文件扩展名和大小限制
 ALLOWED_EXTENSIONS = {'ppt', 'pptx'}
-MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 def allowed_file(filename):
@@ -492,6 +492,33 @@ def get_history():
             'status': 'error',
             'message': '获取历史记录失败'
         }), 500
+
+
+@main.route('/download/<int:record_id>')
+@login_required
+def download_file(record_id):
+    try:
+        # 获取上传记录
+        record = UploadRecord.query.get_or_404(record_id)
+
+        # 验证用户权限
+        if record.user_id != current_user.id:
+            return jsonify({'error': '无权访问此文件'}), 403
+
+        # 检查文件是否存在
+        file_path = os.path.join(record.file_path, record.stored_filename)
+        if not os.path.exists(file_path):
+            return jsonify({'error': '文件不存在'}), 404
+
+        # 添加调试信息
+        print(f"Downloading file: {file_path}")
+        print(f"Original filename: {record.filename}")
+        file_path = os.path.abspath(file_path)
+        return send_file(file_path, as_attachment=True, download_name=record.filename)
+    except Exception as e:
+        print(f"Download error: {str(e)}")
+        return jsonify({'error': f'下载失败: {str(e)}'}), 500
+
 
 @main.route('/delete/<int:record_id>', methods=['DELETE'])
 @login_required
@@ -985,21 +1012,20 @@ def update_translation(id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-        db.session.commit()
 
-        return jsonify({
-            'message': '更新成功',
-            'translation': {
-                'id': translation.id,
-                'english': translation.english,
-                'chinese': translation.chinese,
-                'dutch': translation.dutch,
-                'class1': translation.class1,
-                'class2': translation.class2,
-                'is_public': translation.is_public,
-                'created_at': datetime_to_isoformat(translation.created_at)
-            }
-        })
+@main.route('/api/translations/<int:id>', methods=['DELETE'])
+@login_required
+def delete_translation(id):
+    translation = Translation.query.get_or_404(id)
+
+    # 验证所有权
+    if translation.user_id != current_user.id:
+        return jsonify({'error': '无权删除此翻译'}), 403
+
+    try:
+        db.session.delete(translation)
+        db.session.commit()
+        return jsonify({'message': '删除成功'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

@@ -94,7 +94,7 @@ class MinerUAPI:
         
         logger.info("MinerU API客户端初始化完成")
     
-    def process_pdf(self, file_path):
+    def process_pdf(self, file_path, enable_ocr=True):
         """处理本地PDF文件"""
         # 1. 上传文件
         logger.info(f"开始上传PDF文件: {file_path}")
@@ -114,7 +114,7 @@ class MinerUAPI:
         }
         data = {
             'url': pdf_url,
-            'is_ocr': True,
+            'is_ocr': enable_ocr,
             'enable_formula': True,
             'enable_table': True,
             'language': 'auto'
@@ -124,6 +124,7 @@ class MinerUAPI:
             logger.info("发送创建任务请求...")
             logger.info(f"请求头信息: Authorization: Bearer {self.token[:10]}***")
             logger.info(f"请求数据: {data}")
+            logger.info(f"OCR功能状态: {'启用' if enable_ocr else '禁用'}")
             
             # 使用官方文档中的认证方式和请求格式
             headers = {
@@ -193,7 +194,7 @@ class MinerUAPI:
             logger.error(f"错误详情: {traceback.format_exc()}")
             return None
     
-    def process_pdf_with_url(self, pdf_url):
+    def process_pdf_with_url(self, pdf_url, enable_ocr=True):
         """通过URL处理PDF文件"""
         # 1. 验证URL
         if not pdf_url:
@@ -207,7 +208,7 @@ class MinerUAPI:
         task_url = 'https://mineru.net/api/v4/extract/task'
         data = {
             'url': pdf_url,
-            'is_ocr': True,
+            'is_ocr': enable_ocr,
             'enable_formula': True,
             'enable_table': True,
             'language': 'auto'
@@ -217,6 +218,7 @@ class MinerUAPI:
             logger.info("发送创建任务请求...")
             logger.info(f"请求头信息: Authorization: Bearer {self.token[:10]}***")
             logger.info(f"请求数据: {data}")
+            logger.info(f"OCR功能状态: {'启用' if enable_ocr else '禁用'}")
             
             # 使用官方文档中的认证方式和请求格式
             headers = {

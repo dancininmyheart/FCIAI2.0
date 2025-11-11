@@ -659,7 +659,8 @@ def translate_markdown_to_bilingual_doc(
     source_language: str = "en",
     target_language: str = "zh",
     image_base_dir: str | None = None,
-    custom_translations: Dict[str, str] = None
+    custom_translations: Dict[str, str] = None,
+    image_ocr_results: list[dict] | None = None
 ) -> bool:
     """
     将Markdown内容按"标题/段落 → 逐条翻译 → 立即写入Word(原文在前，译文在后)"的方式生成双语Word文档。
@@ -668,10 +669,48 @@ def translate_markdown_to_bilingual_doc(
     - 无序/有序列表项写入列表项，然后紧跟译文段落
     - 普通段落使用 add_bilingual_pair，原文后紧跟译文
     - 空行保持
+    
+    参数:
+        markdown_content: Markdown内容
+        output_path: 输出Word文档路径
+        source_language: 源语言
+        target_language: 目标语言
+        image_base_dir: 图片基础目录
+        custom_translations: 自定义翻译字典
+        image_ocr_results: 图片OCR识别结果列表，每个元素包含：
+            - success: bool - OCR是否成功
+            - image_path: str - 图片路径
+            - ocr_text_combined: str - OCR识别的文本
+            - translation_text_combined: str - 翻译后的文本
 
     若翻译不可用或失败，依然写入原文，译文留空。
     """
     try:
+        # 创建图片路径到OCR结果的映射
+        ocr_results_map = {}
+        if image_ocr_results:
+            import os as _os
+            for result in image_ocr_results:
+                if result.get('success'):
+                    img_path = result.get('image_path', '')
+                    if img_path:
+                        # 使用规范化路径作为key
+                        normalized_path = _os.path.normpath(img_path)
+                        ocr_results_map[normalized_path] = result
+            if ocr_results_map:
+                logger.info(f"📊 已加载 {len(ocr_results_map)} 个图片的OCR结果到映射字典")
+                logger.info("OCR结果映射中的路径:")
+                for idx, (path, result) in enumerate(list(ocr_results_map.items())[:3], 1):
+                    logger.info(f"  {idx}. {path}")
+                    logger.info(f"     OCR文本长度: {len(result.get('ocr_text_combined', ''))}")
+                    logger.info(f"     翻译文本长度: {len(result.get('translation_text_combined', ''))}")
+                if len(ocr_results_map) > 3:
+                    logger.info(f"  ... 还有 {len(ocr_results_map) - 3} 个图片")
+            else:
+                logger.warning("⚠️ OCR结果映射字典为空 - 未添加任何图片")
+        else:
+            logger.info("ℹ️ image_ocr_results参数为None或空列表，跳过OCR结果映射")
+        
         generator = BilingualDocumentGenerator()
         if not markdown_content:
             return generator.save(output_path)
@@ -787,11 +826,76 @@ def translate_markdown_to_bilingual_doc(
                                                path.startswith('/') or (len(path) > 1 and path[1] == ':')):
                         import os as _os
                         final_path = _os.path.join(image_base_dir, path)
+                    
+                    # 尝试插入图片
+                    image_inserted = False
                     try:
-                        generator.document.add_picture(final_path, width=Inches(6.0))
-                    except Exception:
-                        # 图片失败时忽略，不阻断
-                        pass
+                        logger.info(f"尝试插入图片: {final_path}")
+                        if _os.path.exists(final_path):
+                            generator.document.add_picture(final_path, width=Inches(6.0))
+                            image_inserted = True
+                            logger.info(f"✅ 成功插入图片: {final_path}")
+                        else:
+                            logger.warning(f"⚠️ 图片文件不存在: {final_path}")
+                    except Exception as img_error:
+                        logger.error(f"❌ 插入图片失败: {final_path}, 错误: {img_error}")
+                    
+                    # 检查是否有OCR结果并添加到文档
+                    if ocr_results_map and image_inserted:
+                        normalized_path = _os.path.normpath(final_path)
+                        logger.info(f"🔍 查找图片OCR结果...")
+                        logger.info(f"   原始路径: {final_path}")
+                        logger.info(f"   规范化路径: {normalized_path}")
+                        logger.info(f"   映射中有 {len(ocr_results_map)} 个图片")
+                        ocr_result = ocr_results_map.get(normalized_path)
+                        
+                        if ocr_result:
+                            logger.info(f"✅ 找到OCR结果！")
+                            ocr_text = ocr_result.get('ocr_text_combined', '').strip()
+                            translation_text = ocr_result.get('translation_text_combined', '').strip()
+                            logger.info(f"   OCR文本: {len(ocr_text)} 字符")
+                            logger.info(f"   翻译文本: {len(translation_text)} 字符")
+                            
+                            if ocr_text or translation_text:
+                                # 添加OCR结果的标题
+                                generator.document.add_paragraph(
+                                    f"【图片文字识别】",
+                                    style='Heading 3'
+                                )
+                                
+                                # 添加OCR原文
+                                if ocr_text:
+                                    ocr_para = generator.document.add_paragraph()
+                                    ocr_run = ocr_para.add_run(f"原文: {ocr_text}")
+                                    ocr_run.font.size = Pt(10)
+                                    ocr_run.font.color.rgb = RGBColor(70, 70, 70)
+                                    logger.info(f"  ✅ 已添加OCR原文到Word ({len(ocr_text)} 字符)")
+                                
+                                # 添加翻译文本
+                                if translation_text:
+                                    trans_para = generator.document.add_paragraph()
+                                    trans_run = trans_para.add_run(f"译文: {translation_text}")
+                                    trans_run.font.size = Pt(10)
+                                    trans_run.font.color.rgb = RGBColor(0, 102, 204)
+                                    logger.info(f"  ✅ 已添加OCR译文到Word ({len(translation_text)} 字符)")
+                                
+                                # 添加分隔线
+                                generator.document.add_paragraph("─" * 50)
+                                logger.info(f"  ✅ OCR结果已完整添加到Word文档")
+                            else:
+                                logger.warning(f"  ⚠️ OCR文本和翻译都为空")
+                        else:
+                            logger.warning(f"❌ 未找到匹配的OCR结果")
+                            logger.warning(f"   图片文件名: {_os.path.basename(final_path)}")
+                            logger.warning(f"   规范化路径: {normalized_path}")
+                            if ocr_results_map:
+                                logger.warning(f"   映射中的路径示例（前3个）:")
+                                for idx, map_path in enumerate(list(ocr_results_map.keys())[:3], 1):
+                                    logger.warning(f"     {idx}. {map_path}")
+                    elif not image_inserted:
+                        logger.warning(f"⚠️ 图片未成功插入，跳过OCR结果处理")
+                    elif not ocr_results_map:
+                        logger.info(f"ℹ️ 没有OCR结果映射，跳过OCR文本添加")
                 continue
 
             text = blk.get('text', '').strip()

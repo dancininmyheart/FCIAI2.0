@@ -297,6 +297,8 @@ def process_markdown_images_ocr_and_translate(
             
             # 复制图片到临时目录
             temp_image_paths = []
+            # 创建临时路径到原始路径的映射
+            temp_to_original_path = {}
             for i, image_path in enumerate(image_paths):
                 if os.path.exists(image_path):
                     # 生成新的文件名
@@ -307,7 +309,10 @@ def process_markdown_images_ocr_and_translate(
                     # 复制文件
                     shutil.copy2(image_path, temp_image_path)
                     temp_image_paths.append(temp_image_path)
+                    # 保存临时路径到原始路径的映射
+                    temp_to_original_path[temp_image_path] = image_path
                     logger.info(f"[Markdown OCR] 已复制图片: {os.path.basename(image_path)} -> {new_filename}")
+                    logger.info(f"[Markdown OCR] 路径映射: {temp_image_path} -> {image_path}")
                 else:
                     logger.warning(f"[Markdown OCR] 图片文件不存在: {image_path}")
             
@@ -350,25 +355,33 @@ def process_markdown_images_ocr_and_translate(
                         continue
                     
                     for image_info in slide_data['images']:
+                        # 获取临时路径
+                        temp_path = image_info.get("filepath", "")
+                        # 转换为原始路径
+                        original_path = temp_to_original_path.get(temp_path, temp_path)
+                        
                         result = {
-                            "image_path": image_info.get("filepath", ""),
+                            "image_path": original_path,  # 使用原始路径
+                            "temp_path": temp_path,  # 保留临时路径用于调试
                             "success": False,
                             "ocr_text_combined": "",
                             "translation_text_combined": ""
                         }
                         
+                        logger.info(f"[Markdown OCR] 处理图片: 临时路径={os.path.basename(temp_path)}, 原始路径={os.path.basename(original_path)}")
+                        
                         # 获取OCR文本
                         all_text = image_info.get('all_text', {})
-                        logger.info(f"[Markdown OCR] 图片 {os.path.basename(result['image_path'])} 的OCR文本: {all_text}")
+                        logger.info(f"[Markdown OCR] 图片 {os.path.basename(original_path)} 的OCR文本: {all_text}")
                         
                         if all_text:
                             # 合并所有OCR文本
                             ocr_texts = [text.strip() for text in all_text.values() if text.strip()]
                             result["ocr_text_combined"] = '\n'.join(ocr_texts)
                             result["success"] = True
-                            logger.info(f"[Markdown OCR] 图片OCR识别成功: {os.path.basename(result['image_path'])}, 文本长度: {len(result['ocr_text_combined'])}")
+                            logger.info(f"[Markdown OCR] 图片OCR识别成功: {os.path.basename(original_path)}, 文本长度: {len(result['ocr_text_combined'])}")
                         else:
-                            logger.info(f"[Markdown OCR] 图片未识别到文本: {os.path.basename(result['image_path'])}")
+                            logger.info(f"[Markdown OCR] 图片未识别到文本: {os.path.basename(original_path)}")
                         
                         # 翻译OCR文本
                         if all_text:
@@ -397,7 +410,7 @@ def process_markdown_images_ocr_and_translate(
                                 
                                 if translation_texts:
                                     result["translation_text_combined"] = '\n'.join(translation_texts)
-                                    logger.info(f"[Markdown OCR] 图片翻译成功: {os.path.basename(result['image_path'])}, 翻译文本长度: {len(result['translation_text_combined'])}")
+                                    logger.info(f"[Markdown OCR] 图片翻译成功: {os.path.basename(original_path)}, 翻译文本长度: {len(result['translation_text_combined'])}")
                                 
                             except Exception as e:
                                 logger.error(f"[Markdown OCR] 翻译图片文本时出错: {e}")
@@ -409,6 +422,7 @@ def process_markdown_images_ocr_and_translate(
                 for i, result in enumerate(results):
                     logger.info(f"[Markdown OCR] 结果 {i+1}: 成功={result['success']}, "
                               f"图片={os.path.basename(result['image_path'])}, "
+                              f"原始路径={result['image_path']}, "
                               f"OCR文本长度={len(result['ocr_text_combined'])}, "
                               f"翻译文本长度={len(result['translation_text_combined'])}")
             else:

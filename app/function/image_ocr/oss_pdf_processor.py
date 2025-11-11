@@ -128,7 +128,7 @@ class OSSPDFProcessor:
             logger.error(f"上传过程中出现错误: {e}")
             raise
     
-    def process_pdf_with_mineru(self, file_path, mineru_api, bucket=None, region=None, object_key=None, expires_in=3600):
+    def process_pdf_with_mineru(self, file_path, mineru_api, bucket=None, region=None, object_key=None, expires_in=3600, enable_ocr=True):
         """
         使用OSS直链处理PDF文件
         
@@ -139,6 +139,7 @@ class OSSPDFProcessor:
             region (str): OSS区域
             object_key (str): OSS对象键名，如果未提供则使用文件名
             expires_in (int): 预签名URL过期时间（秒），默认1小时
+            enable_ocr (bool): 是否启用OCR功能，默认True
             
         Returns:
             dict: MinerU处理结果
@@ -161,8 +162,8 @@ class OSSPDFProcessor:
             self.region = original_region
             
             # 使用MinerU处理PDF
-            logger.info(f"使用MinerU处理PDF，URL: {pdf_url}")
-            result = mineru_api.process_pdf_with_url(pdf_url)
+            logger.info(f"使用MinerU处理PDF，URL: {pdf_url}, OCR: {enable_ocr}")
+            result = mineru_api.process_pdf_with_url(pdf_url, enable_ocr=enable_ocr)
             
             return result
             

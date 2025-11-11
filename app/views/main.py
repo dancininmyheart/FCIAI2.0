@@ -95,12 +95,19 @@ def process_pdf_translation_async(pdf_path, original_filename, unique_filename,
                 from app.function.image_ocr.ocr_api import MinerUAPI
 
                 logger.info("初始化OSS PDF处理器")
+                logger.info(f"OCR功能状态: {'启用' if enable_image_ocr else '禁用'}")
                 oss_processor = OSSPDFProcessor()
                 mineru_api = MinerUAPI()
 
                 # 使用OSS直链处理PDF
                 logger.info(f"开始使用OSS直链处理PDF: {pdf_path}")
-                result = oss_processor.process_pdf_with_mineru(pdf_path, mineru_api, bucket="fciai", region="cn-beijing")
+                result = oss_processor.process_pdf_with_mineru(
+                    pdf_path, 
+                    mineru_api, 
+                    bucket="fciai", 
+                    region="cn-beijing",
+                    enable_ocr=enable_image_ocr
+                )
 
                 if result and isinstance(result, dict) and result.get('code') == 0:
                     logger.info("OSS直链方案处理成功")
@@ -230,13 +237,52 @@ def process_pdf_translation_async(pdf_path, original_filename, unique_filename,
 
                     logger.info(f"开始翻译，源语言={source_language}, 目标语言={target_language}")
                     
+                    # === PDF图片OCR识别和翻译 ===
+                    ocr_results = []
+                    if enable_image_ocr:
+                        logger.info("=" * 60)
+                        logger.info("开始PDF图片OCR识别和翻译")
+                        logger.info("=" * 60)
+                        try:
+                            from app.function.image_ocr.ocr_controller import process_markdown_images_ocr_and_translate
+                            
+                            markdown_dir = os.path.dirname(md_file)
+                            logger.info(f"Markdown文件目录: {markdown_dir}")
+                            logger.info(f"源语言: {source_language}, 目标语言: {target_language}")
+                            
+                            # 调用OCR处理函数
+                            ocr_results = process_markdown_images_ocr_and_translate(
+                                markdown_content=content,
+                                markdown_dir=markdown_dir,
+                                target_language=target_language,
+                                source_language=source_language
+                            )
+                            
+                            if ocr_results:
+                                logger.info(f"✅ OCR处理完成，共处理 {len(ocr_results)} 个图片")
+                                for i, result in enumerate(ocr_results):
+                                    if result.get('success'):
+                                        logger.info(f"  图片 {i+1}: {os.path.basename(result['image_path'])}")
+                                        logger.info(f"    OCR文本长度: {len(result.get('ocr_text_combined', ''))}")
+                                        logger.info(f"    翻译文本长度: {len(result.get('translation_text_combined', ''))}")
+                            else:
+                                logger.info("未找到需要OCR处理的图片")
+                                
+                        except Exception as ocr_error:
+                            logger.error(f"PDF图片OCR处理失败: {ocr_error}")
+                            logger.exception("OCR错误详情")
+                            # OCR失败不影响正常翻译流程
+                    else:
+                        logger.info("未启用图片OCR功能")
+                    
                     ok = translate_markdown_to_bilingual_doc(
                         content,
                         docx_path,
                         source_language=source_language,
                         target_language=target_language,
                         image_base_dir=os.path.dirname(md_file),
-                        custom_translations=custom_translations
+                        custom_translations=custom_translations,
+                        image_ocr_results=ocr_results  # 传递OCR结果
                     )
                     
                     if ok:

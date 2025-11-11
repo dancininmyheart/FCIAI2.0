@@ -183,20 +183,26 @@
         transform: translateY(-1px);
     }
 
-    /* 进度条样式 */
-    .progress-bar {
-        width: 100%;
-        height: 8px;
-        background: #f1f3f4;
-        border-radius: 4px;
-        overflow: hidden;
+    /* 队列状态提示 */
+    .queue-status {
+        background: #cce5ff;
+        color: #004085;
+        padding: 15px 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        display: none;
+        align-items: center;
+        gap: 12px;
     }
 
-    .progress-fill {
-        height: 100%;
-        background: rgb(0,148,217);
-        border-radius: 4px;
-        transition: width 0.3s ease;
+    .queue-status.alert-info {
+        background: #cce5ff;
+        color: #004085;
+    }
+
+    .queue-status.alert-danger {
+        background: #f8d7da;
+        color: #721c24;
     }
 
     /* 加载动画样式 */
@@ -245,42 +251,106 @@
     }
 
     .modal-content {
-        background-color: white;
-        border-radius: 8px;
-        width: 400px;
-        max-width: 90%;
+        background: white;
+        border-radius: 12px;
         padding: 30px;
+        max-width: 500px;
+        width: 90%;
         text-align: center;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
     }
 
     .modal-icon {
-        width: 60px;
-        height: 60px;
-        background-color: rgba(40,167,69,0.1);
-        border-radius: 50%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 0 auto 20px;
-    }
-
-    .modal-icon i {
-        font-size: 30px;
+        font-size: 48px;
         color: #28a745;
+        margin-bottom: 20px;
     }
 
     .modal-title {
-        font-size: 20px;
+        font-size: 24px;
         font-weight: 600;
-        margin-bottom: 15px;
         color: #333;
+        margin-bottom: 15px;
     }
 
     .modal-message {
         font-size: 16px;
-        margin-bottom: 25px;
         color: #666;
+        line-height: 1.5;
+        margin-bottom: 25px;
+    }
+
+    /* 开始翻译确认弹窗样式 */
+    /* 翻译启动选择器 - 参考PPT翻译的页面选择器样式 */
+    .translation-selector {
+        position: fixed;
+        right: 30px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        width: 280px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        display: none;
+        z-index: 1000;
+    }
+
+    .selector-header {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #f1f3f4;
+    }
+
+    .selector-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: rgb(0,148,217);
+    }
+
+    .file-info {
+        font-size: 14px;
+        color: #666;
+        word-break: break-all;
+    }
+
+    .selector-message {
+        background: #f8f9fa;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 20px;
+        line-height: 1.5;
+    }
+
+    .start-translate-btn {
+        width: 100%;
+        background: #28a745;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .start-translate-btn:hover {
+        background: #218838;
+    }
+
+    .start-translate-btn:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
     }
 
     .modal-buttons {
@@ -324,6 +394,7 @@
         border-radius: 0.8vw;
         padding: 2.1vw;
         box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        margin-top: 1.5vw;
     }
 
     .history-card h3 {
@@ -615,6 +686,11 @@
     <h1 class="header-title">{% if session.get('language') == 'en' %}PDF Translation{% else %}PDF翻译{% endif %}</h1>
 </div>
 
+<!-- 队列状态提示 -->
+<div id="queue-status" class="queue-status">
+    <span id="queue-message"></span>
+</div>
+
 <!-- 主内容区域 -->
 <div class="main-content">
     <!-- 左侧配置面板 -->
@@ -708,7 +784,7 @@
             <div class="processing-container" id="processingContainer">
                 <div class="spinner"></div>
                 <div class="processing-text">
-                    {% if session.get('language') == 'en' %}Processing, please wait...{% else %}正在处理中，请稍后...{% endif %}
+                    {% if session.get('language') == 'en' %}Translating, please wait...{% else %}正在翻译中，请稍候...{% endif %}
                 </div>
             </div>
 
@@ -741,6 +817,27 @@
                         </button>
                     </div>
                 </div>
+            </div>
+
+            <!-- PDF翻译选择器 - 参考PPT翻译的页面选择器 -->
+            <div id="translationSelector" class="translation-selector">
+                <div class="selector-header">
+                    <div class="selector-title">
+                        {% if session.get('language') == 'en' %}Ready to Translate{% else %}准备翻译{% endif %}
+                    </div>
+                    <div class="file-info" id="selectorFileName"></div>
+                </div>
+                <div class="selector-message">
+                    {% if session.get('language') == 'en' %}
+                    Please review and adjust the translation settings on the left (source language, target language, translation model, vocabulary), then click "Start Translation" below.
+                    {% else %}
+                    请在左侧查看并调整翻译设置（源语言、目标语言、翻译模型、词汇表），然后点击下方"开始翻译"按钮。
+                    {% endif %}
+                </div>
+                <button id="startTranslateBtn" class="start-translate-btn">
+                    <i class="bi bi-translate"></i>
+                    {% if session.get('language') == 'en' %}Start Translation{% else %}开始翻译{% endif %}
+                </button>
             </div>
         </div>
 
@@ -778,11 +875,24 @@
 <script>
     // 全局变量
     let currentLanguage = '{{ session.get("language", "zh") }}';
+    let pendingFile = null; // 存储待翻译的文件
     
     // 页面加载完成后初始化
+    // PDF任务状态检查定时器
+    let pdfTaskStatusTimer = null;
+    let isTranslationActive = false;  // 标记是否有活动的翻译任务
+    let waitingCount = 0;  // 等待计数器
+    
     document.addEventListener('DOMContentLoaded', function() {
         initializePDFTranslation();
         loadHistory();
+        
+        // 页面加载时检查是否有正在进行的翻译任务
+        checkPDFTaskStatus();
+        
+        // 定时检查任务状态（每3秒）
+        if (pdfTaskStatusTimer) clearInterval(pdfTaskStatusTimer);
+        pdfTaskStatusTimer = setInterval(checkPDFTaskStatus, 3000);
     });
         function toDateFromInput(input) {
   if (input == null) return null;
@@ -869,13 +979,103 @@ function formatShanghaiTime(input) {
             return;
         }
         
-        // 开始上传和处理
-        translatePDF(file);
+        // 先上传文件到服务器
+        uploadPDFFile(file);
     }
     
-    // 翻译PDF文件
-    function translatePDF(file) {
+    // 上传PDF文件到服务器（不开始翻译）
+    function uploadPDFFile(file) {
+        // 显示上传中提示
+        const uploadZone = document.getElementById('pdfUploadZone');
+        const originalContent = uploadZone.innerHTML;
+        uploadZone.innerHTML = `
+            <div class="upload-zone-content">
+                <div class="spinner" style="width: 40px; height: 40px;"></div>
+                <div class="upload-text">${currentLanguage === 'en' ? 'Uploading file...' : '正在上传文件...'}</div>
+            </div>
+        `;
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        // 只上传文件，不开始翻译
+        fetch('/api/upload_pdf', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 保存文件信息
+                pendingFile = {
+                    name: file.name,
+                    path: data.file_path,
+                    unique_filename: data.unique_filename
+                };
+                
+                // 恢复上传区域
+                uploadZone.innerHTML = originalContent;
+                
+                // 显示翻译选择器
+                showTranslationSelector(file.name);
+            } else {
+                uploadZone.innerHTML = originalContent;
+                alert(currentLanguage === 'en' ? 'Upload failed: ' + data.error : '上传失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            uploadZone.innerHTML = originalContent;
+            alert(currentLanguage === 'en' ? 'Upload failed' : '上传失败');
+        });
+    }
+    
+    // 显示翻译选择器
+    function showTranslationSelector(filename) {
+        const selector = document.getElementById('translationSelector');
+        const fileNameElement = document.getElementById('selectorFileName');
+        
+        fileNameElement.textContent = filename;
+        selector.style.display = 'block';
+        
+        // 为开始翻译按钮绑定事件
+        const startBtn = document.getElementById('startTranslateBtn');
+        startBtn.onclick = function() {
+            hideTranslationSelector();
+            if (pendingFile) {
+                translatePDF(pendingFile);
+            }
+        };
+    }
+    
+    // 隐藏翻译选择器
+    function hideTranslationSelector() {
+        const selector = document.getElementById('translationSelector');
+        selector.style.display = 'none';
+    }
+    
+    // 翻译PDF文件（异步模式）
+    function translatePDF(fileInfo) {
+        // 设置翻译活动标志
+        isTranslationActive = true;
+        waitingCount = 0;
+        
+        // 启动轮询（如果尚未启动）
+        if (!pdfTaskStatusTimer) {
+            pdfTaskStatusTimer = setInterval(checkPDFTaskStatus, 3000);
+        }
+        
         // 显示处理中提示
+        const queueStatus = document.getElementById('queue-status');
+        const queueMessage = document.getElementById('queue-message');
+        if (queueStatus) {
+            queueStatus.style.display = 'flex';
+            queueStatus.className = 'queue-status alert-info';
+        }
+        if (queueMessage) {
+            queueMessage.textContent = currentLanguage === 'en' ? 'Preparing translation...' : '正在准备翻译...';
+        }
+        
         document.getElementById('processingContainer').style.display = 'flex';
         document.getElementById('pdfResultContainer').style.display = 'none';
         
@@ -885,9 +1085,11 @@ function formatShanghaiTime(input) {
         const model = document.getElementById('modelSelect').value;
         const enableImageOcr = document.getElementById('enableImageOcr').checked;
         
-        // 创建FormData对象
+        // 创建FormData对象，使用已上传的文件信息
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file_path', fileInfo.path);
+        formData.append('unique_filename', fileInfo.unique_filename);
+        formData.append('original_filename', fileInfo.name);
         formData.append('source_lang', sourceLanguage);
         formData.append('target_lang', targetLanguage);
         formData.append('model', model);
@@ -899,82 +1101,202 @@ function formatShanghaiTime(input) {
         }
         
         // 发送请求到后端
-        fetch('/translate_pdf', {
+        fetch('/api/start_pdf_translation', {
             method: 'POST',
             body: formData
         })
         .then(response => response.json())
         .then(data => {
-            // 清除进度动画
-            if (window.progressInterval) {
-                clearInterval(window.progressInterval);
-            }
-            
             if (data.success) {
-                // 处理成功
-                document.getElementById('processingContainer').style.display = 'none';
-                
-                // 更新弹窗消息
-                const modalMessage = document.getElementById('modalMessage');
-                if (modalMessage) {
-                    if (currentLanguage === 'en') {
-                        const name = data.filename ? ` "${data.filename}"` : '';
-                        modalMessage.textContent = `Your PDF${name} has been translated successfully. You can download it from the history list below.`;
-                    } else {
-                        const name = data.filename ? ` (${data.filename})` : '';
-                        modalMessage.textContent = `您的PDF${name}已成功翻译完成，您可以在下方历史记录中下载。`;
-                    }
+                // 任务已创建，开始轮询状态
+                if (queueMessage) {
+                    queueMessage.textContent = currentLanguage === 'en' ? 'Translation task started...' : '翻译任务已启动...';
                 }
                 
-                // 设置下载链接
-                const downloadBtn = document.getElementById('modalDownloadBtn');
-                if (downloadBtn) {
-                    if (data.stored_filename) {
-                        const href = `/download_translated_pdf/${encodeURIComponent(data.stored_filename)}`;
-                        downloadBtn.href = href;
-                        downloadBtn.setAttribute('download', data.filename || 'translated.pdf');
-                        downloadBtn.style.display = 'inline-block';
-                        downloadBtn.setAttribute('rel', 'noopener');
-                        console.log('[PDF] set modalDownloadBtn href:', href);
-                    } else {
-                        // 未返回下载地址则隐藏下载按钮
-                        downloadBtn.removeAttribute('href');
-                        downloadBtn.removeAttribute('download');
-                        downloadBtn.style.display = 'none';
-                        console.warn('[PDF] no stored_filename in response, hide download button');
-                    }
-                }
-                
-                // 显示完成弹窗
-                document.getElementById('completionModal').style.display = 'flex';
-                
-                // 翻译完成后刷新历史记录
-                loadHistory();
+                // 立即检查一次状态
+                setTimeout(() => {
+                    checkPDFTaskStatus();
+                }, 1000);
             } else {
-                // 处理失败
+                // 处理失败 - 重置状态
+                isTranslationActive = false;
+                waitingCount = 0;
                 document.getElementById('processingContainer').style.display = 'none';
+                if (queueStatus) queueStatus.style.display = 'none';
                 alert(currentLanguage === 'en' ? 'Processing failed: ' + data.error : '处理失败: ' + data.error);
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            // 清除进度动画
-            if (window.progressInterval) {
-                clearInterval(window.progressInterval);
-            }
+            // 捕获错误 - 重置状态
+            isTranslationActive = false;
+            waitingCount = 0;
             document.getElementById('processingContainer').style.display = 'none';
+            if (queueStatus) queueStatus.style.display = 'none';
             alert(currentLanguage === 'en' ? 'Processing failed' : '处理失败');
-        })
-        .finally(() => {
-            // 重置文件输入，允许用户选择同一个文件再次上传
-            document.getElementById('pdfFileInput').value = '';
         });
     }
     
-    // 更新进度条
-    function updateProgress(percent, text) {
-        document.getElementById('pdfProgressFill').style.width = percent + '%';
-        document.getElementById('pdfProgressText').textContent = text || percent + '%';
+    // 检查PDF翻译任务状态
+    function checkPDFTaskStatus() {
+        fetch('/api/pdf_task_status')
+            .then(response => response.json())
+            .then(data => {
+                const statusDiv = document.getElementById('queue-status');
+                const messageSpan = document.getElementById('queue-message');
+                const processingContainer = document.getElementById('processingContainer');
+
+                if (data.status === 'no_task') {
+                    // 如果正在等待任务启动
+                    if (isTranslationActive) {
+                        if (statusDiv) statusDiv.style.display = 'flex';
+                        if (processingContainer) processingContainer.style.display = 'flex';
+                        if (messageSpan) {
+                            messageSpan.textContent = currentLanguage === 'en' 
+                                ? 'Preparing translation task...' 
+                                : '正在准备翻译任务...';
+                        }
+                        
+                        waitingCount++;
+                        
+                        // 超时处理（15次检查 = 45秒）
+                        if (waitingCount > 15) {
+                            isTranslationActive = false;
+                            waitingCount = 0;
+                            if (statusDiv) statusDiv.style.display = 'none';
+                            if (processingContainer) processingContainer.style.display = 'none';
+                            alert(currentLanguage === 'en' 
+                                ? 'Translation task startup timeout, please retry' 
+                                : '翻译任务启动超时，请重试');
+                            
+                            // 停止轮询
+                            if (pdfTaskStatusTimer) {
+                                clearInterval(pdfTaskStatusTimer);
+                                pdfTaskStatusTimer = null;
+                            }
+                        }
+                        return;
+                    } else {
+                        // 没有任务且未在等待启动 - 隐藏所有提示并停止轮询
+                        if (statusDiv) statusDiv.style.display = 'none';
+                        if (processingContainer) processingContainer.style.display = 'none';
+                        
+                        if (pdfTaskStatusTimer) {
+                            clearInterval(pdfTaskStatusTimer);
+                            pdfTaskStatusTimer = null;
+                        }
+                        return;
+                    }
+                }
+                
+                // 有任务时重置等待计数
+                waitingCount = 0;
+
+                if (statusDiv) statusDiv.style.display = 'flex';
+
+                const backendMessage = typeof data.message === 'string' ? data.message.trim() : '';
+                const queuePositionValue = Number(data.position);
+                const hasQueuePosition = Number.isFinite(queuePositionValue);
+
+                if (data.status === 'waiting') {
+                    statusDiv.className = 'queue-status alert-info';
+                    if (messageSpan) {
+                        let message = backendMessage;
+                        if (currentLanguage === 'en') {
+                            message = `Your file is queued${hasQueuePosition ? ` (position ${queuePositionValue})` : ''}, please wait...`;
+                        } else if (!message) {
+                            message = `您的文件正在排队中${hasQueuePosition ? `，位置：第 ${queuePositionValue} 位` : ''}，请稍候...`;
+                        }
+                        messageSpan.textContent = message || (currentLanguage === 'en' ? 'Your file is queued, please wait...' : '您的文件正在排队，请稍候...');
+                    }
+                    if (processingContainer) processingContainer.style.display = 'flex';
+                }
+                else if (data.status === 'processing') {
+                    statusDiv.className = 'queue-status alert-info';
+                    if (messageSpan) {
+                        let message = backendMessage;
+                        if (currentLanguage === 'en') {
+                            message = 'Your PDF is being translated, please wait...';
+                        } else if (!message) {
+                            message = '正在翻译您的PDF，请稍候...';
+                        }
+                        messageSpan.textContent = message || (currentLanguage === 'en' ? 'Your PDF is being translated, please wait...' : '正在翻译您的PDF，请稍候...');
+                    }
+                    if (processingContainer) processingContainer.style.display = 'flex';
+                }
+                else if (data.status === 'completed') {
+                    // 翻译完成 - 重置状态并停止轮询
+                    isTranslationActive = false;
+                    waitingCount = 0;
+                    
+                    if (pdfTaskStatusTimer) {
+                        clearInterval(pdfTaskStatusTimer);
+                        pdfTaskStatusTimer = null;
+                    }
+                    
+                    if (statusDiv) statusDiv.style.display = 'none';
+                    if (processingContainer) processingContainer.style.display = 'none';
+                    
+                    // 更新弹窗消息
+                    const modalMessage = document.getElementById('modalMessage');
+                    if (modalMessage) {
+                        const originalName = data.original_filename || data.filename;
+                        if (currentLanguage === 'en') {
+                            const name = originalName ? ` "${originalName}"` : '';
+                            modalMessage.textContent = `Your PDF${name} has been translated successfully. You can download it from the history list below.`;
+                        } else {
+                            const name = originalName ? ` (${originalName})` : '';
+                            modalMessage.textContent = `您的PDF${name}已成功翻译完成，您可以在下方历史记录中下载。`;
+                        }
+                    }
+                    
+                    // 设置下载链接
+                    const downloadBtn = document.getElementById('modalDownloadBtn');
+                    if (downloadBtn && data.stored_filename) {
+                        const href = `/download_translated_pdf/${encodeURIComponent(data.stored_filename)}`;
+                        downloadBtn.href = href;
+                        const downloadName = data.download_name || data.stored_filename || 'translated.docx';
+                        downloadBtn.setAttribute('download', downloadName);
+                        downloadBtn.style.display = 'inline-block';
+                        downloadBtn.setAttribute('rel', 'noopener');
+                        console.log('[PDF] set modalDownloadBtn href:', href);
+                    }
+                    
+                    // 显示完成弹窗
+                    document.getElementById('completionModal').style.display = 'flex';
+                    
+                    // 刷新历史记录
+                    loadHistory();
+                }
+                else if (data.status === 'failed') {
+                    // 翻译失败 - 重置状态、停止轮询并显示错误
+                    isTranslationActive = false;
+                    waitingCount = 0;
+                    
+                    if (pdfTaskStatusTimer) {
+                        clearInterval(pdfTaskStatusTimer);
+                        pdfTaskStatusTimer = null;
+                    }
+                    
+                    if (messageSpan) {
+                        const errorText = data.error || (currentLanguage === 'en' ? 'Translation failed' : '翻译失败');
+                        messageSpan.textContent = currentLanguage === 'en' 
+                            ? `Translation failed: ${errorText}` 
+                            : `翻译失败: ${errorText}`;
+                    }
+                    statusDiv.className = 'queue-status alert-danger';
+                    if (processingContainer) processingContainer.style.display = 'flex';
+
+                    // 5秒后隐藏错误信息
+                    setTimeout(() => {
+                        if (statusDiv) statusDiv.style.display = 'none';
+                        if (processingContainer) processingContainer.style.display = 'none';
+                    }, 5000);
+                }
+            })
+            .catch(error => {
+                console.error('Error checking PDF task status:', error);
+            });
     }
     
     // 加载历史记录
@@ -1419,21 +1741,9 @@ function formatShanghaiTime(input) {
         closeVocabularyConfig();
     }
 
-    // 模拟进度动画
-    function simulateProgress() {
-        let progress = 0;
-        const interval = setInterval(() => {
-            progress += Math.random() * 10;
-            if (progress > 90) progress = 90; // 最多到90%，等待真实完成
-        }, 500);
-        
-        // 存储interval ID以便在需要时清除
-        window.progressInterval = interval;
-    }
-    
     // 初始化弹窗事件
     document.addEventListener('DOMContentLoaded', function() {
-        // 确定按钮点击事件
+        // 完成弹窗 - 确定按钮点击事件
         const confirmBtn = document.getElementById('modalConfirmBtn');
         if (confirmBtn) {
             confirmBtn.addEventListener('click', function() {
@@ -1441,7 +1751,7 @@ function formatShanghaiTime(input) {
             });
         }
         
-        // 下载按钮点击事件
+        // 完成弹窗 - 下载按钮点击事件
         const downloadBtn = document.getElementById('modalDownloadBtn');
         if (downloadBtn) {
             downloadBtn.addEventListener('click', function(e) {
@@ -1476,7 +1786,7 @@ function formatShanghaiTime(input) {
             });
         }
         
-        // 点击模态框外部关闭
+        // 完成弹窗 - 点击模态框外部关闭
         const modal = document.getElementById('completionModal');
         if (modal) {
             modal.addEventListener('click', function(e) {

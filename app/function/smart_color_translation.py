@@ -27,7 +27,7 @@ class SmartColorTranslator:
             processor = LibreOfficeExternalProcessor()
             if processor.find_libreoffice_executable():
                 methods.append(('uno_external', 'LibreOffice外部处理器', 95))
-                logger.info("✅ LibreOffice外部处理器可用（推荐）")
+                logger.info("  LibreOffice外部处理器可用（推荐）")
         except ImportError:
             logger.debug("LibreOffice外部处理器不可用")
         
@@ -37,7 +37,7 @@ class SmartColorTranslator:
             processor = LibreOfficeExternalProcessor()
             if processor.find_libreoffice_executable():
                 methods.append(('uno_external', 'UNO外部处理器', 90))
-                logger.info("✅ UNO外部处理器可用")
+                logger.info("  UNO外部处理器可用")
         except ImportError:
             logger.debug("UNO外部处理器不可用")
         
@@ -45,7 +45,7 @@ class SmartColorTranslator:
         try:
             from .color_protection import ColorProtector
             methods.append(('enhanced_pptx', '增强python-pptx', 80))
-            logger.info("✅ 增强python-pptx颜色保护可用")
+            logger.info("  增强python-pptx颜色保护可用")
         except ImportError:
             logger.debug("增强颜色保护不可用")
         
@@ -53,7 +53,7 @@ class SmartColorTranslator:
         try:
             from .page_based_translation import translate_slide_by_page
             methods.append(('page_based', '页面翻译', 70))
-            logger.info("✅ 页面翻译可用")
+            logger.info("  页面翻译可用")
         except ImportError:
             logger.debug("页面翻译不可用")
         
@@ -61,7 +61,7 @@ class SmartColorTranslator:
         try:
             from pptx import Presentation
             methods.append(('basic_pptx', '基础python-pptx', 60))
-            logger.info("✅ 基础python-pptx可用")
+            logger.info("  基础python-pptx可用")
         except ImportError:
             logger.debug("python-pptx不可用")
         
@@ -132,7 +132,7 @@ class SmartColorTranslator:
                 )
                 
                 if success:
-                    logger.info(f"✅ 翻译成功，使用方法: {method_name}")
+                    logger.info(f"  翻译成功，使用方法: {method_name}")
                     return True, method_id
                 else:
                     logger.warning(f"⚠️ 方法失败: {method_name}")
@@ -344,6 +344,6 @@ if __name__ == "__main__":
         print(f"  • {method['name']} (优先级: {method['priority']})")
     
     if capabilities['best_available']:
-        print(f"\n✅ 推荐使用: {capabilities['best_available'][1]}")
+        print(f"\n  推荐使用: {capabilities['best_available'][1]}")
     else:
         print("\n❌ 没有可用的翻译方法")

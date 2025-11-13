@@ -24,10 +24,10 @@ def search_products_by_ingredient(json_path, keyword):
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        print(f"✅ 已加载JSON文件: {os.path.basename(json_path)}")
-        print(f"📊 文件包含 {len(data)} 个产品")
+        print(f"  已加载JSON文件: {os.path.basename(json_path)}")
+        print(f" 文件包含 {len(data)} 个产品")
     except Exception as e:
-        print(f"❌ 加载JSON文件失败: {str(e)}")
+        print(f" 加载JSON文件失败: {str(e)}")
         return []
 
     matched_products = []
@@ -59,10 +59,10 @@ def search_products_by_ingredient(json_path, keyword):
 def display_search_results(results, keyword):
     """显示搜索结果"""
     if not results:
-        print(f"\n🔍 没有找到包含'{keyword}'的产品")
+        print(f"\n 没有找到包含'{keyword}'的产品")
         return
 
-    print(f"\n✅ 找到 {len(results)} 个包含'{keyword}'的产品：")
+    print(f"\n  找到 {len(results)} 个包含'{keyword}'的产品：")
     print("=" * 80)
     for i, product in enumerate(results, 1):
         print(f"{i}. 【{product['产品名称']}】")
@@ -76,7 +76,7 @@ def display_search_results(results, keyword):
 def display_image(image_path):
     """展示图片"""
     if not image_path or image_path == '无截图路径':
-        print("⚠️ 无截图路径，无法展示")
+        print(" 无截图路径，无法展示")
         return False
 
     # 如果是本地文件路径
@@ -91,7 +91,7 @@ def display_image(image_path):
                 subprocess.call(('xdg-open', image_path))
             return True
         except Exception as e:
-            print(f"❌ 打开图片失败: {str(e)}")
+            print(f" 打开图片失败: {str(e)}")
             return False
 
     # 如果是URL
@@ -102,10 +102,10 @@ def display_image(image_path):
             webbrowser.open(image_path)
             return True
         else:
-            print(f"❌ 无效的图片路径: {image_path}")
+            print(f" 无效的图片路径: {image_path}")
             return False
     except Exception as e:
-        print(f"❌ 打开图片失败: {str(e)}")
+        print(f" 打开图片失败: {str(e)}")
         return False
 
 
@@ -115,7 +115,7 @@ def download_image(product, download_dir):
     product_name = product.get('产品名称', '未知产品')
 
     if not img_path or img_path == '无截图路径':
-        print(f"⏭️ 跳过产品 '{product_name}' (无截图路径)")
+        print(f" 跳过产品 '{product_name}' (无截图路径)")
         return False
 
     # 清理文件名
@@ -129,10 +129,10 @@ def download_image(product, download_dir):
         try:
             # 复制本地文件
             shutil.copy2(img_path, dest_path)
-            print(f"✅ 已下载图片: {os.path.basename(dest_path)}")
+            print(f"  已下载图片: {os.path.basename(dest_path)}")
             return True
         except Exception as e:
-            print(f"❌ 下载图片失败: {product_name} - {str(e)}")
+            print(f" 下载图片失败: {product_name} - {str(e)}")
             return False
     else:  # 可能是URL
         try:
@@ -158,13 +158,13 @@ def download_image(product, download_dir):
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 
-                print(f"✅ 已下载图片: {os.path.basename(dest_path)}")
+                print(f"  已下载图片: {os.path.basename(dest_path)}")
                 return True
             else:
-                print(f"❌ 无效的图片路径: {img_path}")
+                print(f" 无效的图片路径: {img_path}")
                 return False
         except Exception as e:
-            print(f"❌ 下载图片失败: {product_name} - {str(e)}")
+            print(f" 下载图片失败: {product_name} - {str(e)}")
             return False
 
 
@@ -200,12 +200,12 @@ def find_product_by_name(results, product_name):
 def download_selected_products(results, download_dir):
     """下载用户选择的产品图片"""
     if not results:
-        print("⚠️ 没有可下载的产品图片")
+        print(" 没有可下载的产品图片")
         return
 
     # 创建下载目录
     os.makedirs(download_dir, exist_ok=True)
-    print(f"📁 图片将下载到: {os.path.abspath(download_dir)}")
+    print(f" 图片将下载到: {os.path.abspath(download_dir)}")
 
     # 显示产品列表
     print("\n可下载的产品列表:")
@@ -232,7 +232,7 @@ def download_selected_products(results, download_dir):
             selected_indices = [idx for idx in selected_indices if 1 <= idx <= len(results)]
 
             if not selected_indices:
-                print("⚠️ 未选择有效产品编号")
+                print("️ 未选择有效产品编号")
                 return
 
             print("\n开始下载选中的产品图片...")
@@ -242,11 +242,11 @@ def download_selected_products(results, download_dir):
                     downloaded_count += 1
             total_selected = len(selected_indices)
         except Exception as e:
-            print(f"❌ 输入格式错误: {str(e)}")
+            print(f" 输入格式错误: {str(e)}")
             return
 
-    print(f"\n📊 下载完成: 成功 {downloaded_count}/{total_selected} 张图片")
-    print(f"💾 图片保存位置: {os.path.abspath(download_dir)}")
+    print(f"\n下载完成: 成功 {downloaded_count}/{total_selected} 张图片")
+    print(f" 图片保存位置: {os.path.abspath(download_dir)}")
 
 
 def main():
@@ -259,22 +259,22 @@ def main():
 
     # 验证文件是否存在
     while not os.path.exists(json_path):
-        print(f"❌ 文件 '{json_path}' 不存在，请重新输入")
+        print(f" 文件 '{json_path}' 不存在，请重新输入")
         json_path = input("请输入JSON文件的完整路径: ").strip()
 
     # 验证是否是JSON文件
     while not json_path.lower().endswith('.json'):
-        print(f"❌ '{json_path}' 不是JSON文件，请重新输入")
+        print(f" '{json_path}' 不是JSON文件，请重新输入")
         json_path = input("请输入JSON文件的完整路径: ").strip()
 
     while True:
         keyword = input("\n请输入要搜索的成分关键词（输入'q'退出）: ").strip()
         if keyword.lower() == 'q':
-            print("👋 感谢使用，再见！")
+            print(" 感谢使用，再见！")
             break
 
         if not keyword:
-            print("⚠️ 请输入有效的关键词")
+            print(" 请输入有效的关键词")
             continue
 
         results = search_products_by_ingredient(json_path, keyword)
@@ -293,23 +293,23 @@ def main():
                 # 用户输入产品名称
                 product_name = input("\n请输入要查看的产品名称: ").strip()
                 if not product_name:
-                    print("⚠️ 请输入产品名称")
+                    print(" 请输入产品名称")
                     continue
 
                 # 查找产品
                 product = find_product_by_name(displayed_results, product_name)
 
                 if not product:
-                    print(f"❌ 未找到产品: {product_name}")
+                    print(f" 未找到产品: {product_name}")
                     continue
 
-                print(f"\n✅ 找到产品: {product['产品名称']}")
-                print(f"📄 成分: {product['完整成分']}")
+                print(f"\n  找到产品: {product['产品名称']}")
+                print(f" 成分: {product['完整成分']}")
 
                 # 展示图片
                 print("\n正在尝试打开产品截图...")
                 if display_image(product['截图路径']):
-                    print("👀 请在打开的窗口中查看产品截图")
+                    print(" 请在打开的窗口中查看产品截图")
 
                     # 询问是否下载
                     download_choice = input("\n是否下载此产品图片? (y/n): ").lower().strip()
@@ -322,9 +322,9 @@ def main():
                         # 下载图片
                         os.makedirs(download_dir, exist_ok=True)
                         if download_image(product, download_dir):
-                            print(f"✅ 图片已保存到: {download_dir}")
+                            print(f"  图片已保存到: {download_dir}")
                         else:
-                            print("❌ 图片下载失败")
+                            print(" 图片下载失败")
 
             elif action == '2':
                 # 批量下载

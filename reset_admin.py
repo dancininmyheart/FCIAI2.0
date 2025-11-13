@@ -49,7 +49,7 @@ def reset_admin_password(new_password='admin123'):
         cursor.close()
         connection.close()
         
-        print("✅ admin密码重置成功！")
+        print("  admin密码重置成功！")
         print(f"   新密码: {new_password}")
         print("   请立即登录并修改为更安全的密码")
         return True

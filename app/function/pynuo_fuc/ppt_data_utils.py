@@ -7,7 +7,7 @@ from logger_config import get_logger, log_execution_time
 def extract_texts_for_translation(ppt_data):
     """
     从PPT数据中提取所有需要翻译的文本片段，按文本框和段落分组
-    ✅ 修复版本：正确使用原始页面索引
+      修复版本：正确使用原始页面索引
     Args:
         ppt_data: PPT数据结构（包含段落层级）
     Returns:
@@ -25,9 +25,9 @@ def extract_texts_for_translation(ppt_data):
         pages = ppt_data.get('pages', [])
         global_box_paragraph_index = 0  # 全局文本框段落计数器
         
-        # ✅ 修复：直接遍历页面数据，不使用enumerate
+        #   修复：直接遍历页面数据，不使用enumerate
         for page_data in pages:
-            # ✅ 关键修复：从页面数据中获取真实的页面索引
+            #   关键修复：从页面数据中获取真实的页面索引
             original_page_index = page_data.get('page_index')
             
             if original_page_index is None:
@@ -72,7 +72,7 @@ def extract_texts_for_translation(ppt_data):
                     # 如果段落有内容，则添加到数据中
                     if paragraph_texts:
                         text_boxes_data.append({
-                            'page_index': original_page_index,  # ✅ 使用真实的原始页面索引
+                            'page_index': original_page_index,  #   使用真实的原始页面索引
                             'box_index': box_index,
                             'box_id': box_id,
                             'paragraph_index': paragraph_index,
@@ -88,7 +88,7 @@ def extract_texts_for_translation(ppt_data):
         total_fragments = sum(len(box_para['texts']) for box_para in text_boxes_data)
         logger.info(f"总共提取了 {total_fragments} 个文本片段")
         
-        # ✅ 新增：显示真实的页面索引分布，用于验证修复效果
+        #   新增：显示真实的页面索引分布，用于验证修复效果
         page_distribution = {}
         for box_para in text_boxes_data:
             page_idx = box_para['page_index']

@@ -470,7 +470,7 @@ class TextLineSplitter:
             with open(json_file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             
-            logger.info(f"✅ 文本行分割完成！处理图片数: {self.processed_count}, 分割文本数: {self.split_count}")
+            logger.info(f"  文本行分割完成！处理图片数: {self.processed_count}, 分割文本数: {self.split_count}")
             
             return True
             
@@ -904,7 +904,7 @@ class PPTImageReplacer:
                 slide_width_inches = slide_width / 914400
                 slide_height_inches = slide_height / 914400
                 
-                logger.info(f"✅ 成功获取幻灯片尺寸: {slide_width_inches:.2f} x {slide_height_inches:.2f} 英寸")
+                logger.info(f"  成功获取幻灯片尺寸: {slide_width_inches:.2f} x {slide_height_inches:.2f} 英寸")
                 
             except Exception as size_error:
                 logger.warning(f"⚠️ 无法获取幻灯片尺寸，使用标准尺寸: {str(size_error)}")
@@ -1041,7 +1041,7 @@ class PPTImageReplacer:
             # 统计显示的文本对数量
             total_pairs = sum(len(ocr_data['text_pairs']) for ocr_data in ocr_data_list)
             translation_info = "和翻译" if show_translation else ""
-            logger.info(f"✅ 已在第{slide_number}页右侧添加OCR文本框{translation_info}")
+            logger.info(f"  已在第{slide_number}页右侧添加OCR文本框{translation_info}")
             logger.info(f"   📊 包含{len(ocr_data_list)}张图片，共{total_pairs}个文本对")
             
         except Exception as e:
@@ -1126,7 +1126,7 @@ def ocr_controller(presentation_path: str,
         if not image_mapping:
             logger.warning("未找到需要处理的图片")
             return presentation_path
-        logger.info(f"✅ 图片提取完成，临时目录: {temp_dir}")
+        logger.info(f"  图片提取完成，临时目录: {temp_dir}")
 
         # 2. 调用qwen-vl-ocr的api进行图片的文字提取
         logger.info("\n" + "=" * 50)
@@ -1150,14 +1150,14 @@ def ocr_controller(presentation_path: str,
             split_success = splitter.process_json_file(json_path)
             
             if split_success:
-                logger.info("✅ 文本行分割完成")
+                logger.info("  文本行分割完成")
             else:
                 logger.warning("⚠️ 文本行分割失败，将使用原始文本继续处理")
         else:
             logger.info("\n" + "=" * 50)
             logger.info("⏭️ 第三步：跳过文本行分割处理")
             logger.info("=" * 50)
-            logger.info("✅ 保持原始文本格式")
+            logger.info("  保持原始文本格式")
 
         # 4. 翻译OCR识别结果
         step_num = 4 if enable_text_splitting != "False" else 3
@@ -1173,7 +1173,7 @@ def ocr_controller(presentation_path: str,
             )
             
             if translation_success:
-                logger.info(f"✅ 翻译完成")
+                logger.info(f"  翻译完成")
                 
                 # 显示翻译摘要
                 mapping_file = os.path.join(temp_dir, "image_mapping.json")
@@ -1198,7 +1198,7 @@ def ocr_controller(presentation_path: str,
             raise Exception(f"映射文件不存在: {mapping_file}")
         with open(mapping_file, 'r', encoding='utf-8') as f:
             updated_mapping = json.load(f)
-        logger.info("✅ 处理结果读取完成")
+        logger.info("  处理结果读取完成")
         
         # 统计结果
         ocr_count = 0
@@ -1235,7 +1235,7 @@ def ocr_controller(presentation_path: str,
         )
         
         success_desc = "OCR结果和翻译" if enable_translation else "OCR结果"
-        logger.info(f"✅ {success_desc}已添加到PPT右侧")
+        logger.info(f"  {success_desc}已添加到PPT右侧")
         logger.info("\n" + "=" * 50)
         logger.info("🎉 处理完成！")
         logger.info("=" * 50)

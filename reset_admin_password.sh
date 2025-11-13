@@ -56,7 +56,7 @@ quick_reset() {
     fi
     
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ 密码重置成功！${NC}"
+        echo -e "${GREEN}  密码重置成功！${NC}"
     else
         echo -e "${RED}❌ 密码重置失败！${NC}"
         return 1
@@ -120,7 +120,7 @@ main() {
     
     echo
     echo "========================================"
-    echo -e "${GREEN}✅ 操作完成！${NC}"
+    echo -e "${GREEN}  操作完成！${NC}"
     echo "========================================"
 }
 

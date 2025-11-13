@@ -32,7 +32,7 @@ class QwenTranslator:
         self.base_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
         self.session = self._create_session()
         
-        logger.info(f"✅ 翻译器初始化完成，目标语言: {target_language}")
+        logger.info(f"  翻译器初始化完成，目标语言: {target_language}")
     
     def _create_session(self):
         """创建带重试机制的会话"""
@@ -101,7 +101,7 @@ class QwenTranslator:
                 
                 if 'output' in result and 'text' in result['output']:
                     translated_text = result['output']['text'].strip()
-                    logger.info(f"✅ 翻译成功: {translated_text[:50]}...")
+                    logger.info(f"  翻译成功: {translated_text[:50]}...")
                     return translated_text
                 else:
                     logger.error(f"❌ API响应格式错误: {result}")
@@ -143,10 +143,10 @@ class QwenTranslator:
         results = []
         total = len(texts)
         
-        logger.info(f"📝 开始批量翻译，共 {total} 条文本")
+        logger.info(f" 开始批量翻译，共 {total} 条文本")
         
         for i, text in enumerate(texts, 1):
-            logger.info(f"🔄 翻译进度: {i}/{total}")
+            logger.info(f" 翻译进度: {i}/{total}")
             
             translated = self.translate_text(text, source_language)
             results.append(translated)
@@ -156,7 +156,7 @@ class QwenTranslator:
                 time.sleep(0.5)
         
         success_count = sum(1 for r in results if r is not None)
-        logger.info(f"✅ 批量翻译完成，成功: {success_count}/{total}")
+        logger.info(f" 批量翻译完成，成功: {success_count}/{total}")
         
         return results
     
@@ -176,7 +176,7 @@ class QwenTranslator:
             with open(mapping_file_path, 'r', encoding='utf-8') as f:
                 mapping_data = json.load(f)
             
-            logger.info(f"📖 开始翻译映射文件: {mapping_file_path}")
+            logger.info(f" 开始翻译映射文件: {mapping_file_path}")
             
             total_texts = 0
             translated_count = 0
@@ -205,7 +205,7 @@ class QwenTranslator:
                             else:
                                 # 翻译失败时保留原文
                                 translated_texts[text_key] = text_value
-                                logger.warning(f"⚠️ 翻译失败，保留原文: {text_value[:30]}...")
+                                logger.warning(f" 翻译失败，保留原文: {text_value[:30]}...")
                     
                     # 将翻译结果添加到映射数据中
                     if translated_texts:
@@ -215,19 +215,19 @@ class QwenTranslator:
             with open(mapping_file_path, 'w', encoding='utf-8') as f:
                 json.dump(mapping_data, f, ensure_ascii=False, indent=2)
             
-            logger.info(f"✅ 翻译完成并保存到: {mapping_file_path}")
-            logger.info(f"📊 翻译统计: {translated_count}/{total_texts} 条文本翻译成功")
+            logger.info(f" 翻译完成并保存到: {mapping_file_path}")
+            logger.info(f" 翻译统计: {translated_count}/{total_texts} 条文本翻译成功")
             
             return True
             
         except Exception as e:
-            logger.error(f"❌ 翻译映射文件时出错: {str(e)}")
+            logger.error(f" 翻译映射文件时出错: {str(e)}")
             return False
     
     def set_target_language(self, language: str):
         """设置目标语言"""
         self.target_language = language
-        logger.info(f"🌐 目标语言已更改为: {language}")
+        logger.info(f" 目标语言已更改为: {language}")
 
 
 class TranslationManager:
@@ -249,7 +249,7 @@ class TranslationManager:
         mapping_file = os.path.join(temp_dir, "image_mapping.json")
         
         if not os.path.exists(mapping_file):
-            logger.error(f"❌ 映射文件不存在: {mapping_file}")
+            logger.error(f" 映射文件不存在: {mapping_file}")
             return False
         
         try:
@@ -260,14 +260,14 @@ class TranslationManager:
             success = translator.translate_image_mapping(mapping_file, source_language)
             
             if success:
-                logger.info("🎉 OCR结果翻译完成！")
+                logger.info(" OCR结果翻译完成！")
             else:
-                logger.error("❌ OCR结果翻译失败！")
+                logger.error(" OCR结果翻译失败！")
             
             return success
             
         except Exception as e:
-            logger.error(f"❌ 翻译管理器执行失败: {str(e)}")
+            logger.error(f" 翻译管理器执行失败: {str(e)}")
             return False
     
     @staticmethod
@@ -316,7 +316,7 @@ class TranslationManager:
             }
             
         except Exception as e:
-            logger.error(f"❌ 获取翻译摘要时出错: {str(e)}")
+            logger.error(f" 获取翻译摘要时出错: {str(e)}")
             return {}
 
 

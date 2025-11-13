@@ -149,7 +149,7 @@ def logout():
 try:
     from app.views.sso_auth import sso_bp
     app.register_blueprint(sso_bp)
-    print("✅ SSO蓝图已注册")
+    print("  SSO蓝图已注册")
 except ImportError as e:
     print(f"⚠️ SSO蓝图注册失败: {e}")
 

@@ -17,7 +17,7 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-    print("⚠️  警告: 缺少PIL库")
+    print("  警告: 缺少PIL库")
 
 # 检查是否安装了必要的工具（根据操作系统类型）
 def check_tools():
@@ -335,7 +335,7 @@ def convert_emf_to_png(emf_path):
         return convert_emf_to_png_linux(emf_path, png_path)
             
     except Exception as e:
-        print(f"⚠️  EMF转换PNG失败 ({emf_path}): {e}")
+        print(f"  EMF转换PNG失败 ({emf_path}): {e}")
         return None
 
 def convert_emf_to_png_linux(emf_path, png_path):
@@ -358,7 +358,7 @@ def convert_emf_to_png_linux(emf_path, png_path):
             ], capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0 and os.path.exists(png_path):
-                print(f"✅ 使用ImageMagick成功转换 {os.path.basename(emf_path)}")
+                print(f"  使用ImageMagick成功转换 {os.path.basename(emf_path)}")
                 return png_path
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
@@ -374,7 +374,7 @@ def convert_emf_to_png_linux(emf_path, png_path):
             ], capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0 and os.path.exists(png_path):
-                print(f"✅ 使用Inkscape成功转换 {os.path.basename(emf_path)}")
+                print(f"  使用Inkscape成功转换 {os.path.basename(emf_path)}")
                 return png_path
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
@@ -406,7 +406,7 @@ def convert_emf_to_png_linux(emf_path, png_path):
                     os.remove(pdf_path)
                 
                 if result2.returncode == 0 and os.path.exists(png_path):
-                    print(f"✅ 使用LibreOffice成功转换 {os.path.basename(emf_path)}")
+                    print(f"  使用LibreOffice成功转换 {os.path.basename(emf_path)}")
                     return png_path
         except (subprocess.TimeoutExpired, FileNotFoundError):
             # 清理可能创建的临时文件
@@ -420,16 +420,16 @@ def convert_emf_to_png_linux(emf_path, png_path):
             try:
                 with Image.open(emf_path) as img:
                     img.save(png_path, 'PNG')
-                print(f"✅ 使用PIL成功转换 {os.path.basename(emf_path)}")
+                print(f"  使用PIL成功转换 {os.path.basename(emf_path)}")
                 return png_path
             except Exception:
                 pass
         
-        print(f"❌ 所有方法都失败，无法转换EMF文件: {os.path.basename(emf_path)}")
+        print(f" 所有方法都失败，无法转换EMF文件: {os.path.basename(emf_path)}")
         return None
         
     except Exception as e:
-        print(f"⚠️  EMF转换PNG失败 ({emf_path}): {e}")
+        print(f"  EMF转换PNG失败 ({emf_path}): {e}")
         return None
 
 def process_folder_with_mapping(folder_path, json_path, api_key):
@@ -443,20 +443,20 @@ def process_folder_with_mapping(folder_path, json_path, api_key):
     """
     # 检查文件夹和JSON文件是否存在
     if not os.path.exists(folder_path):
-        print(f"❌ 文件夹不存在: {folder_path}")
+        print(f" 文件夹不存在: {folder_path}")
         return
     
     if not os.path.exists(json_path):
-        print(f"❌ JSON文件不存在: {json_path}")
+        print(f" JSON文件不存在: {json_path}")
         return
     
     # 读取JSON映射文件
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
             mapping_data = json.load(f)
-        print(f"✅ 成功读取JSON映射文件")
+        print(f"  成功读取JSON映射文件")
     except Exception as e:
-        print(f"❌ 读取JSON文件失败: {e}")
+        print(f" 读取JSON文件失败: {e}")
         return
     
     # 初始化OCR处理器
@@ -466,10 +466,10 @@ def process_folder_with_mapping(folder_path, json_path, api_key):
     available_tools = check_tools()
     
     if available_tools:
-        print(f"✅ 检测到可用工具: {', '.join(available_tools)}")
+        print(f"  检测到可用工具: {', '.join(available_tools)}")
     else:
-        print("⚠️  未检测到可用的EMF转换工具，将跳过EMF文件处理")
-        print("💡 建议安装以下工具之一:")
+        print("  未检测到可用的EMF转换工具，将跳过EMF文件处理")
+        print(" 建议安装以下工具之一:")
         print("   sudo apt-get install imagemagick inkscape libreoffice")
     
     # 收集所有需要处理的图片文件
@@ -484,31 +484,31 @@ def process_folder_with_mapping(folder_path, json_path, api_key):
         # 特殊处理EMF文件
         elif file_name.lower().endswith('.emf'):
             if not available_tools:
-                print(f"❌ 无法处理EMF文件 (缺少工具): {file_name}，跳过处理")
+                print(f" 无法处理EMF文件 (缺少工具): {file_name}，跳过处理")
                 continue
                 
-            print(f"🔄 检测到EMF文件: {file_name}，正在尝试转换为PNG...")
+            print(f" 检测到EMF文件: {file_name}，正在尝试转换为PNG...")
             png_path = convert_emf_to_png(file_path)
             if png_path and os.path.exists(png_path):
                 png_file_name = os.path.basename(png_path)
                 image_files[png_file_name] = png_path
                 temp_files.append(png_path)  # 记录临时文件
-                print(f"✅ 已将 {file_name} 转换为 {png_file_name}")
+                print(f"  已将 {file_name} 转换为 {png_file_name}")
             else:
-                print(f"❌ 无法处理EMF文件: {file_name}，跳过处理")
+                print(f" 无法处理EMF文件: {file_name}，跳过处理")
     
-    print(f"📁 找到 {len(image_files)} 个可处理的图片文件")
+    print(f" 找到 {len(image_files)} 个可处理的图片文件")
     
     # 处理每个图片文件
     ocr_results = {}
     for file_name, file_path in image_files.items():
-        print(f"🔍 正在处理: {file_name}")
+        print(f" 正在处理: {file_name}")
         result = processor.ocr_image(file_path)
         ocr_results[file_name] = result
         if result["status"] == "success":
-            print(f"✅ {file_name} 处理成功")
+            print(f"  {file_name} 处理成功")
         else:
-            print(f"❌ {file_name} 处理失败: {result.get('error', 'Unknown error')}")
+            print(f" {file_name} 处理失败: {result.get('error', 'Unknown error')}")
     
     # 将OCR结果更新到JSON映射数据中
     updated_count = 0
@@ -523,36 +523,36 @@ def process_folder_with_mapping(folder_path, json_path, api_key):
                         if ocr_result["all_text"] and any(ocr_result["all_text"].values()):
                             image_info['all_text'] = ocr_result["all_text"]
                             updated_count += 1
-                            print(f"📝 已更新 {filename} 的OCR结果")
+                            print(f" 已更新 {filename} 的OCR结果")
                         else:
                             # 如果没有识别到文本，确保移除可能已存在的all_text字段
                             if 'all_text' in image_info:
                                 del image_info['all_text']
-                            print(f"⚠️ {filename} 没有识别到文本，跳过更新")
+                            print(f" {filename} 没有识别到文本，跳过更新")
                     else:
-                        print(f"⚠️ {filename} OCR处理失败，跳过更新")
+                        print(f" {filename} OCR处理失败，跳过更新")
     
     # 将更新后的数据写回JSON文件
     try:
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(mapping_data, f, ensure_ascii=False, indent=2)
-        print(f"✅ 成功更新JSON文件，共更新了 {updated_count} 个图片的OCR结果")
+        print(f" 成功更新JSON文件，共更新了 {updated_count} 个图片的OCR结果")
     except Exception as e:
-        print(f"❌ 写入JSON文件失败: {e}")
+        print(f" 写入JSON文件失败: {e}")
         return
     
     # 删除临时创建的PNG文件
     for temp_file in temp_files:
         try:
             os.remove(temp_file)
-            print(f"🗑️ 已删除临时文件: {os.path.basename(temp_file)}")
+            print(f" 已删除临时文件: {os.path.basename(temp_file)}")
         except Exception as e:
-            print(f"⚠️ 删除临时文件失败 {os.path.basename(temp_file)}: {e}")
+            print(f" 删除临时文件失败 {os.path.basename(temp_file)}: {e}")
     
     # 输出处理报告
     success_count = sum(1 for result in ocr_results.values() if result["status"] == "success")
     failed_count = len(ocr_results) - success_count
-    print(f"\n📊 处理报告:")
+    print(f"\n 处理报告:")
     print(f"   成功处理: {success_count}")
     print(f"   处理失败: {failed_count}")
     print(f"   更新到JSON: {updated_count}")

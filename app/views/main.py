@@ -259,7 +259,7 @@ def process_pdf_translation_async(pdf_path, original_filename, unique_filename,
                             )
                             
                             if ocr_results:
-                                logger.info(f"✅ OCR处理完成，共处理 {len(ocr_results)} 个图片")
+                                logger.info(f"  OCR处理完成，共处理 {len(ocr_results)} 个图片")
                                 for i, result in enumerate(ocr_results):
                                     if result.get('success'):
                                         logger.info(f"  图片 {i+1}: {os.path.basename(result['image_path'])}")

@@ -121,7 +121,7 @@ class LibreOfficeRenderTrigger:
                 logger.error("LibreOffice渲染触发失败")
                 return False
 
-            logger.info("✅ PPT文本框自适应处理完成（包含渲染触发）")
+            logger.info("  PPT文本框自适应处理完成（包含渲染触发）")
             self._log_stats()
             return True
 
@@ -326,7 +326,7 @@ class LibreOfficeRenderTrigger:
                         if os.path.exists(pdf_file):
                             pdf_size = os.path.getsize(pdf_file)
 
-                            logger.info(f"✅ PDF转换成功: {os.path.basename(pdf_file)} ({pdf_size} bytes)")
+                            logger.info(f"  PDF转换成功: {os.path.basename(pdf_file)} ({pdf_size} bytes)")
                             logger.info("🎯 PPT已被LibreOffice完整渲染，文本框自适应设置已生效")
 
                             self.stats['render_triggered'] = 1
@@ -337,7 +337,7 @@ class LibreOfficeRenderTrigger:
                             logger.info("步骤2.3: 从ODP转换回PPTX格式并覆盖原文件")
                             pptx_result = self._convert_odp_to_pptx(odp_file, temp_dir, ppt_path)
                             if pptx_result:
-                                logger.info("✅ 完整渲染流程成功: ODP -> PDF -> PPTX")
+                                logger.info("  完整渲染流程成功: ODP -> PDF -> PPTX")
                                 self.stats['pptx_generated'] = 1
                             else:
                                 logger.warning("⚠️ PDF渲染成功，但PPTX转换失败")
@@ -542,7 +542,7 @@ def test_libreoffice_availability():
     trigger = LibreOfficeRenderTrigger()
 
     if trigger.libreoffice_available:
-        print(f"✅ LibreOffice可用: {trigger.libreoffice_cmd}")
+        print(f"  LibreOffice可用: {trigger.libreoffice_cmd}")
         return True
     else:
         print("❌ LibreOffice不可用")

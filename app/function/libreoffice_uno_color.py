@@ -150,7 +150,7 @@ class LibreOfficeUNOColorManager:
                     self.desktop = self.context.ServiceManager.createInstanceWithContext(
                         "com.sun.star.frame.Desktop", self.context
                     )
-                    logger.info("✅ 成功连接到LibreOffice UNO服务")
+                    logger.info("  成功连接到LibreOffice UNO服务")
                     return True
                 except NoConnectException as e:
                     if attempt < 14:
@@ -556,7 +556,7 @@ def translate_ppt_with_uno_color_preservation(ppt_path: str, translation_map: Di
             # 保存文档
             save_path = output_path or ppt_path
             if manager.save_and_close(save_path):
-                logger.info(f"✅ UNO颜色保护翻译完成: {save_path}")
+                logger.info(f"  UNO颜色保护翻译完成: {save_path}")
                 return True
         
         return False
@@ -581,7 +581,7 @@ def test_uno_color_preservation():
     
     try:
         if manager.start_libreoffice_service():
-            print("✅ LibreOffice UNO服务启动成功")
+            print("  LibreOffice UNO服务启动成功")
             return True
         else:
             print("❌ LibreOffice UNO服务启动失败")

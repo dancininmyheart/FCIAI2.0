@@ -834,7 +834,7 @@ def translate_markdown_to_bilingual_doc(
                         if _os.path.exists(final_path):
                             generator.document.add_picture(final_path, width=Inches(6.0))
                             image_inserted = True
-                            logger.info(f"✅ 成功插入图片: {final_path}")
+                            logger.info(f"  成功插入图片: {final_path}")
                         else:
                             logger.warning(f"⚠️ 图片文件不存在: {final_path}")
                     except Exception as img_error:
@@ -850,7 +850,7 @@ def translate_markdown_to_bilingual_doc(
                         ocr_result = ocr_results_map.get(normalized_path)
                         
                         if ocr_result:
-                            logger.info(f"✅ 找到OCR结果！")
+                            logger.info(f"  找到OCR结果！")
                             ocr_text = ocr_result.get('ocr_text_combined', '').strip()
                             translation_text = ocr_result.get('translation_text_combined', '').strip()
                             logger.info(f"   OCR文本: {len(ocr_text)} 字符")
@@ -869,7 +869,7 @@ def translate_markdown_to_bilingual_doc(
                                     ocr_run = ocr_para.add_run(f"原文: {ocr_text}")
                                     ocr_run.font.size = Pt(10)
                                     ocr_run.font.color.rgb = RGBColor(70, 70, 70)
-                                    logger.info(f"  ✅ 已添加OCR原文到Word ({len(ocr_text)} 字符)")
+                                    logger.info(f"    已添加OCR原文到Word ({len(ocr_text)} 字符)")
                                 
                                 # 添加翻译文本
                                 if translation_text:
@@ -877,11 +877,11 @@ def translate_markdown_to_bilingual_doc(
                                     trans_run = trans_para.add_run(f"译文: {translation_text}")
                                     trans_run.font.size = Pt(10)
                                     trans_run.font.color.rgb = RGBColor(0, 102, 204)
-                                    logger.info(f"  ✅ 已添加OCR译文到Word ({len(translation_text)} 字符)")
+                                    logger.info(f"    已添加OCR译文到Word ({len(translation_text)} 字符)")
                                 
                                 # 添加分隔线
                                 generator.document.add_paragraph("─" * 50)
-                                logger.info(f"  ✅ OCR结果已完整添加到Word文档")
+                                logger.info(f"    OCR结果已完整添加到Word文档")
                             else:
                                 logger.warning(f"  ⚠️ OCR文本和翻译都为空")
                         else:

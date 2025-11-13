@@ -64,7 +64,7 @@ def test_database_connection():
         version = cursor.fetchone()
         cursor.close()
         connection.close()
-        print(f"✅ 数据库连接成功，MySQL版本: {version[0]}")
+        print(f"  数据库连接成功，MySQL版本: {version[0]}")
         return True
     except mysql.connector.Error as e:
         print(f"❌ 数据库连接失败: {e}")
@@ -88,7 +88,7 @@ def find_admin_user():
         connection.close()
         
         if admin_user:
-            print(f"✅ 找到admin用户:")
+            print(f"  找到admin用户:")
             print(f"   用户ID: {admin_user['id']}")
             print(f"   用户名: {admin_user['username']}")
             print(f"   邮箱: {admin_user['email'] or '未设置'}")
@@ -129,7 +129,7 @@ def change_admin_password(admin_user, new_password):
         cursor.close()
         connection.close()
         
-        print("✅ admin密码修改成功！")
+        print("  admin密码修改成功！")
         print(f"   用户: {admin_user['username']}")
         print(f"   修改时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         return True

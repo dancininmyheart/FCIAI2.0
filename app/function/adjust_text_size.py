@@ -298,7 +298,7 @@ def set_textbox_autofit(ppt_path):
         logging.info("使用带颜色保护的LibreOffice渲染")
         result = render_with_color_protection(ppt_path)
         if result:
-            logging.info("✅ 带颜色保护的LibreOffice渲染成功")
+            logging.info("  带颜色保护的LibreOffice渲染成功")
             return True
         else:
             logging.warning("带颜色保护的LibreOffice渲染失败，尝试基础方法")

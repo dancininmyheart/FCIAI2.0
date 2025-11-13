@@ -30,7 +30,7 @@ def upgrade_database():
             if 'email' not in columns:
                 print("添加email字段...")
                 db.engine.execute(text('ALTER TABLE users ADD COLUMN email VARCHAR(120)'))
-                print("✅ email字段添加成功")
+                print("  email字段添加成功")
             else:
                 print("email字段已存在，跳过")
             
@@ -38,7 +38,7 @@ def upgrade_database():
             if 'first_name' not in columns:
                 print("添加first_name字段...")
                 db.engine.execute(text('ALTER TABLE users ADD COLUMN first_name VARCHAR(50)'))
-                print("✅ first_name字段添加成功")
+                print("  first_name字段添加成功")
             else:
                 print("first_name字段已存在，跳过")
             
@@ -46,7 +46,7 @@ def upgrade_database():
             if 'last_name' not in columns:
                 print("添加last_name字段...")
                 db.engine.execute(text('ALTER TABLE users ADD COLUMN last_name VARCHAR(50)'))
-                print("✅ last_name字段添加成功")
+                print("  last_name字段添加成功")
             else:
                 print("last_name字段已存在，跳过")
             
@@ -54,7 +54,7 @@ def upgrade_database():
             if 'display_name' not in columns:
                 print("添加display_name字段...")
                 db.engine.execute(text('ALTER TABLE users ADD COLUMN display_name VARCHAR(100)'))
-                print("✅ display_name字段添加成功")
+                print("  display_name字段添加成功")
             else:
                 print("display_name字段已存在，跳过")
             
@@ -62,7 +62,7 @@ def upgrade_database():
             if 'sso_provider' not in columns:
                 print("添加sso_provider字段...")
                 db.engine.execute(text('ALTER TABLE users ADD COLUMN sso_provider VARCHAR(50)'))
-                print("✅ sso_provider字段添加成功")
+                print("  sso_provider字段添加成功")
             else:
                 print("sso_provider字段已存在，跳过")
             
@@ -70,7 +70,7 @@ def upgrade_database():
             if 'sso_subject' not in columns:
                 print("添加sso_subject字段...")
                 db.engine.execute(text('ALTER TABLE users ADD COLUMN sso_subject VARCHAR(255)'))
-                print("✅ sso_subject字段添加成功")
+                print("  sso_subject字段添加成功")
             else:
                 print("sso_subject字段已存在，跳过")
             
@@ -78,7 +78,7 @@ def upgrade_database():
             if 'last_login' not in columns:
                 print("添加last_login字段...")
                 db.engine.execute(text('ALTER TABLE users ADD COLUMN last_login DATETIME'))
-                print("✅ last_login字段添加成功")
+                print("  last_login字段添加成功")
             else:
                 print("last_login字段已存在，跳过")
             
@@ -88,7 +88,7 @@ def upgrade_database():
                 db.engine.execute(text('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)'))
                 db.engine.execute(text('CREATE INDEX IF NOT EXISTS idx_users_sso_provider ON users(sso_provider)'))
                 db.engine.execute(text('CREATE INDEX IF NOT EXISTS idx_users_sso_subject ON users(sso_subject)'))
-                print("✅ 索引创建成功")
+                print("  索引创建成功")
             except Exception as e:
                 print(f"⚠️ 索引创建失败（可能已存在）: {e}")
             
@@ -123,7 +123,7 @@ def downgrade_database():
             for column in sso_columns:
                 try:
                     db.engine.execute(text(f'ALTER TABLE users DROP COLUMN {column}'))
-                    print(f"✅ {column}字段删除成功")
+                    print(f"  {column}字段删除成功")
                 except Exception as e:
                     print(f"⚠️ {column}字段删除失败: {e}")
             
@@ -147,7 +147,7 @@ def create_default_roles():
             if not admin_role:
                 admin_role = Role(name='admin')
                 db.session.add(admin_role)
-                print("✅ 创建admin角色")
+                print("  创建admin角色")
             else:
                 print("admin角色已存在")
             
@@ -156,7 +156,7 @@ def create_default_roles():
             if not user_role:
                 user_role = Role(name='user')
                 db.session.add(user_role)
-                print("✅ 创建user角色")
+                print("  创建user角色")
             else:
                 print("user角色已存在")
             
@@ -187,7 +187,7 @@ def check_migration_status():
             
             print("\nSSO字段状态:")
             for column in sso_columns:
-                status = "✅ 存在" if column in columns else "❌ 不存在"
+                status = "  存在" if column in columns else "❌ 不存在"
                 print(f"  {column}: {status}")
             
             # 检查角色
@@ -195,8 +195,8 @@ def check_migration_status():
             user_role = Role.query.filter_by(name='user').first()
             
             print("\n默认角色状态:")
-            print(f"  admin: {'✅ 存在' if admin_role else '❌ 不存在'}")
-            print(f"  user: {'✅ 存在' if user_role else '❌ 不存在'}")
+            print(f"  admin: {'  存在' if admin_role else '❌ 不存在'}")
+            print(f"  user: {'  存在' if user_role else '❌ 不存在'}")
             
             # 检查SSO用户
             sso_users = User.query.filter(User.sso_provider.isnot(None)).count()

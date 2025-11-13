@@ -454,7 +454,7 @@ def validate_page_indices(text_boxes_data):
         logger.warning("⚠️  检测到连续的页面索引序列 (0,1,2,...)，这可能表明存在页面索引重新映射bug！")
         logger.warning("⚠️  如果用户选择的不是连续页面，请检查 ppt_data_utils.py 中的 extract_texts_for_translation 函数")
     else:
-        logger.info("✅ 页面索引看起来正确（不是简单的重新映射序列）")
+        logger.info("  页面索引看起来正确（不是简单的重新映射序列）")
     
     return page_indices
 
@@ -474,7 +474,7 @@ def validate_page_indices(text_boxes_data):
         logger.warning("⚠️  检测到连续的页面索引序列 (0,1,2,...)，这可能表明存在页面索引重新映射bug！")
         logger.warning("⚠️  如果用户选择的不是连续页面，请检查 ppt_data_utils.py 中的 extract_texts_for_translation 函数")
     else:
-        logger.info("✅ 页面索引看起来正确（不是简单的重新映射序列）")
+        logger.info("  页面索引看起来正确（不是简单的重新映射序列）")
     
     return page_indices
 
@@ -482,7 +482,7 @@ def validate_page_indices(text_boxes_data):
 def format_page_text_for_translation(text_boxes_data, page_index):
     """
     格式化指定页面的文本用于翻译API调用（支持段落层级）
-    ✅ 修复版本：增强页面索引验证和日志
+      修复版本：增强页面索引验证和日志
     
     Args:
         text_boxes_data: 文本框段落数据列表
@@ -498,7 +498,7 @@ def format_page_text_for_translation(text_boxes_data, page_index):
         logger.warning(f"⚠️  页面索引 {page_index} 没有找到对应的文本框段落数据")
         return ""
     
-    # ✅ 更清晰的页面标识，明确显示这是PPT中的真实页面索引
+    #   更清晰的页面标识，明确显示这是PPT中的真实页面索引
     formatted_text = f"第{page_index + 1}页内容（PPT原始页面索引：{page_index}）：\n\n"
     
     # 按文本框和段落组织数据
@@ -530,7 +530,7 @@ def format_page_text_for_translation(text_boxes_data, page_index):
 def translate_pages_by_page(text_boxes_data, progress_callback, source_language, target_language, model,stop_words_list,custom_translations):
     """
     按页翻译文本内容，每页调用一次翻译API（支持段落层级）
-    ✅ 修复版本：正确处理页面索引和进度回调
+      修复版本：正确处理页面索引和进度回调
     
     Args:
         text_boxes_data: 文本框段落数据列表
@@ -544,7 +544,7 @@ def translate_pages_by_page(text_boxes_data, progress_callback, source_language,
     """
     logger.info(f"开始按页翻译（段落层级），共 {len(text_boxes_data)} 个文本框段落")
     
-    # ✅ 新增：验证页面索引的正确性
+    #   新增：验证页面索引的正确性
     page_indices = validate_page_indices(text_boxes_data)
     page_indices_sorted = sorted(page_indices)
     total_pages = len(page_indices_sorted)
@@ -552,7 +552,7 @@ def translate_pages_by_page(text_boxes_data, progress_callback, source_language,
     logger.info(f"需要翻译的页面索引: {page_indices_sorted}")
     logger.info(f"总共需要翻译 {total_pages} 页")
     
-    # ✅ 增强：显示每页的详细统计，验证页面索引正确性
+    #   增强：显示每页的详细统计，验证页面索引正确性
     logger.info("=" * 50)
     logger.info("各页面文本框段落分布验证:")
     for page_index in page_indices_sorted:
@@ -577,14 +577,14 @@ def translate_pages_by_page(text_boxes_data, progress_callback, source_language,
     if progress_callback:
         progress_callback(0, total_pages)
     
-    # ✅ 修复：使用枚举来获取正确的进度序号，同时保持真实的页面索引
+    #   修复：使用枚举来获取正确的进度序号，同时保持真实的页面索引
     for current_page_number, page_index in enumerate(page_indices_sorted, 1):
         logger.info("=" * 60)
         logger.info(f"正在处理第 {current_page_number}/{total_pages} 页")
         logger.info(f"对应PPT第 {page_index + 1} 页（原始页面索引：{page_index}）")
         logger.info("=" * 60)
         
-        # ✅ 修复：使用正确的当前页面数进行进度回调
+        #   修复：使用正确的当前页面数进行进度回调
         if progress_callback:
             progress_callback(current_page_number - 1, total_pages)
         
@@ -624,7 +624,7 @@ def translate_pages_by_page(text_boxes_data, progress_callback, source_language,
             # 存储翻译结果 - 使用真实的页面索引作为键
             page_box_paragraphs = [bp for bp in text_boxes_data if bp['page_index'] == page_index]
             
-            translation_results[page_index] = {  # ✅ 使用真实的页面索引作为键
+            translation_results[page_index] = {  #   使用真实的页面索引作为键
                 'original_content': page_content,
                 'translated_json': translated_result,
                 'translated_fragments': translated_fragments,
@@ -677,7 +677,7 @@ def translate_pages_by_page(text_boxes_data, progress_callback, source_language,
     logger.info(f"  - 总翻译文本框数: {total_boxes_translated}")
     logger.info(f"  - 总翻译文本框段落数: {total_box_paragraphs_translated}")
     
-    # ✅ 增强：显示详细的页面处理信息，验证页面索引映射正确性
+    #   增强：显示详细的页面处理信息，验证页面索引映射正确性
     logger.info("详细页面处理验证:")
     for page_index, result in translation_results.items():
         ppt_page_num = result.get('ppt_page_number', page_index + 1)

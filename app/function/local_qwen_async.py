@@ -352,16 +352,17 @@ async def parse_formatted_text_async(text: str):
         fixed_text = await re_parse_formatted_text_async(text)
         return json.loads(fixed_text)
 
-def re_parse_formatted_text_async(text: str):
+async def re_parse_formatted_text_async(text: str):
     """
-    同步重新解析格式化文本，修复可能的格式错误
+    异步重新解析格式化文本，修复可能的格式错误
+
     Args:
         text: 格式可能错误的文本
+
     Returns:
         修复后的文本
     """
-    # 在异步函数中使用同步客户端，使用线程池执行
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _re_parse():
         try:
@@ -388,16 +389,14 @@ def re_parse_formatted_text_async(text: str):
                 max_tokens=16000  # Increased from 8000 to 16000 to handle larger JSON responses
             )
             result = response.choices[0].message.content
-            logger.info(f"JSON修复成功")
+            logger.info("JSON修复成功")
             return result
         except Exception as e:
             logger.error(f"修复JSON格式失败: {str(e)}")
             raise
 
     try:
-        # 直接在同步函数中执行API调用
-        result = _re_parse()
-        return result
+        return await loop.run_in_executor(None, _re_parse)
     except Exception as e:
         logger.error(f"JSON修复失败: {str(e)}")
         raise

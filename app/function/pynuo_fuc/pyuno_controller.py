@@ -248,7 +248,7 @@ def convert_pptx_to_odp_pyuno(pptx_path, output_dir=None):
         
         # 验证文件是否创建成功
         if os.path.exists(odp_path):
-            logger.info(f"✅ PPTX转ODP成功: {odp_path}")
+            logger.info(f"  PPTX转ODP成功: {odp_path}")
             return odp_path
         else:
             logger.error("ODP文件保存失败，文件不存在")
@@ -341,7 +341,7 @@ def convert_odp_to_pptx_pyuno(odp_path, output_dir=None):
         
         # 验证文件是否创建成功
         if os.path.exists(pptx_path):
-            logger.info(f"✅ ODP转PPTX成功: {pptx_path}")
+            logger.info(f"  ODP转PPTX成功: {pptx_path}")
             return pptx_path
         else:
             logger.error("PPTX文件保存失败，文件不存在")
@@ -454,7 +454,7 @@ def apply_uno_format_conversion(result_path, original_name, timestamp, temp_dir,
             os.rename(converted_odp_path, temp_odp_path)
             logger.info(f"重命名临时ODP文件: {temp_odp_path}")
         
-        logger.info(f"✅ PPTX转ODP成功: {temp_odp_path}")
+        logger.info(f"  PPTX转ODP成功: {temp_odp_path}")
         
         # 使用UNO接口将ODP转换回PPTX
         logger.info(f"开始ODP转PPTX转换: {temp_odp_path} -> 最终PPTX")
@@ -476,8 +476,8 @@ def apply_uno_format_conversion(result_path, original_name, timestamp, temp_dir,
             os.rename(final_pptx_path, final_result_path)
             logger.info(f"重命名最终PPTX文件: {final_result_path}")
         
-        logger.info(f"✅ ODP转PPTX成功: {final_result_path}")
-        logger.info(f"✅ UNO格式转换完成，最终文件: {final_result_path}")
+        logger.info(f"  ODP转PPTX成功: {final_result_path}")
+        logger.info(f"  UNO格式转换完成，最终文件: {final_result_path}")
         
         return final_result_path, temp_odp_path
         
@@ -587,7 +587,7 @@ def pyuno_controller(presentation_path: str,
             os.rename(converted_odp_path, odp_working_path)
             logger.info(f"重命名工作文件: {odp_working_path}")
         
-        logger.info(f"✅ PPTX转ODP成功: {odp_working_path}")
+        logger.info(f"  PPTX转ODP成功: {odp_working_path}")
         
     except Exception as e:
         logger.error(f"PPTX转ODP过程失败: {e}", exc_info=True)
@@ -626,7 +626,7 @@ def pyuno_controller(presentation_path: str,
         else:
             logger.info(f"加载所有页面完成，共 {len(actual_pages)} 页")
         
-        logger.info("✅ ODP内容加载完成")
+        logger.info("  ODP内容加载完成")
         
     except Exception as e:
         logger.error(f"加载ODP内容失败: {e}", exc_info=True)
@@ -669,7 +669,7 @@ def pyuno_controller(presentation_path: str,
         validation_stats = validate_translation_result(translation_results, text_boxes_data)
         logger.info(f"翻译结果验证完成，覆盖率: {validation_stats['translation_coverage']:.2f}%")
         
-        logger.info("✅ 翻译处理完成")
+        logger.info("  翻译处理完成")
         
     except Exception as e:
         logger.error(f"翻译过程失败: {e}", exc_info=True)
@@ -687,7 +687,7 @@ def pyuno_controller(presentation_path: str,
     
     try:
         translated_ppt_data = map_translation_results_back(ppt_data, translation_results, text_boxes_data)
-        logger.info("✅ 翻译结果映射完成")
+        logger.info("  翻译结果映射完成")
         
     except Exception as e:
         logger.error(f"映射翻译结果失败: {e}", exc_info=True)
@@ -715,7 +715,7 @@ def pyuno_controller(presentation_path: str,
             progress_callback
         )
         
-        logger.info(f"✅ 翻译内容写入PPTX成功: {result_path}")
+        logger.info(f"  翻译内容写入PPTX成功: {result_path}")
         
     except Exception as e:
         logger.error(f"写入翻译结果到PPTX失败: {e}", exc_info=True)
@@ -856,7 +856,7 @@ def test_pyuno_format_conversion():
             logger.error("PPTX转ODP失败")
             return False
         
-        logger.info(f"✅ PPTX转ODP成功: {odp_path}")
+        logger.info(f"  PPTX转ODP成功: {odp_path}")
         
         # 测试ODP转PPTX
         logger.info("测试ODP转PPTX...")
@@ -865,7 +865,7 @@ def test_pyuno_format_conversion():
             logger.error("ODP转PPTX失败")
             return False
         
-        logger.info(f"✅ ODP转PPTX成功: {final_pptx}")
+        logger.info(f"  ODP转PPTX成功: {final_pptx}")
         
         # 清理测试文件
         try:
@@ -875,7 +875,7 @@ def test_pyuno_format_conversion():
         except:
             pass
         
-        logger.info("✅ PyUNO格式转换测试通过！")
+        logger.info("  PyUNO格式转换测试通过！")
         return True
         
     except Exception as e:

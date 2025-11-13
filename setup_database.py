@@ -396,7 +396,7 @@ def create_directories():
     for directory in directories:
         try:
             os.makedirs(directory, exist_ok=True)
-            print(f"✅ 创建目录: {directory}")
+            print(f"  创建目录: {directory}")
         except Exception as e:
             print(f"❌ 创建目录失败 {directory}: {e}")
 
@@ -534,7 +534,7 @@ def main():
     print(f"\n[1/{total_steps}] 创建数据库...")
     if create_database():
         success_count += 1
-        print("✅ 数据库创建成功")
+        print("  数据库创建成功")
     else:
         print("❌ 数据库创建失败")
 
@@ -542,7 +542,7 @@ def main():
     print(f"\n[2/{total_steps}] 创建数据表...")
     if create_tables():
         success_count += 1
-        print("✅ 数据表创建成功")
+        print("  数据表创建成功")
     else:
         print("❌ 数据表创建失败")
 
@@ -550,7 +550,7 @@ def main():
     print(f"\n[3/{total_steps}] 初始化基础数据...")
     if init_basic_data():
         success_count += 1
-        print("✅ 基础数据初始化成功")
+        print("  基础数据初始化成功")
     else:
         print("❌ 基础数据初始化失败")
 
@@ -558,7 +558,7 @@ def main():
     print(f"\n[4/{total_steps}] 更新表结构...")
     if update_table_structure():
         success_count += 1
-        print("✅ 表结构更新成功")
+        print("  表结构更新成功")
     else:
         print("❌ 表结构更新失败")
 
@@ -566,7 +566,7 @@ def main():
     print(f"\n[5/{total_steps}] 测试数据库连接...")
     if test_database_connection():
         success_count += 1
-        print("✅ 数据库连接测试成功")
+        print("  数据库连接测试成功")
     else:
         print("❌ 数据库连接测试失败")
 
@@ -579,7 +579,7 @@ def main():
 
     if success_count == total_steps:
         print("🎉 所有步骤执行成功！")
-        print(f"\n✅ 数据库设置完成:")
+        print(f"\n  数据库设置完成:")
         print(f"   - 数据库: {DB_CONFIG['database']}")
         print(f"   - 管理员账户: admin")
         print(f"   - 管理员密码: admin123")

@@ -71,7 +71,7 @@ def translate_ppt_with_uno_color_protection(
         # 5. 保存文档
         save_path = output_path or ppt_path
         if manager.save_and_close(save_path):
-            logger.info(f"✅ UNO颜色保护翻译完成: {save_path}")
+            logger.info(f"  UNO颜色保护翻译完成: {save_path}")
             return True
         else:
             logger.error("保存文档失败")
@@ -224,7 +224,7 @@ def integrate_uno_with_existing_translation(
             )
             
             if success:
-                logger.info("✅ UNO颜色保护翻译成功")
+                logger.info("  UNO颜色保护翻译成功")
                 return True
             else:
                 logger.warning("UNO翻译失败，回退到传统方法")
@@ -316,10 +316,10 @@ if __name__ == "__main__":
     print(f"UNO可用性: {capabilities['available']}")
     
     if capabilities['available']:
-        print("✅ UNO接口可用")
+        print("  UNO接口可用")
         print("支持的功能:")
         for feature, supported in capabilities['features'].items():
-            status = "✅" if supported else "❌"
+            status = " " if supported else "❌"
             print(f"  {status} {feature}")
     else:
         print("❌ UNO接口不可用")

@@ -212,8 +212,10 @@ def process_pdf_translation_async(pdf_path, original_filename, unique_filename,
                     if md_file:
                         break
 
-            # 创建docx文件
-            docx_filename = f"{os.path.splitext(unique_filename)[0]}.docx"
+            # 创建docx文件 - 使用与PPT翻译相同的命名格式
+            # 格式：translated_源语言_目标语言_源文件名.docx
+            original_base_name = os.path.splitext(original_filename)[0]
+            docx_filename = f"translated_{source_lang.lower()}_{target_lang.lower()}_{original_base_name}.docx"
             docx_path = os.path.join(pdf_output_dir, docx_filename)
 
             if md_file:
@@ -316,8 +318,9 @@ def process_pdf_translation_async(pdf_path, original_filename, unique_filename,
             from app import db
             from app.models import UploadRecord
             
+            # 使用与文件系统一致的命名格式
             record = UploadRecord(
-                filename=original_filename,
+                filename=docx_filename,  # 使用translated_源语言_目标语言_源文件名格式
                 stored_filename=docx_filename,
                 file_path=pdf_output_dir,
                 user_id=user_id,
@@ -330,9 +333,8 @@ def process_pdf_translation_async(pdf_path, original_filename, unique_filename,
             logger.info(f"上传记录已保存到数据库，记录ID: {record.id}")
 
             # 更新任务状态到缓存
-            base_name = os.path.splitext(original_filename)[0] if original_filename else os.path.splitext(docx_filename)[0]
-            safe_base = secure_filename(base_name) if base_name else 'translated'
-            download_name = f"translated_{safe_base}.docx"
+            # download_name与文件系统中的实际文件名保持一致
+            download_name = docx_filename
             with pdf_task_lock:
                 pdf_task_status_cache[task_id] = {
                     'status': 'completed',
@@ -2745,22 +2747,20 @@ def download_translated_pdf(filename):
     try:
         logger.info(f"用户 {current_user.username} 请求下载文件: {filename}")
 
-        from werkzeug.utils import secure_filename
-        filename = secure_filename(filename)
-        logger.info(f"安全文件名: {filename}")
-
+        # 不再使用secure_filename处理，因为数据库中存储的就是实际文件名
+        # filename保持原样用于查找文件
+        
         project_root = (os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         upload_folder = current_app.config['UPLOAD_FOLDER']
         if not os.path.isabs(upload_folder):
             upload_folder = os.path.join(project_root, upload_folder)
 
         pdf_output_dir = os.path.join(upload_folder, 'pdf_outputs')
+        
+        # 直接使用filename构建路径
         expected_path = os.path.join(pdf_output_dir, filename)
         absolute_expected_path = os.path.abspath(expected_path)
 
-        logger.info(f"项目根目录: {project_root}")
-        logger.info(f"上传文件夹配置: {current_app.config['UPLOAD_FOLDER']}")
-        logger.info(f"实际上传文件夹路径: {upload_folder}")
         logger.info(f"PDF输出目录: {pdf_output_dir}")
         logger.info(f"期望的文件路径: {expected_path}")
         logger.info(f"文件绝对路径: {absolute_expected_path}")
@@ -2769,27 +2769,25 @@ def download_translated_pdf(filename):
             logger.error(f"PDF输出目录不存在: {pdf_output_dir}")
             return jsonify({'success': False, 'error': '文件目录不存在'}), 404
 
-        candidate_paths = [absolute_expected_path]
-        if not filename.lower().endswith('.docx'):
-            candidate_paths.append(os.path.abspath(os.path.join(pdf_output_dir, f"{filename}.docx")))
-
-        file_path = next((path for path in candidate_paths if os.path.exists(path)), None)
-        if not file_path:
-            logger.error(f"下载文件不存在或不匹配: {absolute_expected_path}")
-            logger.info(f"候选路径: {candidate_paths}")
+        # 检查文件是否存在
+        if not os.path.exists(absolute_expected_path):
+            logger.error(f"下载文件不存在: {absolute_expected_path}")
             try:
-                logger.info(f"目录现有文件: {os.listdir(pdf_output_dir)}")
+                existing_files = os.listdir(pdf_output_dir)
+                logger.info(f"目录现有文件: {existing_files}")
+                logger.info(f"请求的文件名: {filename}")
             except Exception as list_error:
                 logger.warning(f"列出目录失败: {list_error}")
             return jsonify({'success': False, 'error': '文件不存在'}), 404
 
-        download_name = os.path.basename(file_path)
+        # 获取下载文件名（使用原始文件名）
+        download_name = filename
 
-        logger.info(f"准备发送文件给用户: {file_path}")
-        logger.info(f"文件大小: {os.path.getsize(file_path)} 字节")
-        logger.info(f"文件绝对路径: {os.path.abspath(file_path)}")
+        logger.info(f"准备发送文件给用户: {absolute_expected_path}")
+        logger.info(f"文件大小: {os.path.getsize(absolute_expected_path)} 字节")
+        logger.info(f"下载文件名: {download_name}")
 
-        return send_file(file_path, as_attachment=True, download_name=download_name)
+        return send_file(absolute_expected_path, as_attachment=True, download_name=download_name)
     except Exception as e:
         logger.error(f"下载文件时出错: {e}")
         import traceback

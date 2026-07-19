@@ -1,20 +1,39 @@
+"""Legacy-compatible XML operations.
+
+# noqa: SIZE_OK - legacy writer remains intact while V2 responsibilities live in focused modules.
+"""
+
 from __future__ import annotations
 
 import copy
 import logging
+import os
 import re
+import tempfile
 import zipfile
 from collections.abc import Mapping, Sequence
+from io import BytesIO
 from pathlib import Path
+from threading import Lock
 from typing import Final, assert_never
 from xml.etree import ElementTree
 
+from app.translation.pptx_contract import PptxContractError, reserved_marker_counts
+from app.translation.pptx_contract_types import PptxRequestUnit, PptxUnitTranslation
+
 try:
     from .pptx_xml_autofit import enable_textbox_autofit_for_paragraph
+    from .pptx_xml_package import serialize_slide_xml, validate_pptx_package
     from .pptx_xml_types import TextBoxData, TranslationPageResult, WriteMode, XmlParagraphTarget
 except ImportError:
-    from pptx_xml_autofit import enable_textbox_autofit_for_paragraph
-    from pptx_xml_types import TextBoxData, TranslationPageResult, WriteMode, XmlParagraphTarget
+    from app.function.pynuo_fuc.pptx_xml_autofit import enable_textbox_autofit_for_paragraph
+    from app.function.pynuo_fuc.pptx_xml_package import serialize_slide_xml, validate_pptx_package
+    from app.function.pynuo_fuc.pptx_xml_types import (
+        TextBoxData,
+        TranslationPageResult,
+        WriteMode,
+        XmlParagraphTarget,
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +54,50 @@ A_BR: Final = f"{{{A_NS}}}br"
 A_END_PARA_RPR: Final = f"{{{A_NS}}}endParaRPr"
 XML_SPACE: Final = f"{{{XML_NS}}}space"
 SLIDE_PATH_RE: Final = re.compile(r"^ppt/slides/slide(\d+)\.xml$")
+RESERVED_NAMESPACE_PREFIX_RE: Final = re.compile(r"ns\d+$")
+NAMESPACE_SERIALIZATION_LOCK: Final = Lock()
+
+
+def extract_structured_units_from_pptx(
+    pptx_path: Path | str,
+    selected_page_indices: Sequence[int] | None = None,
+    *,
+    source_language: str,
+    target_language: str,
+    stop_words: Sequence[str] = (),
+    custom_translations: Mapping[str, str] | None = None,
+) -> tuple[PptxRequestUnit, ...]:
+    try:
+        from .pptx_xml_manifest import extract_structured_units_from_pptx as extract
+    except ImportError:
+        from app.function.pynuo_fuc.pptx_xml_manifest import (
+            extract_structured_units_from_pptx as extract,
+        )
+
+    return extract(
+        pptx_path,
+        selected_page_indices,
+        source_language=source_language,
+        target_language=target_language,
+        stop_words=stop_words,
+        custom_translations=custom_translations,
+    )
+
+
+def write_structured_translated_pptx(
+    input_path: Path | str,
+    output_path: Path | str,
+    translations: tuple[PptxUnitTranslation, ...],
+    bilingual_translation: str,
+) -> str:
+    try:
+        from .pptx_xml_structured import write_structured_translated_pptx as write
+    except ImportError:
+        from app.function.pynuo_fuc.pptx_xml_structured import (
+            write_structured_translated_pptx as write,
+        )
+
+    return write(input_path, output_path, translations, bilingual_translation)
 
 
 def extract_text_boxes_data_from_pptx(
@@ -74,26 +137,39 @@ def write_translated_pptx_xml(
     output_file.parent.mkdir(parents=True, exist_ok=True)
     translation_lookup = _build_translation_lookup(text_boxes_data, translation_results)
     pages_to_modify = {page for page, _, _ in translation_lookup}
-
-    with zipfile.ZipFile(input_file) as source, zipfile.ZipFile(
-        output_file,
-        "w",
-        zipfile.ZIP_DEFLATED,
-    ) as target:
-        slide_paths = _slide_paths(source)
-        slide_index_by_path = {slide_path: index for index, slide_path in enumerate(slide_paths)}
-        for item in source.infolist():
-            data = source.read(item.filename)
-            page_index = slide_index_by_path.get(item.filename)
-            if page_index in pages_to_modify:
-                data = _translated_slide_xml(
-                    data,
-                    item.filename,
-                    page_index,
-                    translation_lookup,
-                    _resolve_write_mode(bilingual_translation),
-                )
-            target.writestr(item, data)
+    with tempfile.NamedTemporaryFile(
+        prefix=f".{output_file.stem}.",
+        suffix=".tmp.pptx",
+        dir=output_file.parent,
+        delete=False,
+    ) as temporary:
+        temporary_path = Path(temporary.name)
+    try:
+        with zipfile.ZipFile(input_file) as source, zipfile.ZipFile(
+            temporary_path,
+            "w",
+            zipfile.ZIP_DEFLATED,
+        ) as target:
+            expected_members = tuple(source.namelist())
+            target.comment = source.comment
+            slide_paths = _slide_paths(source)
+            slide_index_by_path = {slide_path: index for index, slide_path in enumerate(slide_paths)}
+            for item in source.infolist():
+                data = source.read(item.filename)
+                page_index = slide_index_by_path.get(item.filename)
+                if page_index in pages_to_modify:
+                    data = _translated_slide_xml(
+                        data,
+                        item.filename,
+                        page_index,
+                        translation_lookup,
+                        _resolve_write_mode(bilingual_translation),
+                    )
+                target.writestr(item, data)
+        validate_pptx_package(temporary_path, expected_members)
+        os.replace(temporary_path, output_file)
+    finally:
+        temporary_path.unlink(missing_ok=True)
     return str(output_file)
 
 
@@ -174,6 +250,14 @@ def _build_translation_lookup(
         key = f"{item['box_index'] + 1}_{item['paragraph_index'] + 1}"
         fragments = tuple(fragment for fragment in fragments_by_key.get(key, ()) if fragment)
         if fragments:
+            if reserved_marker_counts(item["combined_text"]) != reserved_marker_counts(
+                "".join(fragments),
+            ):
+                raise PptxContractError(
+                    "reserved_marker_added",
+                    "legacy translation changed reserved marker provenance",
+                    item["paragraph_id"],
+                )
             lookup[(page_index, item["box_index"], item["paragraph_index"])] = fragments
     return lookup
 
@@ -185,13 +269,22 @@ def _translated_slide_xml(
     translation_lookup: Mapping[tuple[int, int, int], Sequence[str]],
     mode: WriteMode,
 ) -> bytes:
-    root = ElementTree.fromstring(slide_data)
-    for target in _paragraph_targets(root, page_index, slide_path):
-        fragments = translation_lookup.get((page_index, target.box_index, target.paragraph_index))
-        if fragments:
-            enable_textbox_autofit_for_paragraph(root, target.paragraph)
-            _apply_translation(target, tuple(fragments), mode)
-    return ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+    with NAMESPACE_SERIALIZATION_LOCK:
+        _register_source_namespaces(slide_data)
+        root = ElementTree.fromstring(slide_data)
+        for target in _paragraph_targets(root, page_index, slide_path):
+            fragments = translation_lookup.get((page_index, target.box_index, target.paragraph_index))
+            if fragments:
+                enable_textbox_autofit_for_paragraph(root, target.paragraph)
+                _apply_translation(target, tuple(fragments), mode)
+    return serialize_slide_xml(slide_data, root)
+
+
+def _register_source_namespaces(xml_data: bytes) -> None:
+    for _, namespace in ElementTree.iterparse(BytesIO(xml_data), events=("start-ns",)):
+        prefix, uri = namespace
+        if not RESERVED_NAMESPACE_PREFIX_RE.fullmatch(prefix):
+            ElementTree.register_namespace(prefix, uri)
 
 
 def _apply_translation(

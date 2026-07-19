@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import zipfile
 import sys
+from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -140,6 +141,38 @@ def test_write_translated_pptx_xml_sets_textbox_autofit_when_text_is_appended(
     assert body_pr.find("a:noAutofit", NS) is None
 
 
+def test_write_translated_pptx_xml_keeps_prefix_required_by_compatibility_markup(
+    tmp_path: Path,
+) -> None:
+    from pptx_xml_translate import (
+        extract_text_boxes_data_from_pptx,
+        write_translated_pptx_xml,
+    )
+
+    pptx_path = tmp_path / "source.pptx"
+    output_path = tmp_path / "translated.pptx"
+    _write_minimal_pptx(pptx_path, _slide_xml_with_p14_transition("Hello"))
+    text_boxes = extract_text_boxes_data_from_pptx(pptx_path)
+
+    write_translated_pptx_xml(
+        pptx_path,
+        output_path,
+        text_boxes,
+        {0: {"translated_fragments": {"1_1": ["Bonjour"]}}},
+        "translation_only",
+    )
+
+    with zipfile.ZipFile(output_path) as archive:
+        slide_data = archive.read("ppt/slides/slide1.xml")
+    declared_prefixes = {
+        prefix
+        for _, (prefix, _) in ElementTree.iterparse(BytesIO(slide_data), events=("start-ns",))
+    }
+    assert "p14" in declared_prefixes, (
+        'PowerPoint cannot resolve mc:Choice Requires="p14" after slide XML is rewritten'
+    )
+
+
 def _write_minimal_pptx(path: Path, *slides: str) -> None:
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", "<Types />")
@@ -159,6 +192,23 @@ def _slide_xml(text_runs: list[str], body_pr_children: str = "") -> str:
         f"<p:cSld><p:spTree><p:sp><p:txBody><a:bodyPr>{body_pr_children}</a:bodyPr><a:lstStyle/>"
         f"<a:p>{runs}</a:p>"
         "</p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
+    )
+
+
+def _slide_xml_with_p14_transition(text: str) -> str:
+    return (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        f"<p:sld xmlns:a='{NS['a']}' xmlns:p='{NS['p']}' xmlns:r='{NS['r']}' "
+        "xmlns:mc='http://schemas.openxmlformats.org/markup-compatibility/2006' "
+        "xmlns:p14='http://schemas.microsoft.com/office/powerpoint/2010/main' "
+        "mc:Ignorable='p14'>"
+        "<p:cSld><p:spTree><p:sp><p:txBody><a:bodyPr/><a:lstStyle/>"
+        f"<a:p><a:r><a:t>{text}</a:t></a:r></a:p>"
+        "</p:txBody></p:sp></p:spTree></p:cSld>"
+        "<mc:AlternateContent><mc:Choice Requires='p14'>"
+        "<p:transition/></mc:Choice>"
+        "<mc:Fallback><p:transition/></mc:Fallback></mc:AlternateContent>"
+        "</p:sld>"
     )
 
 

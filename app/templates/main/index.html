@@ -1670,19 +1670,24 @@ async function startTranslation() {
                     
                     return `
                         <tr>
-                            <td title="translated_${escapeHtml(record.filename)}">translated_${escapeHtml(record.filename)}</td>
+                            <td title="translated_${escapeHtml(record.filename)}">
+                                <span class="history-file-name">translated_${escapeHtml(record.filename)}</span>
+                                <span class="history-mobile-meta">${formatDateTime(record.upload_time)} · ${formatFileSize(record.file_size)} · ${statusText}</span>
+                            </td>
                             <td>${formatDateTime(record.upload_time)}</td>
                             <td>${formatFileSize(record.file_size)}</td>
                             <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                             <td>
-                                ${record.file_exists ?
-                                    `<a href="/download/${record.id}" class="action-btn download" title="${currentLanguage === 'en' ? 'Download' : '下载'}" aria-label="${currentLanguage === 'en' ? 'Download' : '下载'}">
-                                        <i class="bi bi-download" aria-hidden="true"></i>
-                                    </a>` : ''
-                                }
-                                <button type="button" class="action-btn delete danger" onclick="deleteFile(${record.id})" title="${currentLanguage === 'en' ? 'Delete' : '删除'}" aria-label="${currentLanguage === 'en' ? 'Delete' : '删除'}">
-                                    <i class="bi bi-trash" aria-hidden="true"></i>
-                                </button>
+                                <div class="history-actions">
+                                    ${record.file_exists ?
+                                        `<a href="/download/${record.id}" class="action-btn download" title="${currentLanguage === 'en' ? 'Download' : '下载'}" aria-label="${currentLanguage === 'en' ? 'Download' : '下载'}">
+                                            <i class="bi bi-download" aria-hidden="true"></i>
+                                        </a>` : ''
+                                    }
+                                    <button type="button" class="action-btn delete danger" onclick="deleteFile(${record.id})" title="${currentLanguage === 'en' ? 'Delete' : '删除'}" aria-label="${currentLanguage === 'en' ? 'Delete' : '删除'}">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     `;

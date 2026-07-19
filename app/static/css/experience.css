@@ -462,12 +462,17 @@ textarea {
     border-radius: var(--ux-radius-control);
 }
 
+.history-table-wrap {
+    position: relative;
+    isolation: isolate;
+}
+
 .history-table {
-    min-width: 720px;
+    min-width: 620px;
     margin: 0;
     color: var(--ux-text) !important;
     background: var(--ux-panel);
-    table-layout: auto !important;
+    table-layout: fixed !important;
 }
 
 .history-table th {
@@ -481,6 +486,50 @@ textarea {
 .history-table td {
     padding: 12px !important;
     border-bottom-color: var(--ux-border) !important;
+}
+
+.history-file-name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-mobile-meta {
+    display: none;
+}
+
+.history-table th:last-child,
+.history-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    width: 112px !important;
+    min-width: 112px;
+    background: var(--ux-panel) !important;
+    box-shadow: -1px 0 var(--ux-border), -10px 0 12px -12px rgba(38, 52, 61, 0.35);
+}
+
+.history-table th:last-child {
+    z-index: 3;
+    background: var(--ux-subtle) !important;
+}
+
+.history-table tr:hover td:last-child {
+    background: #f7fafb !important;
+}
+
+.history-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 88px;
+}
+
+.history-actions .action-btn {
+    flex: 0 0 40px;
+    margin: 0 !important;
 }
 
 .history-empty-state td,
@@ -801,6 +850,41 @@ textarea {
     .history-error-state td,
     .history-loading-state td {
         text-align: left !important;
+    }
+
+    .history-table {
+        min-width: 0;
+    }
+
+    .history-table th:nth-child(2),
+    .history-table th:nth-child(3),
+    .history-table th:nth-child(4),
+    .history-table td:nth-child(2),
+    .history-table td:nth-child(3),
+    .history-table td:nth-child(4) {
+        display: none;
+    }
+
+    .history-table th:first-child,
+    .history-table td:first-child {
+        width: auto !important;
+    }
+
+    .history-table th:last-child,
+    .history-table td:last-child {
+        position: static;
+        width: 112px !important;
+        min-width: 112px;
+        box-shadow: none;
+    }
+
+    .history-mobile-meta {
+        display: block;
+        margin-top: 4px;
+        color: var(--ux-muted);
+        font-size: 12px;
+        line-height: 16px;
+        white-space: normal;
     }
 
     .page-selector {

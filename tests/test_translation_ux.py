@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import render_template
+from flask import Flask, render_template
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,7 +69,22 @@ def test_experience_styles_define_responsive_drawer_and_readable_type() -> None:
     assert "@media (prefers-reduced-motion: reduce)" in css
 
 
-def test_translation_templates_render_with_the_application_routes(isolated_app) -> None:
+def test_ppt_history_keeps_download_actions_visible() -> None:
+    template = _read(PPT_TEMPLATE)
+    css = _read(EXPERIENCE_CSS)
+
+    assert 'class="history-actions"' in template
+    assert 'class="history-mobile-meta"' in template
+    assert ".history-table th:last-child" in css
+    assert ".history-table td:last-child" in css
+    assert "min-width: 620px" in css
+    assert "table-layout: fixed !important" in css
+    assert "position: sticky" in css
+    assert "right: 0" in css
+    assert ".history-mobile-meta" in css
+
+
+def test_translation_templates_render_with_the_application_routes(isolated_app: Flask) -> None:
     with isolated_app.test_request_context("/"):
         ppt = render_template("main/index.html")
         pdf = render_template("main/pdf_translate.html")
@@ -77,3 +92,20 @@ def test_translation_templates_render_with_the_application_routes(isolated_app) 
     assert 'aria-current="page"' in ppt
     assert 'id="dropZone"' in ppt
     assert 'id="pdfUploadZone"' in pdf
+
+
+def test_login_template_exposes_local_credentials_and_keeps_sso(isolated_app: Flask) -> None:
+    # Given
+    with isolated_app.test_request_context("/auth/login"):
+        # When
+        login = render_template("auth/login.html", sso_enabled=True, sso_provider="oauth2")
+
+    # Then
+    assert '<form class="login-form" method="post" action="/auth/login">' in login
+    assert 'name="username"' in login
+    assert 'autocomplete="username"' in login
+    assert 'name="password"' in login
+    assert 'autocomplete="current-password"' in login
+    assert "账号密码登录" in login
+    assert 'href="/auth/sso/login"' in login
+    assert 'rel="icon" href="/static/images/logo.svg"' in login

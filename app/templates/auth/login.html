@@ -11,14 +11,14 @@
             </span>
             <div>
                 <h1 class="auth-card-title">欢迎登录</h1>
-                <p class="auth-card-subtitle">统一账号接入 FrieslandCampina AI 平台</p >
+                <p class="auth-card-subtitle">使用企业 SSO 或本地账号进入 FrieslandCampina AI 平台</p>
             </div>
         </div>
 
         <div class="auth-body">
             {% if sso_enabled %}
             <div class="sso-stack">
-                <a href="/auth/sso/login" class="btn btn-primary sso-btn">
+                <a href="{{ url_for('sso.sso_login') }}" class="btn btn-primary sso-btn">
                     <span class="icon">
                         {% if sso_provider == 'oauth2' %}
                             <i class="fab fa-openid"></i>
@@ -30,36 +30,34 @@
                     </span>
                     <span class="btn-text">使用 SSO 登录</span>
                     <span class="chevron"><i class="fas fa-arrow-right"></i></span>
-                </a >
-                <p class="sso-caption">系统与企业身份平台同步，使用公司账号即可进入系统。</p >
-            </div>
-            {% else %}
-            <div class="sso-stack">
-                <p class="sso-caption">当前未启用统一登录，请联系系统管理员获取访问方式。</p >
+                </a>
+                <p class="sso-caption">系统与企业身份平台同步，使用公司账号即可进入系统。</p>
             </div>
             {% endif %}
 
-            <!-- 临时账号密码登录入口，生产环境下会注释掉 -->
-<!-- {#            <div class="local-login">#}
-{#                <div class="section-divider">#}
-{#                    <span>或使用临时账号登录</span>#}
-{#                </div>#}
-{#                <form class="login-form" method="post" action="/auth/login">#}
-{#                    {% if csrf_token is defined %}#}
-{#                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">#}
-{#                    {% endif %}#}
-{#                    <div class="form-group">#}
-{#                        <label for="username">账号</label>#}
-{#                        <input type="text" id="username" name="username" placeholder="输入账号" required>#}
-{#                    </div>#}
-{#                    <div class="form-group">#}
-{#                        <label for="password">密码</label>#}
-{#                        <input type="password" id="password" name="password" placeholder="输入密码" autocomplete="current-password" required>#}
-{#                    </div>#}
-{#                    <button type="submit" class="btn btn-secondary w-100">账号密码登录</button>#}
-{#                </form>#}
-{#            </div>#}
-{#        </div>#} -->
+            <div class="local-login">
+                {% if sso_enabled %}
+                <div class="divider"><span>或使用账号密码</span></div>
+                {% endif %}
+                <form class="login-form" method="post" action="{{ url_for('auth.login', next=request.args.get('next')) }}">
+                    {% if csrf_token is defined %}
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% endif %}
+                    <div class="form-group">
+                        <label for="username">账号</label>
+                        <input type="text" id="username" name="username" placeholder="输入账号" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input type="password" id="password" name="password" placeholder="输入密码" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit" class="btn {% if sso_enabled %}btn-secondary{% else %}btn-primary{% endif %}">
+                        <i class="fas fa-right-to-bracket" aria-hidden="true"></i>
+                        <span>账号密码登录</span>
+                    </button>
+                </form>
+            </div>
+        </div>
 
         <div class="links">
             <span>遇到问题？请联系系统管理员。</span>

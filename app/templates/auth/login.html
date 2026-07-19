@@ -11,7 +11,7 @@
             </span>
             <div>
                 <h1 class="auth-card-title">欢迎登录</h1>
-                <p class="auth-card-subtitle">使用企业 SSO 或本地账号进入 FrieslandCampina AI 平台</p>
+                <p class="auth-card-subtitle">使用企业 SSO 进入 FrieslandCampina AI 平台</p>
             </div>
         </div>
 
@@ -33,30 +33,13 @@
                 </a>
                 <p class="sso-caption">系统与企业身份平台同步，使用公司账号即可进入系统。</p>
             </div>
-            {% endif %}
-
-            <div class="local-login">
-                {% if sso_enabled %}
-                <div class="divider"><span>或使用账号密码</span></div>
-                {% endif %}
-                <form class="login-form" method="post" action="{{ url_for('auth.login', next=request.args.get('next')) }}">
-                    {% if csrf_token is defined %}
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    {% endif %}
-                    <div class="form-group">
-                        <label for="username">账号</label>
-                        <input type="text" id="username" name="username" placeholder="输入账号" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
-                    </div>
-                    <div class="form-group">
-                        <label for="password">密码</label>
-                        <input type="password" id="password" name="password" placeholder="输入密码" autocomplete="current-password" required>
-                    </div>
-                    <button type="submit" class="btn {% if sso_enabled %}btn-secondary{% else %}btn-primary{% endif %}">
-                        <i class="fas fa-right-to-bracket" aria-hidden="true"></i>
-                        <span>账号密码登录</span>
-                    </button>
-                </form>
+            {% else %}
+            <div class="sso-unavailable" role="status">
+                <i class="fas fa-circle-exclamation" aria-hidden="true"></i>
+                <strong>SSO 服务当前不可用</strong>
+                <span>请联系系统管理员检查企业身份服务配置。</span>
             </div>
+            {% endif %}
         </div>
 
         <div class="links">

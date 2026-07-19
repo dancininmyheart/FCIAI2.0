@@ -265,6 +265,26 @@ body {
     text-align: center;
 }
 
+.sso-unavailable {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--muted-text-color);
+    text-align: center;
+}
+
+.sso-unavailable i {
+    color: var(--error-color);
+    font-size: 1.25rem;
+}
+
+.sso-unavailable strong {
+    color: var(--text-color);
+}
+
 .divider {
     position: relative;
     margin: 24px 0;

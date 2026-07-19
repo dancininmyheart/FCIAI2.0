@@ -42,6 +42,8 @@ python migrations/add_translation_jobs.py upgrade --database-url "mysql+pymysql:
 python run.py
 ```
 
+`run.py` 同时承载 Web 和内嵌 Worker，因此开发服务器会关闭 Flask 自动重载，避免代码重载进程重复启动 Worker。修改代码后请手动重启服务。
+
 生产环境必须分别启动一个 Web 入口和一个 Worker。Web 可选择 WSGI 或 ASGI 包装入口：
 
 ```powershell
@@ -66,6 +68,15 @@ python app.py --check
 python run_async.py --check
 python run_worker.py --check
 ```
+
+数据库 SQL 默认不输出到控制台，避免内嵌 Worker 的队列轮询持续打印 `SELECT` 和只读事务结束时的 `ROLLBACK`。仅在排查数据库问题时临时开启：
+
+```dotenv
+SQLALCHEMY_ECHO=false
+LOG_LEVEL_SQLALCHEMY=WARNING
+```
+
+将 `SQLALCHEMY_ECHO` 改为 `true` 并重启后可查看完整 SQL；排查完成后应恢复为 `false`。
 
 ## 翻译开关
 

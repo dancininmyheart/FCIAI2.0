@@ -31,7 +31,7 @@ def _create_schema(flask_app: Flask) -> None:
 def _run_flask_server(flask_app: Flask) -> None:
     host = os.environ.get("SERVER_HOST", "0.0.0.0")
     port = int(os.environ.get("SERVER_PORT", "5000"))
-    flask_app.run(host=host, port=port)
+    flask_app.run(host=host, port=port, use_reloader=False)
 
 
 def _check_startup(config_name: str) -> None:

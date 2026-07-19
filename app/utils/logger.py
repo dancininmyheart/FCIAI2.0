@@ -93,6 +93,7 @@ class LogManager:
 
         # 设置日志级别
         self.logger.setLevel(self.log_level)
+        self.logger.propagate = False
 
         # 创建格式化器
         formatter = logging.Formatter(

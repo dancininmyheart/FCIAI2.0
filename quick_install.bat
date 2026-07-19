@@ -239,6 +239,10 @@ if not exist ".env" (
     echo FLASK_ENV=production >> .env
     echo FLASK_DEBUG=False >> .env
     echo. >> .env
+    echo # 日志配置 >> .env
+    echo SQLALCHEMY_ECHO=false >> .env
+    echo LOG_LEVEL_SQLALCHEMY=WARNING >> .env
+    echo. >> .env
     echo # 上传配置 >> .env
     echo UPLOAD_FOLDER=uploads >> .env
     echo MAX_CONTENT_LENGTH=52428800 >> .env

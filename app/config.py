@@ -74,6 +74,7 @@ class Config:
     # 基本配置
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'hard to guess string'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ECHO = False
     TRANSLATION_ARCH_MODE = TRANSLATION_SETTINGS.arch_mode
     TRANSLATION_QUALITY_MODE = TRANSLATION_SETTINGS.quality_mode
     TRANSLATION_MEMORY_ENABLED = TRANSLATION_SETTINGS.memory_enabled
@@ -220,11 +221,11 @@ class Config:
         db_name = os.environ.get('DB_NAME') or cls.DB_NAME
         
         app.config['SQLALCHEMY_DATABASE_URI'] = f"{db_type}+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+        app.config['SQLALCHEMY_ECHO'] = _setting_bool(os.environ.get('SQLALCHEMY_ECHO', 'false'))
 
 class DevelopmentConfig(Config):
     """开发环境配置"""
     DEBUG = True
-    SQLALCHEMY_ECHO = True
 
 class TestingConfig(Config):
     """测试环境配置"""

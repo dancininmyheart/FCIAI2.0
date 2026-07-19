@@ -1,21 +1,44 @@
 import time
 import json
+from pathlib import Path
+from typing import assert_never
 
 import pytz
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app, send_from_directory, \
     jsonify, session, send_file, abort
 from flask_login import login_required, current_user
+from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 from sqlalchemy.exc import SQLAlchemyError
 
 from config import data_file
 # from ..Ingredient_Search.Flask_app import search, download_files
-from ..function.adjust_text_size import set_textbox_autofit
-from ..function.ppt_translate import process_presentation, process_presentation_add_annotations
+from ..function.ppt_translate import process_presentation_add_annotations
 from config import base_model_file
 from ..models import User, UploadRecord, Translation, StopWord
 from ..services.sso_service import get_sso_service
+from ..services.translation_jobs import (
+    TranslationJobSpec,
+    build_custom_translation_map,
+    build_translation_job_request,
+    get_upload_size_limit,
+    parse_vocabulary_ids,
+)
+from ..jobs.store import IllegalJobTransition, JobNotFound, StaleJobState, TranslationJobStore
+from ..jobs.types import JobCreation, JobKind, TaskId, legacy_status
+from ..jobs.types import JobSnapshot
+from ..jobs.request_payload import MalformedTranslationRequest, parse_annotation_payload
+from ..jobs.projector import latest_for_user, queue_counts
+from ..jobs.path_security import (
+    UnsafePath,
+    pdf_output_root,
+    reject_route_token,
+    resolve_pdf_output,
+    resolve_ppt_output,
+    resolve_uploaded_source,
+    service_pdf_annotation_output,
+)
 from .. import db
 import os
 import uuid
@@ -54,315 +77,196 @@ pdf_task_status_cache = {}
 pdf_task_lock = threading.Lock()
 
 
-def process_pdf_translation_async(pdf_path, original_filename, unique_filename, 
+def _is_legacy_arch() -> bool:
+    configured = str(current_app.config.get("TRANSLATION_ARCH_MODE", "legacy"))
+    if current_app.testing and "TRANSLATION_ARCH_MODE" in os.environ:
+        configured = os.environ["TRANSLATION_ARCH_MODE"]
+    return configured.lower() == "legacy"
+
+
+def _job_store() -> TranslationJobStore:
+    return TranslationJobStore(db.session)
+
+
+def _signal_worker() -> None:
+    from app.jobs.worker import signal_embedded_worker
+
+    signal_embedded_worker(current_app)
+
+
+def _job_access(user_id):
+    return "public" if user_id is None else "private"
+
+
+def _create_ppt_ledger_job(
+    user_id,
+    file_path,
+    source_language,
+    target_language,
+    model,
+    selected_pages=(),
+    bilingual_translation="paragraph_up",
+    enable_text_splitting="False",
+    enable_uno_conversion=True,
+    custom_translations=None,
+    original_filename="",
+):
+    request_model = build_translation_job_request(
+        TranslationJobSpec(
+            file_type="pptx",
+            source_language=source_language,
+            target_language=target_language,
+            model=model,
+            access=_job_access(user_id),
+            selected_pages=tuple(selected_pages),
+            bilingual_translation=bilingual_translation,
+            enable_text_splitting=enable_text_splitting,
+            enable_uno_conversion=enable_uno_conversion,
+            custom_translations=dict(custom_translations or {}),
+            original_filename=original_filename or os.path.basename(file_path),
+            unique_filename=os.path.basename(file_path),
+            output_path=file_path,
+        ),
+    )
+    snapshot = _job_store().create(
+        JobCreation(user_id=user_id, kind=JobKind.PPT_TRANSLATION, request=request_model, source_path=file_path),
+    )
+    _signal_worker()
+    return snapshot
+
+
+def _create_pdf_ledger_job(
+    user_id,
+    pdf_path,
+    source_lang,
+    target_lang,
+    model,
+    enable_image_ocr,
+    vocabulary_ids,
+    custom_translations=None,
+    original_filename="",
+    unique_filename="",
+):
+    request_model = build_translation_job_request(
+        TranslationJobSpec(
+            file_type="pdf",
+            source_language=source_lang,
+            target_language=target_lang,
+            model=model,
+            access=_job_access(user_id),
+            enable_image_ocr=enable_image_ocr,
+            vocabulary_ids=tuple(vocabulary_ids),
+            custom_translations=dict(custom_translations or {}),
+            original_filename=original_filename or os.path.basename(pdf_path),
+            unique_filename=unique_filename or os.path.basename(pdf_path),
+        ),
+    )
+    snapshot = _job_store().create(
+        JobCreation(user_id=user_id, kind=JobKind.PDF_TRANSLATION, request=request_model, source_path=pdf_path),
+    )
+    _signal_worker()
+    return snapshot
+
+
+def _create_pdf_annotation_ledger_job(user_id, pdf_path, annotations, output_path, original_filename=""):
+    request_model = build_translation_job_request(
+        TranslationJobSpec(
+            file_type="pdf_annotation",
+            source_language="",
+            target_language="",
+            model="qwen",
+            access=_job_access(user_id),
+            annotations=tuple(annotations),
+            original_filename=original_filename or os.path.basename(pdf_path),
+            unique_filename=os.path.basename(pdf_path),
+            output_path=output_path,
+        ),
+    )
+    snapshot = _job_store().create(
+        JobCreation(user_id=user_id, kind=JobKind.PDF_ANNOTATION, request=request_model, source_path=pdf_path),
+    )
+    _signal_worker()
+    return snapshot
+
+
+def _can_read_job(snapshot):
+    if snapshot.user_id is None and snapshot.request.get("access") == "public":
+        return True
+    if not current_user.is_authenticated:
+        return False
+    return snapshot.user_id == current_user.id or current_user.is_administrator()
+
+
+def _job_for_current_user(task_id):
+    snapshot = _job_store().get(TaskId(task_id))
+    if not _can_read_job(snapshot):
+        abort(403 if current_user.is_authenticated else 401)
+    return snapshot
+
+
+def _legacy_status_for_snapshot(snapshot):
+    payload = legacy_status(snapshot)
+    if snapshot.kind in (JobKind.PDF_TRANSLATION, JobKind.PDF_ANNOTATION) and snapshot.output_path:
+        filename = os.path.basename(snapshot.output_path)
+        payload.update(
+            filename=filename,
+            stored_filename=snapshot.public_id,
+            original_filename=snapshot.request.get("original_filename", ""),
+            download_name=filename,
+        )
+    return payload
+
+
+def _download_mimetype(path):
+    extension = os.path.splitext(path)[1].lower()
+    if extension == ".docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if extension == ".pdf":
+        return "application/pdf"
+    return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+
+def _resolve_download_output(snapshot: JobSnapshot) -> Path:
+    if not snapshot.output_path:
+        raise UnsafePath(value="", reason="missing path")
+    match snapshot.kind:
+        case JobKind.PPT_TRANSLATION:
+            return resolve_ppt_output(snapshot.output_path)
+        case JobKind.PDF_TRANSLATION | JobKind.PDF_ANNOTATION:
+            return resolve_pdf_output(snapshot.output_path)
+        case unreachable:
+            assert_never(unreachable)
+
+
+def process_pdf_translation_async(pdf_path, original_filename, unique_filename,
                                   source_lang, target_lang, model, enable_image_ocr,
                                   custom_translations, user_id, task_id):
-    """
-    异步处理PDF翻译的工作函数
-    该函数在独立线程中执行，不阻塞主线程
-    """
-    from flask import current_app
-    from app import create_app
-    import zipfile
-    import requests
-    
-    logger = logging.getLogger(__name__)
-    logger.info(f"开始异步处理PDF翻译任务: {task_id}")
-    
-    # 创建应用上下文（异步任务运行在独立线程中，需要显式创建上下文）
-    app = create_app()
-    with app.app_context():
-        try:
-            # 获取上传文件夹路径
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            upload_folder = current_app.config['UPLOAD_FOLDER']
-            if not os.path.isabs(upload_folder):
-                upload_folder = os.path.join(project_root, upload_folder)
+    from app.jobs.pdf_translation import PdfTranslationRequest, process_pdf_translation
 
-            pdf_output_dir = os.path.join(upload_folder, 'pdf_outputs')
-            os.makedirs(pdf_output_dir, exist_ok=True)
-            
-            task_work_dir = os.path.join(
-                pdf_output_dir,
-                f"{os.path.splitext(unique_filename)[0]}_work"
-            )
-            os.makedirs(task_work_dir, exist_ok=True)
-
-            # 首选方案：使用OSS直链处理PDF
-            result = None
-            try:
-                from app.function.image_ocr.oss_pdf_processor import OSSPDFProcessor
-                from app.function.image_ocr.ocr_api import MinerUAPI
-
-                logger.info("初始化OSS PDF处理器")
-                logger.info(f"OCR功能状态: {'启用' if enable_image_ocr else '禁用'}")
-                oss_processor = OSSPDFProcessor()
-                mineru_api = MinerUAPI()
-
-                # 使用OSS直链处理PDF
-                logger.info(f"开始使用OSS直链处理PDF: {pdf_path}")
-                result = oss_processor.process_pdf_with_mineru(
-                    pdf_path, 
-                    mineru_api, 
-                    bucket="fciai", 
-                    region="cn-beijing",
-                    enable_ocr=enable_image_ocr
-                )
-
-                if result and isinstance(result, dict) and result.get('code') == 0:
-                    logger.info("OSS直链方案处理成功")
-                else:
-                    logger.warning("OSS直链方案处理失败，尝试使用本地PDF处理器...")
-                    result = None
-            except Exception as e:
-                logger.warning(f"OSS直链方案处理失败: {e}")
-                result = None
-
-            # 如果OSS直链方案失败，使用本地PDF处理器
-            if not result:
-                logger.info("使用本地PDF处理器...")
-                try:
-                    from app.function.local_pdf_processor import LocalPDFProcessor
-                    local_processor = LocalPDFProcessor()
-                    result = local_processor.process_pdf(pdf_path)
-                    logger.info(f"本地PDF处理结果: {result}")
-                except Exception as local_e:
-                    logger.error(f"本地PDF处理器也失败了: {local_e}")
-                    raise Exception('PDF处理失败，请检查文件格式')
-
-            if not result:
-                raise Exception("所有PDF处理方法都失败了")
-
-            # 检查结果中的状态码
-            if 'code' in result and result['code'] != 0:
-                error_msg = result.get('msg', '未知错误')
-                raise Exception(f'PDF处理失败: {error_msg}')
-
-            # 获取任务ID和结果
-            if 'data' not in result or 'task_id' not in result['data']:
-                raise Exception("MinerU返回结果缺少task_id")
-
-            mineru_task_id = result['data']['task_id']
-            logger.info(f"MinerU任务ID: {mineru_task_id}")
-
-            if 'full_zip_url' not in result['data']:
-                raise Exception("MinerU返回结果缺少full_zip_url")
-
-            zip_url = result['data']['full_zip_url']
-            logger.info(f"ZIP文件下载地址: {zip_url}")
-
-            # 下载结果
-            zip_filename = f"mineru_result_{mineru_task_id}.zip"
-            zip_path = os.path.join(task_work_dir, zip_filename)
-
-            # 下载或复制ZIP文件
-            try:
-                logger.info(f"开始处理ZIP文件: {zip_url}")
-
-                if zip_url.startswith('file://'):
-                    source_path = zip_url[7:]
-                    logger.info(f"复制本地文件: {source_path} -> {zip_path}")
-                    if not os.path.exists(source_path):
-                        raise Exception(f"源文件不存在: {source_path}")
-                    import shutil
-                    shutil.copy2(source_path, zip_path)
-                else:
-                    logger.info(f"下载远程ZIP文件: {zip_url}")
-                    # 禁用代理，直接连接
-                    response = requests.get(zip_url, timeout=300, proxies={'http': None, 'https': None})
-                    if response.status_code != 200:
-                        raise Exception(f"下载ZIP文件失败，状态码: {response.status_code}")
-                    with open(zip_path, 'wb') as f:
-                        f.write(response.content)
-                    logger.info(f"ZIP文件已保存到: {zip_path}")
-
-            except Exception as e:
-                logger.error(f"处理结果文件失败: {e}")
-                raise
-
-            # 解压ZIP文件
-            try:
-                logger.info(f"开始解压ZIP文件: {zip_path}")
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(task_work_dir)
-                    logger.info(f"ZIP文件已解压到: {task_work_dir}")
-            except Exception as e:
-                logger.error(f"解压文件失败: {e}")
-                raise
-
-            # 查找markdown文件
-            md_file = None
-            for root, dirs, files in os.walk(task_work_dir):
-                for file in files:
-                    if file.endswith('.md') and mineru_task_id in file:
-                        md_file = os.path.join(root, file)
-                        logger.info(f"找到markdown文件: {md_file}")
-                        break
-                if md_file:
-                    break
-
-            if not md_file:
-                # 查找任何md文件
-                for root, dirs, files in os.walk(task_work_dir):
-                    for file in files:
-                        if file.endswith('.md'):
-                            md_file = os.path.join(root, file)
-                            logger.info(f"找到md文件: {md_file}")
-                            break
-                    if md_file:
-                        break
-
-            # 创建docx文件 - 使用与PPT翻译相同的命名格式
-            # 格式：translated_源语言_目标语言_源文件名.docx
-            original_base_name = os.path.splitext(original_filename)[0]
-            docx_filename = f"translated_{source_lang.lower()}_{target_lang.lower()}_{original_base_name}.docx"
-            docx_path = os.path.join(pdf_output_dir, docx_filename)
-
-            if md_file:
-                # 读取提取的文本内容
-                with open(md_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                logger.info(f"成功读取内容文件，长度: {len(content)} 字符")
-
-                # 使用翻译功能生成双语Word文档
-                try:
-                    from app.utils.document_generator import translate_markdown_to_bilingual_doc
-                    
-                    # 将语言代码映射
-                    lang_mapping = {
-                        'EN': 'en', 'en': 'en',
-                        'ZH': 'zh', 'zh': 'zh',
-                        'JA': 'ja', 'ja': 'ja'
-                    }
-                    source_language = lang_mapping.get(source_lang, 'en')
-                    target_language = lang_mapping.get(target_lang, 'zh')
-
-                    logger.info(f"开始翻译，源语言={source_language}, 目标语言={target_language}")
-                    
-                    # === PDF图片OCR识别和翻译 ===
-                    ocr_results = []
-                    if enable_image_ocr:
-                        logger.info("=" * 60)
-                        logger.info("开始PDF图片OCR识别和翻译")
-                        logger.info("=" * 60)
-                        try:
-                            from app.function.image_ocr.ocr_controller import process_markdown_images_ocr_and_translate
-                            
-                            markdown_dir = os.path.dirname(md_file)
-                            logger.info(f"Markdown文件目录: {markdown_dir}")
-                            logger.info(f"源语言: {source_language}, 目标语言: {target_language}")
-                            
-                            # 调用OCR处理函数
-                            ocr_results = process_markdown_images_ocr_and_translate(
-                                markdown_content=content,
-                                markdown_dir=markdown_dir,
-                                target_language=target_language,
-                                source_language=source_language
-                            )
-                            
-                            if ocr_results:
-                                logger.info(f"  OCR处理完成，共处理 {len(ocr_results)} 个图片")
-                                for i, result in enumerate(ocr_results):
-                                    if result.get('success'):
-                                        logger.info(f"  图片 {i+1}: {os.path.basename(result['image_path'])}")
-                                        logger.info(f"    OCR文本长度: {len(result.get('ocr_text_combined', ''))}")
-                                        logger.info(f"    翻译文本长度: {len(result.get('translation_text_combined', ''))}")
-                            else:
-                                logger.info("未找到需要OCR处理的图片")
-                                
-                        except Exception as ocr_error:
-                            logger.error(f"PDF图片OCR处理失败: {ocr_error}")
-                            logger.exception("OCR错误详情")
-                            # OCR失败不影响正常翻译流程
-                    else:
-                        logger.info("未启用图片OCR功能")
-                    
-                    ok = translate_markdown_to_bilingual_doc(
-                        content,
-                        docx_path,
-                        source_language=source_language,
-                        target_language=target_language,
-                        image_base_dir=os.path.dirname(md_file),
-                        custom_translations=custom_translations,
-                        image_ocr_results=ocr_results  # 传递OCR结果
-                    )
-                    
-                    if ok:
-                        logger.info("翻译并生成Word文档成功")
-                    else:
-                        raise Exception("翻译生成Word文档失败")
-                        
-                except Exception as e:
-                    logger.error(f"翻译过程中出错: {e}")
-                    raise
-            else:
-                # 未找到md文件，创建提示文档
-                from docx import Document
-                doc = Document()
-                doc.add_heading('PDF处理结果', 1)
-                doc.add_paragraph('未能从PDF中提取到文本内容，请检查原始PDF文件是否包含可提取的文本。')
-                doc.add_paragraph(f'原始文件名: {original_filename}')
-                doc.add_paragraph(f'处理时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
-                doc.save(docx_path)
-                logger.info("创建了包含提示信息的文档")
-
-            # 检查文件是否存在
-            if not os.path.exists(docx_path):
-                raise Exception(f"翻译后的文件不存在: {docx_path}")
-
-            # 获取文件大小
-            file_size = os.path.getsize(docx_path)
-            logger.info(f"文件大小: {file_size} 字节")
-
-            # 保存到数据库
-            from app import db
-            from app.models import UploadRecord
-            
-            # 使用与文件系统一致的命名格式
-            record = UploadRecord(
-                filename=docx_filename,  # 使用translated_源语言_目标语言_源文件名格式
-                stored_filename=docx_filename,
-                file_path=pdf_output_dir,
-                user_id=user_id,
-                file_size=file_size,
-                status='completed'
-            )
-            
-            db.session.add(record)
-            db.session.commit()
-            logger.info(f"上传记录已保存到数据库，记录ID: {record.id}")
-
-            # 更新任务状态到缓存
-            # download_name与文件系统中的实际文件名保持一致
-            download_name = docx_filename
+    class _MainPdfStatusUpdater:
+        def completed(self, task_id, status):
             with pdf_task_lock:
-                pdf_task_status_cache[task_id] = {
-                    'status': 'completed',
-                    'filename': docx_filename,
-                    'stored_filename': docx_filename,
-                    'original_filename': original_filename,
-                    'download_name': download_name,
-                    'message': '翻译完成'
-                }
+                pdf_task_status_cache[task_id] = dict(status)
 
-            logger.info(f"PDF翻译任务完成: {task_id}")
-            return True
-
-        except Exception as e:
-            logger.error(f"PDF翻译任务失败: {e}")
-            import traceback
-            logger.error(f"错误详情: {traceback.format_exc()}")
-            
-            # 更新任务状态为失败
+        def failed(self, task_id, status):
             with pdf_task_lock:
-                pdf_task_status_cache[task_id] = {
-                    'status': 'failed',
-                    'error': str(e),
-                    'message': '翻译失败'
-                }
-            
-            raise
+                pdf_task_status_cache[task_id] = dict(status)
 
+    return process_pdf_translation(
+        PdfTranslationRequest(
+            pdf_path=pdf_path,
+            original_filename=original_filename,
+            unique_filename=unique_filename,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            model=model,
+            enable_image_ocr=enable_image_ocr,
+            custom_translations=custom_translations,
+            user_id=user_id,
+            task_id=task_id,
+        ),
+        _MainPdfStatusUpdater(),
+    )
 
 @main.route('/')
 @login_required
@@ -396,11 +300,14 @@ def page2():
 
 # 允许的文件扩展名和大小限制
 ALLOWED_EXTENSIONS = {'ppt', 'pptx'}
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def get_ppt_upload_limit() -> int:
+    return get_upload_size_limit(current_app.config)
 
 
 def get_unique_filename(filename):
@@ -434,14 +341,11 @@ def upload_file():
 
         # 获取选中的词汇表ID
         selected_vocabulary = request.form.get('selected_vocabulary', '')
-        vocabulary_ids = []
-        if selected_vocabulary:
-            try:
-                vocabulary_ids = [int(x.strip()) for x in selected_vocabulary.split(',') if x.strip()]
-                logger.info(f"接收到词汇表ID: {vocabulary_ids}")
-            except ValueError as e:
-                logger.error(f"词汇表ID解析失败: {selected_vocabulary}, 错误: {str(e)}")
-                vocabulary_ids = []
+        vocabulary_ids = parse_vocabulary_ids(selected_vocabulary)
+        if selected_vocabulary and not vocabulary_ids:
+            logger.error(f"词汇表ID解析失败: {selected_vocabulary}")
+        elif vocabulary_ids:
+            logger.info(f"接收到词汇表ID: {vocabulary_ids}")
 
         # 记录接收到的参数
         logger.info(f"接收到的翻译参数:")
@@ -481,34 +385,9 @@ def upload_file():
 
                 logger.info(f"从数据库查询到 {len(translations)} 个词汇条目")
 
-                # 根据翻译方向构建词典
-                for trans in translations:
-                    source_text = None
-                    target_text = None
-
-                    # 根据语言方向映射源文本和目标文本
-                    if user_language == 'English' and target_language == 'Chinese':
-                        source_text = trans.english
-                        target_text = trans.chinese
-                    elif user_language == 'Chinese' and target_language == 'English':
-                        source_text = trans.chinese
-                        target_text = trans.english
-                    elif user_language == 'English' and target_language == 'Dutch':
-                        source_text = trans.english
-                        target_text = trans.dutch
-                    elif user_language == 'Dutch' and target_language == 'English':
-                        source_text = trans.dutch
-                        target_text = trans.english
-                    elif user_language == 'Chinese' and target_language == 'Dutch':
-                        source_text = trans.chinese
-                        target_text = trans.dutch
-                    elif user_language == 'Dutch' and target_language == 'Chinese':
-                        source_text = trans.dutch
-                        target_text = trans.chinese
-
-                    # 添加到词典（确保源文本和目标文本都存在且不为空）
-                    if source_text and target_text and source_text.strip() and target_text.strip():
-                        custom_translations[source_text.strip()] = target_text.strip()
+                custom_translations.update(
+                    build_custom_translation_map(translations, user_language, target_language)
+                )
 
                 logger.info(f"构建自定义词典完成，包含 {len(custom_translations)} 个词汇对")
                 logger.info(
@@ -548,8 +427,9 @@ def upload_file():
         file_size = file.tell()  # 获取文件大小
         file.seek(0)  # 重置文件指针
 
-        if file_size > MAX_FILE_SIZE:
-            return jsonify({'code': 400, 'msg': f'文件大小超过限制 ({MAX_FILE_SIZE / 1024 / 1024}MB)'}), 400
+        upload_limit = get_ppt_upload_limit()
+        if file_size > upload_limit:
+            return jsonify({'code': 400, 'msg': f'文件大小超过限制 ({upload_limit / 1024 / 1024}MB)'}), 400
 
         # 创建用户上传目录
         upload_folder = current_app.config['UPLOAD_FOLDER']
@@ -604,6 +484,28 @@ def upload_file():
             logger.info(f"  - 文本分割: {enable_text_splitting}")
             logger.info(f"  - UNO转换: {enable_uno_conversion}")
             logger.info(f"  - 自定义词典条目数: {len(custom_translations)}")
+
+            if not _is_legacy_arch():
+                snapshot = _create_ppt_ledger_job(
+                    current_user.id,
+                    file_path,
+                    user_language,
+                    target_language,
+                    model,
+                    select_page,
+                    bilingual_translation,
+                    enable_text_splitting,
+                    enable_uno_conversion,
+                    custom_translations,
+                    original_filename,
+                )
+                return jsonify({
+                    'code': 200,
+                    'msg': '文件上传成功，已加入翻译队列',
+                    'queue_position': 1,
+                    'record_id': record.id,
+                    'task_id': snapshot.public_id,
+                })
 
             queue_position = translation_queue.add_task(
                 user_id=current_user.id,
@@ -661,14 +563,18 @@ def process_queue(app, stop_words_list, custom_translations, source_language, ta
         with app.app_context():
             # try:
             # 执行翻译
-            process_presentation(
-                task['file_path'], stop_words_list, custom_translations,
-                task['select_page'], source_language, target_language, bilingual_translation,
+            process_presentation_async(
+                presentation_path=task['file_path'],
+                stop_words_list=stop_words_list,
+                custom_translations=custom_translations,
+                select_page=task['select_page'],
+                source_language=source_language,
+                target_language=target_language,
+                bilingual_translation=bilingual_translation,
+                progress_callback=None,
                 model=task.get('model', 'qwen'),
                 enable_text_splitting=task.get('enable_text_splitting', 'False')
             )
-
-            set_textbox_autofit(task['file_path'])
 
             translation_queue.complete_current_task(success=True)
 
@@ -703,6 +609,12 @@ def process_queue(app, stop_words_list, custom_translations, source_language, ta
 @login_required
 def get_task_status():
     """获取当前用户的任务状态"""
+    if not _is_legacy_arch():
+        snapshot = latest_for_user(db.session, current_user.id)
+        if snapshot is None:
+            return jsonify({'status': 'no_task'})
+        return jsonify(legacy_status(snapshot))
+
     status = translation_queue.get_task_status_by_user(current_user.id)
     if status:
         # 转换日志格式以便前端显示
@@ -735,6 +647,16 @@ def get_pdf_task_status():
         
         if not task_id:
             return jsonify({'status': 'no_task'})
+
+        if not _is_legacy_arch():
+            try:
+                response = _legacy_status_for_snapshot(_job_for_current_user(task_id))
+            except JobNotFound:
+                return jsonify({'status': 'no_task'})
+            original_name = session.get('pdf_original_filename', '')
+            if original_name:
+                response['original_filename'] = original_name
+            return jsonify(response)
         
         # 从缓存中获取任务状态
         with pdf_task_lock:
@@ -803,9 +725,30 @@ def get_pdf_task_status():
             
         return jsonify(response)
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取PDF任务状态失败: {e}")
         return jsonify({'status': 'no_task'})
+
+
+def _ledger_queue_status_payload() -> dict[str, int | bool | str]:
+    counts = queue_counts(db.session)
+    max_concurrent = int(os.getenv("TASK_QUEUE_MAX_CONCURRENT", "10"))
+    active_tasks = counts["running"]
+    waiting_tasks = counts["queued"]
+    total_active = active_tasks + waiting_tasks
+    return {
+        'max_concurrent_tasks': max_concurrent,
+        'active_tasks': active_tasks,
+        'waiting_tasks': waiting_tasks,
+        'total_tasks': counts["total"],
+        'completed_tasks': counts["succeeded"],
+        'failed_tasks': counts["failed"] + counts["interrupted"],
+        'available_slots': max(0, max_concurrent - active_tasks),
+        'queue_full': total_active >= max_concurrent,
+        'system_status': 'normal' if total_active < max_concurrent else 'busy',
+    }
 
 
 @main.route('/queue_status')
@@ -813,6 +756,9 @@ def get_pdf_task_status():
 def get_queue_status():
     """获取翻译队列状态信息"""
     try:
+        if not _is_legacy_arch():
+            return jsonify(_ledger_queue_status_payload())
+
         # 获取队列统计信息
         queue_stats = translation_queue.get_queue_stats()
 
@@ -1711,6 +1657,62 @@ def get_annotation_files():
         return jsonify({'error': str(e)}), 500
 
 
+@main.route('/api/start_pdf_annotation', methods=['POST'])
+@login_required
+def start_pdf_annotation():
+    try:
+        data = request.get_json(silent=True) or {}
+        pdf_path = data.get('file_path') or request.form.get('file_path')
+        original_filename = data.get('original_filename') or request.form.get('original_filename') or ''
+        annotations = data.get('annotations') or []
+        if not pdf_path:
+            return jsonify({'success': False, 'error': 'missing file_path'}), 400
+        if not _is_legacy_arch():
+            try:
+                source_path = resolve_uploaded_source(str(pdf_path))
+                output_path = service_pdf_annotation_output(source_path)
+                parsed_annotations = parse_annotation_payload(annotations)
+            except UnsafePath as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 400
+            except MalformedTranslationRequest as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 400
+            snapshot = _create_pdf_annotation_ledger_job(
+                current_user.id,
+                str(source_path),
+                parsed_annotations,
+                str(output_path),
+                original_filename or source_path.name,
+            )
+            session['pdf_task_id'] = snapshot.public_id
+            session['pdf_original_filename'] = original_filename or source_path.name
+            return jsonify({
+                'success': True,
+                'message': 'PDF annotation task created',
+                'task_id': snapshot.public_id,
+            })
+        if not os.path.exists(pdf_path):
+            return jsonify({'success': False, 'error': 'file not found'}), 400
+        output_path = data.get('output_path') or request.form.get('output_path')
+        if not output_path:
+            output_path = f"{os.path.splitext(pdf_path)[0]}_annotated.pdf"
+        task_id = str(uuid.uuid4())
+        translation_queue.add_task(
+            user_id=current_user.id,
+            user_name=current_user.username,
+            file_path=pdf_path,
+            model="qwen",
+            task_type="pdf_annotate",
+            annotations=annotations,
+            output_path=output_path,
+        )
+        return jsonify({'success': True, 'message': 'PDF annotation task created', 'task_id': task_id})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"create PDF annotation task failed: {e}")
+        return jsonify({'success': False, 'error': f'create PDF annotation task failed: {str(e)}'}), 500
+
+
 @main.route('/api/users/sso')
 @login_required
 def get_sso_users():
@@ -1759,6 +1761,18 @@ def get_detailed_queue_status():
 
     try:
         # 获取队列状态和统计信息
+        if not _is_legacy_arch():
+            user_tasks = []
+            if current_user.is_authenticated:
+                snapshot = latest_for_user(db.session, current_user.id)
+                if snapshot is not None:
+                    user_tasks.append(_legacy_status_for_snapshot(snapshot))
+            return jsonify({
+                'code': 200,
+                'queue_status': _ledger_queue_status_payload(),
+                'user_tasks': user_tasks,
+            })
+
         status_info = translation_queue.get_queue_status()
         user_tasks = translation_queue.get_user_tasks(username)
 
@@ -1796,12 +1810,22 @@ def cancel_task(task_id):
         return jsonify({'code': 403, 'msg': '用户未登录'}), 403
 
     try:
+        if not _is_legacy_arch():
+            snapshot = _job_for_current_user(task_id)
+            _job_store().cancel(snapshot.public_id, snapshot.version)
+            return jsonify({'code': 200, 'msg': '任务已取消'})
+
         # 尝试取消任务
         result = translation_queue.cancel_task(task_id, username)
         if result:
             return jsonify({'code': 200, 'msg': '任务已取消'})
         else:
             return jsonify({'code': 400, 'msg': '取消任务失败，任务可能不存在或已经开始处理'}), 400
+    except HTTPException:
+        raise
+    except (IllegalJobTransition, JobNotFound, StaleJobState) as e:
+        logger.error(f"取消任务失败: {str(e)}")
+        return jsonify({'code': 400, 'msg': '取消任务失败，任务可能不存在或已经开始处理'}), 400
     except Exception as e:
         logger.error(f"取消任务失败: {str(e)}")
         return jsonify({'code': 500, 'msg': f'取消任务失败: {str(e)}'}), 500
@@ -1883,6 +1907,22 @@ def start_translation():
 
         logger.info(f"公开API文件已保存: {file_path}")
 
+        if not _is_legacy_arch():
+            snapshot = _create_ppt_ledger_job(
+                None,
+                file_path,
+                "en",
+                "zh",
+                request.form.get("model", "qwen"),
+                original_filename=filename,
+            )
+            logger.info(f"公开API翻译任务已入账: {snapshot.public_id}")
+            return jsonify({
+                'task_id': snapshot.public_id,
+                'status': 'started',
+                'message': '翻译任务已启动'
+            })
+
         # 初始化任务状态
         simple_task_status[task_id] = {
             'status': 'processing',
@@ -1943,7 +1983,7 @@ def execute_simple_translation_task(task_id, file_path, filename):
         enable_uno_conversion = True  # 默认启用UNO转换
 
         # 执行翻译
-        result = process_presentation(
+        result = process_presentation_async(
             file_path,
             stop_words_list,
             custom_translations,
@@ -1987,6 +2027,12 @@ def execute_simple_translation_task(task_id, file_path, filename):
 def get_simple_task_status(task_id):
     """获取特定任务状态（公开API，不需要认证）"""
     try:
+        if not _is_legacy_arch():
+            try:
+                return jsonify(_legacy_status_for_snapshot(_job_for_current_user(task_id)))
+            except JobNotFound:
+                return jsonify({'status': 'not_found', 'error': '任务不存在'}), 404
+
         if task_id not in simple_task_status:
             return jsonify({'status': 'not_found', 'error': '任务不存在'}), 404
 
@@ -2005,6 +2051,8 @@ def get_simple_task_status(task_id):
 
         return jsonify(response)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取公开API任务状态失败: {str(e)}")
         return jsonify({'status': 'error', 'error': str(e)}), 500
@@ -2014,6 +2062,26 @@ def get_simple_task_status(task_id):
 def download_simple_translated_file(task_id):
     """下载翻译后的文件（公开API，不需要认证）"""
     try:
+        if not _is_legacy_arch():
+            try:
+                snapshot = _job_store().get(TaskId(task_id))
+            except JobNotFound:
+                return jsonify({'error': '任务不存在'}), 404
+            if snapshot.status.value != 'succeeded':
+                return jsonify({'error': '任务尚未完成'}), 400
+            try:
+                output_path = _resolve_download_output(snapshot)
+            except UnsafePath:
+                return jsonify({'error': '文件不存在'}), 404
+            if not _can_read_job(snapshot):
+                abort(403 if current_user.is_authenticated else 401)
+            return send_file(
+                output_path,
+                as_attachment=True,
+                download_name=f"translated_{output_path.name}",
+                mimetype=_download_mimetype(str(output_path))
+            )
+
         if task_id not in simple_task_status:
             return jsonify({'error': '任务不存在'}), 404
 
@@ -2037,6 +2105,8 @@ def download_simple_translated_file(task_id):
             mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"下载公开API文件失败: {str(e)}")
         return jsonify({'error': f'下载失败: {str(e)}'}), 500
@@ -2081,7 +2151,7 @@ def ppt_translate_simple():
         enable_uno_conversion = True  # 默认启用UNO转换
 
         # 执行同步翻译
-        result = process_presentation(
+        result = process_presentation_async(
             file_path,
             stop_words_list,
             custom_translations,
@@ -2510,14 +2580,11 @@ def start_pdf_translation():
 
         # 获取选中的词汇表ID
         selected_vocabulary = request.form.get('selected_vocabulary', '')
-        vocabulary_ids = []
-        if selected_vocabulary:
-            try:
-                vocabulary_ids = [int(x.strip()) for x in selected_vocabulary.split(',') if x.strip()]
-                logger.info(f"接收到词汇表ID: {vocabulary_ids}")
-            except ValueError as e:
-                logger.error(f"词汇表ID解析失败: {selected_vocabulary}, 错误: {str(e)}")
-                vocabulary_ids = []
+        vocabulary_ids = parse_vocabulary_ids(selected_vocabulary)
+        if selected_vocabulary and not vocabulary_ids:
+            logger.error(f"词汇表ID解析失败: {selected_vocabulary}")
+        elif vocabulary_ids:
+            logger.info(f"接收到词汇表ID: {vocabulary_ids}")
 
         # 构建自定义翻译词典
         custom_translations = {}
@@ -2532,15 +2599,9 @@ def start_pdf_translation():
                     )
                 ).all()
 
-                for translation in translations:
-                    source_field = {'EN': 'english', 'ZH': 'chinese', 'JA': 'japanese'}.get(source_lang, 'english')
-                    target_field = {'EN': 'english', 'ZH': 'chinese', 'JA': 'japanese'}.get(target_lang, 'chinese')
-
-                    source_text = getattr(translation, source_field, '')
-                    target_text = getattr(translation, target_field, '')
-
-                    if source_text and target_text:
-                        custom_translations[source_text] = target_text
+                custom_translations.update(
+                    build_custom_translation_map(translations, source_lang, target_lang)
+                )
 
                 logger.info(f"构建自定义词典完成，共 {len(custom_translations)} 个词汇")
             except Exception as e:
@@ -2549,6 +2610,27 @@ def start_pdf_translation():
 
         # 创建PDF翻译任务
         task_id = str(uuid.uuid4())
+
+        if not _is_legacy_arch():
+            snapshot = _create_pdf_ledger_job(
+                current_user.id,
+                pdf_path,
+                source_lang,
+                target_lang,
+                model,
+                enable_image_ocr,
+                vocabulary_ids,
+                custom_translations,
+                original_filename,
+                unique_filename,
+            )
+            session['pdf_task_id'] = snapshot.public_id
+            session['pdf_original_filename'] = original_filename
+            return jsonify({
+                'success': True,
+                'message': 'PDF翻译任务已创建',
+                'task_id': snapshot.public_id
+            })
         
         # 将任务参数保存到session中，供任务状态查询使用
         session['pdf_task_id'] = task_id
@@ -2655,14 +2737,11 @@ def translate_pdf():
 
         # 获取选中的词汇表ID
         selected_vocabulary = request.form.get('selected_vocabulary', '')
-        vocabulary_ids = []
-        if selected_vocabulary:
-            try:
-                vocabulary_ids = [int(x.strip()) for x in selected_vocabulary.split(',') if x.strip()]
-                logger.info(f"接收到词汇表ID: {vocabulary_ids}")
-            except ValueError as e:
-                logger.error(f"词汇表ID解析失败: {selected_vocabulary}, 错误: {str(e)}")
-                vocabulary_ids = []
+        vocabulary_ids = parse_vocabulary_ids(selected_vocabulary)
+        if selected_vocabulary and not vocabulary_ids:
+            logger.error(f"词汇表ID解析失败: {selected_vocabulary}")
+        elif vocabulary_ids:
+            logger.info(f"接收到词汇表ID: {vocabulary_ids}")
 
         # 构建自定义翻译词典
         custom_translations = {}
@@ -2677,15 +2756,9 @@ def translate_pdf():
                     )
                 ).all()
 
-                for translation in translations:
-                    source_field = {'EN': 'english', 'ZH': 'chinese', 'JA': 'japanese'}.get(source_lang, 'english')
-                    target_field = {'EN': 'english', 'ZH': 'chinese', 'JA': 'japanese'}.get(target_lang, 'chinese')
-
-                    source_text = getattr(translation, source_field, '')
-                    target_text = getattr(translation, target_field, '')
-
-                    if source_text and target_text:
-                        custom_translations[source_text] = target_text
+                custom_translations.update(
+                    build_custom_translation_map(translations, source_lang, target_lang)
+                )
 
                 logger.info(f"构建自定义词典完成，共 {len(custom_translations)} 个词汇")
             except Exception as e:
@@ -2694,6 +2767,27 @@ def translate_pdf():
 
         # 创建PDF翻译任务
         task_id = str(uuid.uuid4())
+
+        if not _is_legacy_arch():
+            snapshot = _create_pdf_ledger_job(
+                current_user.id,
+                pdf_path,
+                source_lang,
+                target_lang,
+                model,
+                enable_image_ocr,
+                vocabulary_ids,
+                custom_translations,
+                original_file.filename,
+                unique_filename,
+            )
+            session['pdf_task_id'] = snapshot.public_id
+            session['pdf_original_filename'] = original_file.filename
+            return jsonify({
+                'success': True,
+                'message': 'PDF翻译任务已创建',
+                'task_id': snapshot.public_id
+            })
         
         # 将任务参数保存到session中，供任务状态查询使用
         session['pdf_task_id'] = task_id
@@ -2741,8 +2835,34 @@ def translate_pdf():
         return jsonify({'success': False, 'error': f'创建PDF翻译任务时出错: {str(e)}'}), 500
 
 @main.route('/download_translated_pdf/<filename>')
-@login_required
 def download_translated_pdf(filename):
+    try:
+        reject_route_token(filename)
+    except UnsafePath as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+
+    if not _is_legacy_arch():
+        try:
+            snapshot = _job_store().get(TaskId(filename))
+        except JobNotFound:
+            return jsonify({'success': False, 'error': '任务不存在'}), 404
+        if snapshot.status.value != 'succeeded':
+            return jsonify({'success': False, 'error': '任务尚未完成'}), 400
+        try:
+            output_path = _resolve_download_output(snapshot)
+        except UnsafePath as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 404
+        if not _can_read_job(snapshot):
+            abort(403 if current_user.is_authenticated else 401)
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name=output_path.name,
+            mimetype=_download_mimetype(str(output_path)),
+        )
+
+    if not current_user.is_authenticated:
+        abort(401)
     """下载翻译后的PDF文件（实际上是Word文档）"""
     try:
         logger.info(f"用户 {current_user.username} 请求下载文件: {filename}")

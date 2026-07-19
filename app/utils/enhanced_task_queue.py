@@ -72,6 +72,9 @@ class TranslationTask:
         self.annotations = kwargs.get('annotations', [])
         self.output_path = kwargs.get('output_path', '')
         self.ocr_language = kwargs.get('ocr_language', 'chi_sim+eng')
+        self.original_filename = kwargs.get('original_filename', os.path.basename(file_path))
+        self.unique_filename = kwargs.get('unique_filename', os.path.basename(file_path))
+        self.enable_image_ocr = kwargs.get('enable_image_ocr', False)
 
         # 状态信息
         self.status = "waiting"  # waiting, processing, completed, failed, canceled
@@ -107,6 +110,10 @@ class TranslationTask:
 
         # 获取任务专用的日志记录器
         self.logger = logging.getLogger(f"{__name__}.task.{user_id}")
+        self.ledger_progress_callback = kwargs.get('ledger_progress_callback')
+        self.ledger_completion_callback = kwargs.get('ledger_completion_callback')
+        self.ledger_execution_preflight = kwargs.get('ledger_execution_preflight')
+        self.ledger_attempt = kwargs.get('ledger_attempt', 0)
         self.logger.info(f"创建新任务: 用户={user_name}, 文件={os.path.basename(file_path)}, 模型={model}, 词典条目={len(self.custom_translations)}")
 
 class EnhancedTranslationQueue:
@@ -129,6 +136,8 @@ class EnhancedTranslationQueue:
         self.running = False
         self.lock = threading.RLock()
         self.task_available = threading.Event()
+        self.recycle_stop_event = threading.Event()
+        self.recycle_thread = None
         
         # 线程池健康状态
         self.last_pool_check = time.time()
@@ -158,16 +167,7 @@ class EnhancedTranslationQueue:
             if retry_times is not None:
                 self.retry_times = retry_times
 
-            # 如果已经初始化，需要重新启动处理器
-            if self.initialized:
-                self.stop_processor()
-                self.start_processor()
-            else:
-                self.start_processor()
-                self.initialized = True
-                
-                # 启动定期回收数据库连接的后台线程
-                self.schedule_db_connection_recycling()
+            self.initialized = True
 
     def add_task(self, user_id: int, user_name: str, file_path: str,model:str,
                 task_type: str = 'ppt_translate', source_language: str = 'en',
@@ -260,11 +260,33 @@ class EnhancedTranslationQueue:
             # 返回队列中等待的任务数
             return len([t for t in self.tasks.values() if t.status == "waiting"])
 
+    def add_claimed_task(self, task: TranslationTask) -> int:
+        if not self.initialized:
+            raise RuntimeError("任务队列未初始化")
+
+        with self.lock:
+            active_count = len(self.active_tasks)
+            waiting_count = len([queued for queued in self.tasks.values() if queued.status == "waiting"])
+            if active_count + waiting_count >= self.max_concurrent_tasks:
+                raise RuntimeError("任务队列已满")
+            self.tasks[task.task_id] = task
+            self.user_tasks[task.user_id] = task.task_id
+            self.task_available.set()
+            return waiting_count + 1
+
+    def has_available_slot(self) -> bool:
+        with self.lock:
+            active_count = len(self.active_tasks)
+            waiting_count = len([queued for queued in self.tasks.values() if queued.status == "waiting"])
+            return active_count + waiting_count < self.max_concurrent_tasks
+
     def start_processor(self) -> None:
         """启动任务处理器"""
         with self.lock:
             if not self.running:
                 self.logger.info("正在启动任务处理器...")
+                if not self.initialized:
+                    self.configure()
                 self.running = True
 
                 # 检查线程池健康状态
@@ -282,6 +304,7 @@ class EnhancedTranslationQueue:
                     f"任务处理器已启动 - 最大并发任务数: {self.max_concurrent_tasks}, "
                     f"超时时间: {self.task_timeout}秒"
                 )
+                self.schedule_db_connection_recycling()
 
     def stop_processor(self) -> None:
         """停止任务处理器"""
@@ -491,6 +514,13 @@ class EnhancedTranslationQueue:
             if task.status in ["canceled", "failed"]:
                 self.logger.debug(f"跳过已取消或失败的任务: {task.task_id}")
                 return
+
+            if task.ledger_execution_preflight and not task.ledger_execution_preflight():
+                task.status = "canceled"
+                task.completed_at = now_with_timezone()
+                task.event.set()
+                self.logger.info(f"跳过失效的账本任务: {task.task_id}")
+                return
             
             # 更新任务状态
             task.status = "processing"
@@ -574,7 +604,9 @@ class EnhancedTranslationQueue:
                         queue_instance.logger.info(f"任务已取消: {task.task_id}")
                         # 更新数据库记录状态
                         queue_instance._schedule_database_update(task)
-                    
+                    if task.ledger_completion_callback:
+                        task.ledger_completion_callback(task)
+
                     # 确保全局清理线程池存在
                     if not hasattr(queue_instance, 'cleanup_executor') or queue_instance.cleanup_executor is None:
                         queue_instance.cleanup_executor = ThreadPoolExecutor(
@@ -835,15 +867,12 @@ class EnhancedTranslationQueue:
                     # 保留最近的50条日志
                     if len(task.logs) > 50:
                         task.logs = task.logs[-50:]
+                    if task.ledger_progress_callback:
+                        task.ledger_progress_callback(progress)
 
-                # 执行具体的任务逻辑
-                success = False
-                if task.task_type == 'ppt_translate':
-                    success = self._execute_ppt_translation_task(task, progress_callback)
-                elif task.task_type == 'pdf_annotate':
-                    success = self._execute_pdf_annotation_task(task, progress_callback)
-                else:
-                    raise ValueError(f"不支持的任务类型: {task.task_type}")
+                from app.jobs.executor import execute_legacy_task
+
+                success = execute_legacy_task(task, progress_callback)
 
                 # 记录数据库连接使用情况变化
                 db_conn_after = self._get_db_connection_info()
@@ -953,122 +982,23 @@ class EnhancedTranslationQueue:
             self.logger.error(f"执行垃圾回收失败: {str(e)}")
 
     def _execute_ppt_translation_task(self, task: TranslationTask, progress_callback) -> bool:
-        """
-        执行PPT翻译任务
+        """Compatibility wrapper for PPT execution through the typed job executor."""
+        from app.jobs.executor import execute_legacy_task
 
-        Args:
-            task: 翻译任务对象
-            progress_callback: 进度回调函数
-
-        Returns:
-            bool: 处理是否成功
-        """
         try:
-            # 导入翻译函数
-            from ..function.ppt_translate_async import process_presentation, process_presentation_add_annotations
-
-            # 停止词列表和自定义翻译字典
-            stop_words_list = []
-            # 使用任务中的自定义翻译词典
-            custom_translations = task.custom_translations or {}
-            
-            # 记录使用的词典信息
-            if custom_translations:
-                self.logger.info(f"使用自定义词典，包含 {len(custom_translations)} 个词汇对")
-                # 记录前几个词汇作为示例
-                sample_items = list(custom_translations.items())[:3]
-                if sample_items:
-                    self.logger.info(f"词典示例: {sample_items}")
-            else:
-                self.logger.info("未使用自定义词典")
-
-            # 判断是否有注释数据
-            if task.annotation_json:
-                self.logger.info(f"处理带注释的PPT翻译任务: {task.annotation_filename}")
-
-                # 使用带注释的处理函数
-                result = process_presentation_add_annotations(
-                    presentation_path=task.file_path,
-                    annotations=task.annotation_json,  # 直接使用注释数据
-                    stop_words=stop_words_list,
-                    custom_translations=custom_translations,
-                    source_language=task.source_language,
-                    target_language=task.target_language,
-                    bilingual_translation=task.bilingual_translation,
-                    progress_callback=progress_callback,
-                    model=task.model
-                )
-            else:
-                # 使用普通处理函数
-                self.logger.info(f"执行PPT翻译任务，参数:")
-                self.logger.info(f"  - 模型: {task.model}")
-                self.logger.info(f"  - 文本分割: {task.enable_text_splitting}")
-                self.logger.info(f"  - UNO转换: {task.enable_uno_conversion}")
-                self.logger.info(f"  - 词典条目数: {len(custom_translations)}")
-                
-                result = process_presentation(
-                    presentation_path=task.file_path,
-                    stop_words=stop_words_list,
-                    custom_translations=custom_translations,
-                    select_page=task.select_page,
-                    source_language=task.source_language,
-                    target_language=task.target_language,
-                    bilingual_translation=task.bilingual_translation,
-                    progress_callback=progress_callback,
-                    model=task.model,
-                    enable_text_splitting=task.enable_text_splitting,
-                    enable_uno_conversion=task.enable_uno_conversion
-                )
-
-            return result
-
+            return execute_legacy_task(task, progress_callback)
         except Exception as e:
             self.logger.error(f"执行PPT翻译任务时出错: {str(e)}")
             return False
-
     def _execute_pdf_annotation_task(self, task: TranslationTask, progress_callback) -> bool:
-        """
-        执行PDF注释任务
+        """Compatibility wrapper for PDF annotation through the typed job executor."""
+        from app.jobs.executor import execute_legacy_task
 
-        Args:
-            task: 翻译任务对象
-            progress_callback: 进度回调函数
-
-        Returns:
-            bool: 处理是否成功
-        """
         try:
-            # 导入PDF注释处理函数
-            from ..function.pdf_annotate_async import process_pdf_annotations_async
-            import asyncio
-
-            # 设置输出路径
-            if not task.output_path:
-                # 如果没有指定输出路径，生成默认路径
-                base_name = os.path.splitext(task.file_path)[0]
-                task.output_path = f"{base_name}_annotated.pdf"
-
-            # 创建异步事件循环并执行PDF注释处理
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            try:
-                result = loop.run_until_complete(
-                    process_pdf_annotations_async(
-                        pdf_path=task.file_path,
-                        annotations=task.annotations,
-                        output_path=task.output_path,
-                        progress_callback=progress_callback
-                    )
-                )
-                return result
-            finally:
-                loop.close()
-
+            return execute_legacy_task(task, progress_callback)
         except Exception as e:
             self.logger.error(f"执行PDF注释任务时出错: {str(e)}")
             return False
-
     def _schedule_database_update(self, task: TranslationTask) -> None:
         """
         调度数据库更新任务
@@ -1642,13 +1572,17 @@ class EnhancedTranslationQueue:
         """
         if interval is not None:
             self.db_recycle_interval = interval
+        if self.recycle_thread is not None and self.recycle_thread.is_alive():
+            return
+        self.recycle_stop_event = threading.Event()
             
         def _recycle_job():
             self.logger.info(f"启动数据库连接定期回收线程，间隔：{self.db_recycle_interval}秒")
             while self.running:
                 try:
                     # 等待指定间隔
-                    time.sleep(self.db_recycle_interval)
+                    if self.recycle_stop_event.wait(self.db_recycle_interval):
+                        break
                     
                     # 如果任务队列不再运行，退出循环
                     if not self.running:
@@ -1669,12 +1603,12 @@ class EnhancedTranslationQueue:
                     time.sleep(60)
                     
         # 启动后台线程
-        recycle_thread = threading.Thread(
+        self.recycle_thread = threading.Thread(
             target=_recycle_job,
             name="db_connection_recycler",
             daemon=True  # 使用守护线程，主线程结束时自动结束
         )
-        recycle_thread.start()
+        self.recycle_thread.start()
         
         self.logger.info("数据库连接定期回收线程已启动")
 
@@ -1699,6 +1633,7 @@ class EnhancedTranslationQueue:
             
             # 标记为不再运行
             self.running = False
+            self.recycle_stop_event.set()
         
         # 唤醒处理器线程
         self.task_available.set()
@@ -1813,17 +1748,15 @@ class EnhancedTranslationQueue:
                         self.logger.debug("处理器线程已正常结束")
                 except Exception as e:
                     self.logger.error(f"等待处理器线程结束时出错: {str(e)}")
-            
-            # 安全关闭线程池
-            try:
-                if hasattr(thread_pool, 'safe_shutdown'):
-                    self.logger.info("使用安全机制关闭线程池...")
-                    thread_pool.safe_shutdown(wait=True, timeout=5.0)
-                else:
-                    self.logger.info("使用标准机制关闭线程池...")
-                    thread_pool.shutdown(wait=False)
-            except Exception as e:
-                self.logger.error(f"关闭线程池时出错: {str(e)}")
+
+            if self.recycle_thread is not None and self.recycle_thread.is_alive():
+                try:
+                    self.recycle_stop_event.set()
+                    self.recycle_thread.join(timeout=5.0)
+                    if self.recycle_thread.is_alive():
+                        self.logger.warning("数据库连接回收线程未在预期时间内结束")
+                except Exception as e:
+                    self.logger.error(f"等待数据库连接回收线程结束时出错: {str(e)}")
             
             # 关闭清理线程池
             if hasattr(self, 'cleanup_executor') and self.cleanup_executor:

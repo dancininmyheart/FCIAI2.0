@@ -1,6 +1,6 @@
 #!/bin/bash
 # PPT翻译系统快速安装脚本
-# 适用于Ubuntu 20.04+
+# 建议用于Ubuntu 24.04+；Python最低版本为3.11
 
 set -e
 
@@ -44,8 +44,15 @@ check_os() {
     fi
     
     . /etc/os-release
-    if [[ "$ID" != "ubuntu" ]] || [[ "${VERSION_ID}" < "20.04" ]]; then
-        log_warn "此脚本主要针对Ubuntu 20.04+测试，其他系统可能需要手动调整"
+    if [[ "$ID" != "ubuntu" ]] || [[ "${VERSION_ID}" < "24.04" ]]; then
+        log_warn "此脚本主要针对Ubuntu 24.04+测试，其他系统必须自行提供Python 3.11+"
+    fi
+}
+
+check_python_version() {
+    if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+        log_error "需要Python 3.11或更高版本"
+        exit 1
     fi
 }
 
@@ -148,6 +155,17 @@ install_python_deps() {
     log_info "Python依赖安装完成"
 }
 
+verify_entrypoints() {
+    log_step "验证运行入口..."
+
+    cd "$PROJECT_DIR"
+    for entrypoint in run.py app.py run_async.py run_worker.py; do
+        sudo -u "$PROJECT_USER" "$PROJECT_DIR/venv/bin/python" "$entrypoint" --check
+    done
+
+    log_info "运行入口验证完成"
+}
+
 # 配置数据库
 setup_database() {
     log_step "配置数据库..."
@@ -182,7 +200,7 @@ server {
     listen 80;
     server_name _;
     
-    client_max_body_size 100M;
+    client_max_body_size 12G;
     
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -228,14 +246,30 @@ setup_supervisor() {
     
     # 创建Supervisor配置文件
     sudo tee /etc/supervisor/conf.d/ppt-translation.conf > /dev/null <<EOF
-[program:ppt-translation]
-command=$PROJECT_DIR/venv/bin/gunicorn -w 4 -b 127.0.0.1:5000 app:app
+[group:ppt-translation]
+programs=ppt-translation-web,ppt-translation-worker
+priority=999
+
+[program:ppt-translation-web]
+command=$PROJECT_DIR/venv/bin/python run_async.py
 directory=$PROJECT_DIR
 user=$PROJECT_USER
 autostart=true
 autorestart=true
 redirect_stderr=true
-stdout_logfile=$PROJECT_DIR/logs/gunicorn.log
+stdout_logfile=$PROJECT_DIR/logs/web.log
+stdout_logfile_maxbytes=50MB
+stdout_logfile_backups=5
+environment=PATH="$PROJECT_DIR/venv/bin"
+
+[program:ppt-translation-worker]
+command=$PROJECT_DIR/venv/bin/python run_worker.py
+directory=$PROJECT_DIR
+user=$PROJECT_USER
+autostart=true
+autorestart=true
+redirect_stderr=true
+stdout_logfile=$PROJECT_DIR/logs/worker.log
 stdout_logfile_maxbytes=50MB
 stdout_logfile_backups=5
 environment=PATH="$PROJECT_DIR/venv/bin"
@@ -248,7 +282,7 @@ EOF
     # 重新加载Supervisor配置
     sudo supervisorctl reread
     sudo supervisorctl update
-    sudo supervisorctl start ppt-translation
+    sudo supervisorctl status 'ppt-translation:*'
     
     log_info "Supervisor配置完成"
 }
@@ -274,7 +308,7 @@ create_management_scripts() {
     # 创建启动脚本
     sudo tee /usr/local/bin/ppt-start > /dev/null <<EOF
 #!/bin/bash
-sudo supervisorctl start ppt-translation
+sudo supervisorctl start 'ppt-translation:*'
 sudo systemctl start nginx
 echo "PPT翻译系统已启动"
 EOF
@@ -282,14 +316,14 @@ EOF
     # 创建停止脚本
     sudo tee /usr/local/bin/ppt-stop > /dev/null <<EOF
 #!/bin/bash
-sudo supervisorctl stop ppt-translation
+sudo supervisorctl stop 'ppt-translation:*'
 echo "PPT翻译系统已停止"
 EOF
     
     # 创建重启脚本
     sudo tee /usr/local/bin/ppt-restart > /dev/null <<EOF
 #!/bin/bash
-sudo supervisorctl restart ppt-translation
+sudo supervisorctl restart 'ppt-translation:*'
 sudo systemctl reload nginx
 echo "PPT翻译系统已重启"
 EOF
@@ -299,7 +333,7 @@ EOF
 #!/bin/bash
 echo "=== PPT翻译系统状态 ==="
 echo "应用状态:"
-sudo supervisorctl status ppt-translation
+sudo supervisorctl status 'ppt-translation:*'
 echo
 echo "Nginx状态:"
 sudo systemctl status nginx --no-pager -l
@@ -368,10 +402,12 @@ main() {
     
     update_system
     install_dependencies
+    check_python_version
     install_mysql
     install_redis
     setup_project
     install_python_deps
+    verify_entrypoints
     setup_database
     setup_nginx
     setup_supervisor

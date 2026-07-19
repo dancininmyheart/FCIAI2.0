@@ -1,193 +1,172 @@
-"""
-异步优化版应用启动脚本
-使用异步和多线程特性优化应用性能
-"""
+from __future__ import annotations
+
+import argparse
 import os
-import logging
-import asyncio
-import uvicorn
-from hypercorn.config import Config
-from hypercorn.asyncio import serve
+import sys
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable, Protocol
 
-from app import create_app, db
-from app.utils.enhanced_task_queue import translation_queue
-from app.utils.thread_pool_executor import thread_pool, TaskType
-from app.utils.logger import get_logger
+from flask import Flask
 
-# 获取主应用日志记录器
-logger = get_logger('app.main')
+from app import create_app
+from app.runtime import parse_runtime_role, start_runtime, stop_runtime
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+if TYPE_CHECKING:
+    from uvicorn._types import ASGIApplication
 
-# 创建应用实例
-app = create_app('development')
+ASYNC_ROLE = "web"
+DEFAULT_SERVER = "uvicorn"
+SUPPORTED_SERVERS = ("uvicorn", "hypercorn")
 
-# 配置ASGI服务器（Hypercorn）
-config = Config()
-config.bind = ["0.0.0.0:5000"]
-config.worker_class = "asyncio"
-config.workers = 2  # 根据可用CPU核心数调整
-config.accesslog = "-"  # 输出到标准输出
 
-async def setup_async_environment():
-    """初始化异步环境"""
-    try:
-        from app import create_app, db
-        from app.utils.enhanced_task_queue import translation_queue
-        from app.utils.thread_pool_executor import thread_pool
-        import psutil
-        import platform
-        import sys
-        
-        logger.info("开始初始化异步环境...")
-        
-        # 创建应用实例和上下文
-        app = create_app('development')
-        ctx = app.app_context()
-        ctx.push()
-        
-        try:
-            # 创建数据库表
-            logger.info("正在创建数据库表...")
-            db.create_all()
-            logger.info("数据库表创建完成")
-            
-            # 启动任务队列处理器
-            logger.info("正在启动任务队列处理器...")
-            translation_queue.start_processor()
-            
-            # 记录诊断信息
-            logger.info("系统信息:")
-            logger.info(f"Python版本: {sys.version}")
-            logger.info(f"平台: {platform.platform()}")
-            logger.info(f"CPU核心数: {psutil.cpu_count()}")
-            logger.info(f"可用内存: {psutil.virtual_memory().available / (1024*1024):.2f} MB")
-            
-            # 记录线程池状态
-            pool_stats = thread_pool.get_stats()
-            logger.info("线程池状态:")
-            logger.info(f"最大工作线程数: {pool_stats['max_workers']}")
-            logger.info(f"I/O密集型线程数: {pool_stats['io_bound_workers']}")
-            logger.info(f"CPU密集型线程数: {pool_stats['cpu_bound_workers']}")
-            
-            # 记录任务队列状态
-            queue_stats = translation_queue.get_queue_stats()
-            logger.info("任务队列状态:")
-            logger.info(f"最大并发任务数: {queue_stats['max_concurrent']}")
-            logger.info(f"当前任务数: {queue_stats['total']}")
-            
-            logger.info("异步环境初始化完成")
-            
-        except Exception as e:
-            logger.error(f"初始化过程中出错: {str(e)}", exc_info=True)
-            raise
-        finally:
-            ctx.pop()
-            
-    except Exception as e:
-        logger.error(f"设置异步环境失败: {str(e)}", exc_info=True)
-        raise
+@dataclass(frozen=True, slots=True)
+class OptionalDependencyMissing(Exception):
+    package: str
 
-async def cleanup_async_environment():
-    """清理异步环境，关闭队列和线程池"""
-    logger.info("正在清理异步环境...")
-    
-    # 停止任务队列处理器
-    translation_queue.stop_processor()
-    logger.info("翻译任务队列处理器已停止")
-    
-    # 关闭线程池
-    thread_pool.shutdown()
-    logger.info("线程池已关闭")
-    
-    logger.info("异步环境清理完成")
+    def __str__(self) -> str:
+        return f"optional dependency {self.package} is required"
 
-async def serve_app():
-    """启动异步Web服务器"""
-    logger.info("正在启动Hypercorn ASGI服务器...")
-    
-    # 设置环境
-    await setup_async_environment()
-    
-    try:
-        # 启动Hypercorn服务器
-        await serve(app, config)
-    finally:
-        # 清理环境
-        await cleanup_async_environment()
 
-def run_with_uvicorn():
-    """使用Uvicorn运行应用（备选方案）"""
-    logger.info("正在启动Uvicorn ASGI服务器...")
-    
-    # 创建应用上下文并初始化数据库
-    with app.app_context():
-        db.create_all()
-        logger.info("数据库表已创建")
-    
-    # 启动线程池和任务队列处理器
-    thread_pool.initialize()
-    translation_queue.start_processor()
-    
-    # 记录诊断信息
-    try:
-        # 记录线程池状态
-        thread_pool_stats = thread_pool.get_stats()
-        logger.info(f"线程池状态: 最大工作线程={thread_pool_stats['max_workers']}, "
-                  f"IO工作线程={thread_pool_stats['io_bound_workers']}, "
-                  f"CPU工作线程={thread_pool_stats['cpu_bound_workers']}")
-        
-        # 记录任务队列状态
-        queue_stats = translation_queue.get_queue_stats()
-        logger.info(f"任务队列状态: 等待任务={queue_stats['waiting']}, "
-                  f"处理中任务={queue_stats['processing']}, "
-                  f"最大并发任务={queue_stats['max_concurrent']}")
-        
-        # 记录Python版本和系统信息
-        import sys
-        import platform
-        logger.info(f"Python版本: {sys.version}")
-        logger.info(f"操作系统: {platform.platform()}")
-        
-        # 记录已加载的模块
-        from app.function import ppt_translate
-        logger.info("已加载主要模块: ppt_translate")
-    except Exception as e:
-        logger.error(f"记录诊断信息时出错: {str(e)}")
-    
-    # 定义Uvicorn启动和关闭回调
-    def on_startup():
-        logger.info("Uvicorn 服务器已启动")
-    
-    def on_shutdown():
-        logger.info("Uvicorn 服务器正在关闭")
-        translation_queue.stop_processor()
-        thread_pool.shutdown()
-    
-    # 启动Uvicorn服务器
+@dataclass(frozen=True, slots=True)
+class UnsupportedServerType(Exception):
+    server_type: str
+
+    def __str__(self) -> str:
+        supported = ", ".join(SUPPORTED_SERVERS)
+        return f"configuration error SERVER_TYPE unsupported: {self.server_type} (expected {supported})"
+
+
+@dataclass(frozen=True, slots=True)
+class AsyncLauncherDeps:
+    app_factory: Callable[[str], Flask]
+    start_runtime: Callable[[Flask, str], None]
+    stop_runtime: Callable[[Flask], None]
+    run_server: Callable[[Flask, str], None]
+    check_startup: Callable[[str], None]
+    check_server: Callable[[str], None]
+
+
+class UvicornModule(Protocol):
+    def run(self, app: "ASGIApplication", *, host: str, port: int, log_level: str) -> None: ...
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the FCIAI async web entrypoint.")
+    parser.add_argument("--check", action="store_true", help="Validate startup wiring without running services.")
+    parser.add_argument("--config", default=os.environ.get("FLASK_CONFIG", "development"))
+    parser.add_argument("--server", default=os.environ.get("SERVER_TYPE", DEFAULT_SERVER))
+    return parser.parse_args(argv)
+
+
+def _check_startup(config_name: str) -> None:
+    from app.config import config as flask_configs
+
+    flask_configs[config_name]
+    parse_runtime_role(ASYNC_ROLE)
+
+
+def _check_server(server_type: str) -> None:
+    normalized = _normalize_server_type(server_type)
+    if normalized == "hypercorn":
+        _load_hypercorn()
+        return
+    _load_wsgi_to_asgi_adapter()
+    _load_uvicorn()
+
+
+def _run_server(flask_app: Flask, server_type: str) -> None:
+    normalized = _normalize_server_type(server_type)
+    if normalized == "hypercorn":
+        _run_hypercorn(flask_app)
+        return
+    _run_uvicorn(flask_app)
+
+
+def _normalize_server_type(server_type: str) -> str:
+    normalized = server_type.lower()
+    if normalized in SUPPORTED_SERVERS:
+        return normalized
+    raise UnsupportedServerType(server_type=server_type)
+
+
+def _run_uvicorn(flask_app: Flask) -> None:
+    wsgi_to_asgi = _load_wsgi_to_asgi_adapter()
+    uvicorn = _load_uvicorn()
+
     uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=5000,
+        wsgi_to_asgi(flask_app),
+        host=os.environ.get("SERVER_HOST", "0.0.0.0"),
+        port=int(os.environ.get("SERVER_PORT", "5000")),
         log_level="info",
-        on_startup=[on_startup],
-        on_shutdown=[on_shutdown]
     )
 
+
+def _load_uvicorn() -> UvicornModule:
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise OptionalDependencyMissing(package="uvicorn") from exc
+    return uvicorn
+
+
+def _load_wsgi_to_asgi_adapter() -> Callable[[Flask], "ASGIApplication"]:
+    try:
+        from a2wsgi import WSGIMiddleware
+    except ImportError as exc:
+        raise OptionalDependencyMissing(package="a2wsgi") from exc
+    return WSGIMiddleware
+
+
+def _run_hypercorn(flask_app: Flask) -> None:
+    hypercorn_config, serve = _load_hypercorn()
+    config = hypercorn_config()
+    host = os.environ.get("SERVER_HOST", "0.0.0.0")
+    port = os.environ.get("SERVER_PORT", "5000")
+    config.bind = [f"{host}:{port}"]
+    config.worker_class = "asyncio"
+    config.workers = int(os.environ.get("SERVER_WORKERS", "2"))
+    config.accesslog = "-"
+    __import__("asyncio").run(serve(flask_app, config))
+
+
+def _load_hypercorn():
+    try:
+        from hypercorn.asyncio import serve
+        from hypercorn.config import Config
+    except ImportError as exc:
+        raise OptionalDependencyMissing(package="hypercorn") from exc
+    return Config, serve
+
+
+DEFAULT_DEPS = AsyncLauncherDeps(
+    app_factory=create_app,
+    start_runtime=start_runtime,
+    stop_runtime=stop_runtime,
+    run_server=_run_server,
+    check_startup=_check_startup,
+    check_server=_check_server,
+)
+
+
+def main(argv: list[str] | None = None, deps: AsyncLauncherDeps = DEFAULT_DEPS) -> int:
+    args = _parse_args(argv)
+    try:
+        deps.check_server(args.server)
+    except (OptionalDependencyMissing, UnsupportedServerType) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    if args.check:
+        deps.check_startup(args.config)
+        return 0
+    flask_app = deps.app_factory(args.config)
+    deps.start_runtime(flask_app, ASYNC_ROLE)
+    try:
+        deps.run_server(flask_app, args.server)
+    finally:
+        deps.stop_runtime(flask_app)
+    return 0
+
+
 if __name__ == "__main__":
-    logger.info("多线程优先级异步系统正在启动...")
-    
-    # 选择服务器类型
-    server_type = os.environ.get("SERVER_TYPE", "hypercorn").lower()
-    
-    if server_type == "uvicorn":
-        # 使用Uvicorn运行（更稳定，但异步功能有限）
-        run_with_uvicorn()
-    else:
-        # 使用Hypercorn运行（更强大的异步支持）
-        asyncio.run(serve_app()) 
+    raise SystemExit(main())

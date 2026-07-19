@@ -1,0 +1,217 @@
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass
+from time import perf_counter
+from typing import Final, Protocol
+
+from app.translation.types import ProviderError, ProviderName, ProviderRequest, ProviderResult, TranslationProvider
+from app.translation.metrics import current_correlation, current_metrics, log_translation_event
+
+logger = logging.getLogger(__name__)
+
+_QWEN_MODEL: Final = "qwen3-235b-a22b-instruct-2507"
+_QWEN_BASE_URL: Final = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+_REMOTE_BASE_URL: Final = "http://117.50.216.15/agent_server/app/run"
+_DEEPSEEK_ENDPOINT: Final = "d145ae592efa4240867c3b1f99c7a5d7"
+
+
+class QwenTransport(Protocol):
+    def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str: ...
+
+
+class RemoteTransport(Protocol):
+    def post(self, url: str, payload: dict[str, str | bool], timeout_seconds: float) -> str: ...
+
+
+class RemoteProviderResponseError(RuntimeError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+@dataclass(frozen=True, slots=True)
+class QwenProvider:
+    transport: QwenTransport
+
+    @property
+    def name(self) -> ProviderName:
+        return "qwen"
+
+    def translate(self, request: ProviderRequest) -> ProviderResult:
+        try:
+            text = self.transport.complete(
+                _QWEN_MODEL,
+                _semantic_system_prompt(request),
+                request.text,
+                request.timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise ProviderError("qwen", "provider_timeout", "provider request timed out", retryable=True) from exc
+        except (OSError, RuntimeError) as exc:
+            raise ProviderError("qwen", "provider_unavailable", "provider request failed", retryable=True) from exc
+        except ValueError as exc:
+            raise ProviderError("qwen", "invalid_response", "provider returned invalid data") from exc
+        if not text:
+            raise ProviderError("qwen", "empty_response", "provider returned no text")
+        return ProviderResult(text=text, provider="qwen", model=_QWEN_MODEL)
+
+
+@dataclass(frozen=True, slots=True)
+class DeepSeekProvider:
+    transport: RemoteTransport
+
+    @property
+    def name(self) -> ProviderName:
+        return "deepseek"
+
+    def translate(self, request: ProviderRequest) -> ProviderResult:
+        payload = {
+            "_streaming": False,
+            "is_app_uid": False,
+            "field": request.field,
+            "text": request.text,
+            "stop_words_str": _quoted_words(request.stop_words),
+            "custom_translations_str": _quoted_translations(request.custom_translations),
+            "source_language": request.source_language,
+            "target_language": request.target_language,
+        }
+        try:
+            text = self.transport.post(
+                f"{_REMOTE_BASE_URL}/{_DEEPSEEK_ENDPOINT}",
+                payload,
+                request.timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise ProviderError("deepseek", "provider_timeout", "provider request timed out", retryable=True) from exc
+        except (OSError, RuntimeError) as exc:
+            raise ProviderError("deepseek", "provider_unavailable", "provider request failed", retryable=True) from exc
+        except ValueError as exc:
+            raise ProviderError("deepseek", "invalid_response", "provider returned invalid data") from exc
+        if not text:
+            raise ProviderError("deepseek", "empty_response", "provider returned no text")
+        return ProviderResult(text=text, provider="deepseek", model="deepseek")
+
+
+class ProviderRegistry:
+    def __init__(self, providers: tuple[TranslationProvider, ...]) -> None:
+        self._providers = {provider.name: provider for provider in providers}
+
+    def resolve(self, model: str) -> TranslationProvider:
+        normalized = normalize_provider_name(model)
+        provider = self._providers.get(normalized)
+        if provider is None:
+            raise ProviderError(model, "unknown_provider", "unsupported translation provider")
+        return provider
+
+    def translate(self, model: str, request: ProviderRequest) -> ProviderResult:
+        provider = self.resolve(model)
+        correlation = current_correlation(provider.name)
+        started = perf_counter()
+        try:
+            result = provider.translate(request)
+        except ProviderError as error:
+            duration = perf_counter() - started
+            metrics = current_metrics()
+            if metrics is not None:
+                metrics.record_stage("provider", duration)
+                metrics.record_provider_failure(provider.name, error.code)
+            log_translation_event(logger, "provider_failed", correlation, duration_seconds=duration, error_code=error.code)
+            raise
+        duration = perf_counter() - started
+        metrics = current_metrics()
+        if metrics is not None:
+            metrics.record_stage("provider", duration)
+        log_translation_event(
+            logger,
+            "provider_completed",
+            correlation,
+            duration_seconds=duration,
+            retry_count=result.retry_count,
+        )
+        return result
+
+
+def normalize_provider_name(model: str) -> str:
+    return model.strip().lower().replace("_", "-")
+
+
+def default_provider_registry() -> ProviderRegistry:
+    return ProviderRegistry(
+        (
+            QwenProvider(_OpenAiQwenTransport()),
+            DeepSeekProvider(_RequestsRemoteTransport()),
+        ),
+    )
+
+
+class _OpenAiQwenTransport:
+    def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        from openai import APIConnectionError, APITimeoutError, OpenAI
+
+        client = OpenAI(
+            api_key=os.getenv("QWEN_API_KEY"),
+            base_url=_QWEN_BASE_URL,
+            timeout=timeout_seconds,
+        )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                stream=False,
+                max_tokens=32768,
+            )
+        except (APIConnectionError, APITimeoutError) as exc:
+            raise TimeoutError("Qwen request timed out or could not connect") from exc
+        return response.choices[0].message.content or ""
+
+
+class _RequestsRemoteTransport:
+    def post(self, url: str, payload: dict[str, str | bool], timeout_seconds: float) -> str:
+        import requests
+
+        try:
+            response = requests.post(url, json=payload, timeout=timeout_seconds)
+            response.raise_for_status()
+            body = response.json()
+        except requests.Timeout as exc:
+            raise TimeoutError("remote provider timed out") from exc
+        except (requests.RequestException, ValueError) as exc:
+            raise RemoteProviderResponseError("remote provider returned an invalid response") from exc
+        if body.get("code") != 200:
+            raise RemoteProviderResponseError(f"remote provider status {body.get('code')}")
+        data = body.get("data", "")
+        if isinstance(data, dict):
+            return str(data.get("translated_json") or data.get("result") or data.get("content") or "")
+        return str(data)
+
+
+def _semantic_system_prompt(request: ProviderRequest) -> str:
+    if request.output_format == "plain":
+        return "\n".join(
+            (
+                f"Translate {request.field or 'document'} text from {request.source_language} to {request.target_language}.",
+                "Return only the translated text. Preserve paragraph breaks and placeholders exactly.",
+                f"Keep these terms unchanged: {_quoted_words(request.stop_words)}.",
+                f"Apply this glossary: {_quoted_translations(request.custom_translations)}.",
+                "Do not add commentary, labels, or code fences.",
+            ),
+        )
+    return "\n".join(
+        (
+            f"Translate {request.field or 'presentation'} text from {request.source_language} to {request.target_language}.",
+            "Return one JSON array in input order. Each item keeps box_index, paragraph_index, source_language, target_language.",
+            "Preserve every [block] placeholder exactly and keep the same placeholder count.",
+            f"Keep these terms unchanged: {_quoted_words(request.stop_words)}.",
+            f"Apply this glossary: {_quoted_translations(request.custom_translations)}.",
+            "Do not add commentary, control characters, or additional fields.",
+        ),
+    )
+
+
+def _quoted_words(words: tuple[str, ...]) -> str:
+    return ", ".join(f'"{word}"' for word in words)
+
+
+def _quoted_translations(items: tuple[tuple[str, str], ...]) -> str:
+    return ", ".join(f'"{source}": "{target}"' for source, target in items)

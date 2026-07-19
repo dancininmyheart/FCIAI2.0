@@ -3,7 +3,10 @@ pyuno_controller.py (重构版)
 pyuno的总控制器，采用PPTX->ODP->操作->PPTX的流程，移除子进程调用
 使用PyUNO接口进行格式转换，确保操作的一致性和可控性
 '''
-import uno
+try:
+    import uno
+except ImportError:
+    uno = None
 import json
 import os   
 import tempfile
@@ -18,8 +21,15 @@ from ppt_data_utils import extract_texts_for_translation, call_translation_api, 
 
 
 # 直接导入处理函数
-from load_ppt_functions import load_entire_ppt_direct
-from edit_ppt_functions import write_entire_ppt_direct
+try:
+    from load_ppt_functions import load_entire_ppt_direct
+except ImportError:
+    load_entire_ppt_direct = None
+
+try:
+    from edit_ppt_functions import write_entire_ppt_direct
+except ImportError:
+    write_entire_ppt_direct = None
 
 # 直接导入处理函数(pptx版本) - 新增
 try:
@@ -179,6 +189,9 @@ def convert_pptx_to_odp_pyuno(pptx_path, output_dir=None):
     :return: 转换后ODP文件路径，失败返回None
     """
     logger = get_logger("pyuno.main")
+    if uno is None:
+        logger.error("PyUNO模块不可用，无法执行PPTX到ODP转换")
+        return None
     
     if not os.path.exists(pptx_path):
         logger.error(f"PPTX文件不存在: {pptx_path}")
@@ -272,6 +285,9 @@ def convert_odp_to_pptx_pyuno(odp_path, output_dir=None):
     :return: 转换后PPTX文件路径，失败返回None
     """
     logger = get_logger("pyuno.main")
+    if uno is None:
+        logger.error("PyUNO模块不可用，无法执行ODP到PPTX转换")
+        return None
     
     if not os.path.exists(odp_path):
         logger.error(f"ODP文件不存在: {odp_path}")
@@ -418,6 +434,48 @@ def backup_original_pptx(original_path, temp_dir):
         logger.error(f"备份PPTX文件失败: {str(e)}")
         raise
 
+def _try_translate_pptx_with_xml(presentation_path: str,
+                                 stop_words_list: List[str],
+                                 custom_translations: Dict[str, str],
+                                 select_page: List[int],
+                                 source_language: str,
+                                 target_language: str,
+                                 bilingual_translation: str,
+                                 progress_callback,
+                                 model: str):
+    if not presentation_path.lower().endswith(".pptx"):
+        return None
+
+    try:
+        from pathlib import Path
+        from xml.etree import ElementTree
+        import zipfile
+        from pptx_xml_translate import XmlTranslationRequest, translate_pptx_with_xml
+
+        validated_page_indices = _validate_and_normalize_page_indices(select_page)
+        original_dir = os.path.dirname(presentation_path)
+        original_name = os.path.splitext(os.path.basename(presentation_path))[0]
+        output_path = os.path.join(original_dir, f"{original_name}_xml_translated.pptx")
+        selected_indices = tuple(validated_page_indices) if validated_page_indices is not None else None
+        request = XmlTranslationRequest(
+            input_path=Path(presentation_path),
+            output_path=Path(output_path),
+            selected_page_indices=selected_indices,
+            source_language=source_language,
+            target_language=target_language,
+            model=model,
+            stop_words=tuple(stop_words_list),
+            custom_translations=custom_translations,
+            bilingual_translation=bilingual_translation,
+            progress_callback=progress_callback,
+        )
+        result_path = translate_pptx_with_xml(request)
+        logger.info(f"底层XML翻译完成: {result_path}")
+        return result_path
+    except (ImportError, OSError, RuntimeError, ValueError, zipfile.BadZipFile, ElementTree.ParseError) as e:
+        logger.warning(f"底层XML翻译失败，降级到PyUNO流程: {e}", exc_info=True)
+        return None
+
 def apply_uno_format_conversion(result_path, original_name, timestamp, temp_dir, original_dir):
     """
     使用UNO接口进行格式转换（PPTX->ODP->PPTX）
@@ -516,9 +574,6 @@ def pyuno_controller(presentation_path: str,
     """
     start_time = datetime.now()
     
-    # 确保soffice服务存活
-    ensure_soffice_running()
-
     log_function_call(logger, "pyuno_controller", 
                      presentation_path=presentation_path,
                      stop_words_list=stop_words_list,
@@ -542,6 +597,24 @@ def pyuno_controller(presentation_path: str,
     
     file_size = os.path.getsize(presentation_path)
     logger.info(f"PPT文件大小: {file_size / (1024*1024):.2f} MB")
+
+    xml_result_path = _try_translate_pptx_with_xml(
+        presentation_path,
+        stop_words_list,
+        custom_translations,
+        select_page,
+        source_language,
+        target_language,
+        bilingual_translation,
+        progress_callback,
+        model,
+    )
+    if xml_result_path:
+        log_execution_time(logger, "pyuno_controller", start_time)
+        return xml_result_path
+
+    # 确保soffice服务存活
+    ensure_soffice_running()
     
     # ===== 第零步：创造两个文件分支，一个是ODP，一个是PPTX（新增备份功能） =====
     logger.info("=" * 60)
@@ -604,6 +677,13 @@ def pyuno_controller(presentation_path: str,
     try:
         # 验证页面索引
         validated_page_indices = _validate_and_normalize_page_indices(select_page)
+        if load_entire_ppt_direct is None:
+            logger.error("PyUNO读取模块不可用，无法从ODP加载PPT内容")
+            if os.path.exists(odp_working_path):
+                os.remove(odp_working_path)
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            return None
         
         # 直接调用加载函数，不使用子进程
         ppt_data = load_entire_ppt_direct(odp_working_path, validated_page_indices)

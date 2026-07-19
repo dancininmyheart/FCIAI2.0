@@ -620,6 +620,37 @@ async def process_presentation_async(presentation_path: str,
     logger.info(f"源语言: {source_language}, 目标语言: {target_language}, 双语翻译: {bilingual_translation}")
     logger.info(f"选中页面: {select_page}")
 
+    try:
+        from .pynuo_fuc.pyuno_controller import pyuno_controller
+        early_pptx_path = pyuno_controller(presentation_path,
+                        stop_words_list,
+                        custom_translations,
+                        select_page,
+                        source_language,
+                        target_language,
+                        bilingual_translation,
+                        progress_callback,
+                        model,
+                        enable_uno_conversion=enable_uno_conversion
+                        )
+        if early_pptx_path:
+            from pathlib import Path
+            from .ppt_translation_finalize import FinalizePresentationRequest, finalize_translated_presentation
+
+            return finalize_translated_presentation(
+                FinalizePresentationRequest(
+                    translated_path=Path(early_pptx_path),
+                    original_path=Path(presentation_path),
+                    selected_pages=tuple(select_page or ()),
+                    source_language=source_language,
+                    target_language=target_language,
+                    enable_text_splitting=enable_text_splitting,
+                    progress_callback=progress_callback,
+                )
+            )
+    except Exception as e:
+        logger.error(f"XML优先翻译流程失败，继续旧布局调整降级路径: {str(e)}")
+
 
 
     '''
@@ -655,6 +686,21 @@ async def process_presentation_async(presentation_path: str,
                         enable_uno_conversion=enable_uno_conversion  # 使用传入的参数
                         )
         logger.info(f"调用UNO接口翻译PPT文本框成功，翻译后的PPT文件地址: {uno_pptx_path}")
+        if uno_pptx_path:
+            from pathlib import Path
+            from .ppt_translation_finalize import FinalizePresentationRequest, finalize_translated_presentation
+
+            return finalize_translated_presentation(
+                FinalizePresentationRequest(
+                    translated_path=Path(uno_pptx_path),
+                    original_path=Path(presentation_path),
+                    selected_pages=tuple(select_page or ()),
+                    source_language=source_language,
+                    target_language=target_language,
+                    enable_text_splitting=enable_text_splitting,
+                    progress_callback=progress_callback,
+                )
+            )
     except Exception as e:
         logger.error(f"使用pyuno接口功能时出错: {str(e)}")
     

@@ -28,6 +28,29 @@ def translate(text: str,
               source_language: str="English", 
               target_language: str="Chinese",
               model:str="qwen"):
+    normalized_model = model.strip().lower().replace("_", "-")
+    if normalized_model in ("qwen", "deepseek"):
+        from app.translation.providers import default_provider_registry
+        from app.translation.service import current_translation_settings
+        from app.translation.structured import translate_ppt_page
+        from app.translation.types import ProviderRequest
+
+        request = ProviderRequest.create(
+            text=text,
+            field=field,
+            stop_words=tuple(stop_words),
+            custom_translations=custom_translations,
+            source_language=source_language,
+            target_language=target_language,
+        )
+        return translate_ppt_page(
+            default_provider_registry(),
+            normalized_model,
+            request,
+            current_translation_settings().quality_mode,
+        ).text
+    if normalized_model == "gpt-4o":
+        model = "gpt4o"
     # 将stop_words和custom_translations转换为字符串
     logger.info(f"translate_api_uno开始工作，执行将{source_language}翻译为{target_language}的任务")
     stop_words_str = ", ".join(f'"{word}"' for word in stop_words)

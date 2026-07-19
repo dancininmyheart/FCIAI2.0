@@ -12,14 +12,12 @@ from docx.shared import RGBColor, Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.shared import qn
 from docx.enum.style import WD_STYLE_TYPE
-import asyncio
 from bs4 import BeautifulSoup
 
-# 为了按段落即时翻译，复用现有异步翻译能力
-try:
-    from app.function.local_qwen_async import translate_async
-except Exception:
-    translate_async = None
+from app.translation.providers import default_provider_registry
+from app.translation.service import DocumentTranslationService, current_translation_memory, current_translation_settings
+from app.translation.types import ProviderError, ProviderRequest, TranslationProvider
+from app.translation.units import PdfTextBlock, build_pdf_units
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +212,15 @@ class BilingualDocumentGenerator:
             logger.warning(f"添加列表项失败，使用普通段落: {e}")
             self.add_original_text(text)
     
-    def add_bilingual_table(self, html_table: str, source_language: str = "en", target_language: str = "zh", custom_translations: Dict[str, str] = None) -> None:
+    def add_bilingual_table(
+        self,
+        html_table: str,
+        source_language: str = "en",
+        target_language: str = "zh",
+        custom_translations: Dict[str, str] = None,
+        provider_model: str = "qwen",
+        provider: TranslationProvider | None = None,
+    ) -> None:
         """
         将HTML表格转换为双语Word表格并添加到文档
         会创建两个表格：原文表格和译文表格
@@ -256,10 +262,12 @@ class BilingualDocumentGenerator:
                             else:
                                 translated_text = _sync_translate_single_text(
                                     cell_text,
-                                    source_language=source_language,
-                                    target_language=target_language,
-                                    custom_translations=custom_translations
-                                )
+                                     source_language=source_language,
+                                     target_language=target_language,
+                                     custom_translations=custom_translations,
+                                     provider_model=provider_model,
+                                     provider=provider,
+                                 )
                                 translation_cache[cell_text] = translated_text
                             
                             row_translations.append(translated_text if translated_text else cell_text)
@@ -587,69 +595,31 @@ def process_markdown_to_bilingual_doc(
 def _sync_translate_single_text(text: str,
                                 source_language: str = "en",
                                 target_language: str = "zh",
-                                custom_translations: Dict[str, str] = None) -> str:
+                                custom_translations: Dict[str, str] = None,
+                                provider_model: str = "qwen",
+                                provider: TranslationProvider | None = None) -> str:
     """
-    使用现有的异步翻译接口对单条文本进行同步翻译，返回译文。
+    使用指定 provider 对单条文本进行同步翻译，返回纯文本译文。
 
     若翻译不可用或失败，返回空字符串以便调用方降级处理。
     """
     if not text or not text.strip():
         return ""
-    if translate_async is None:
-        return ""
     try:
-        async def _run_once() -> str:
-            mapping = await translate_async(
-                text.strip(),
-                field="通用",  # PDF翻译使用通用领域，跳过领域检测
-                stop_words=[],
-                custom_translations=custom_translations or {},
+        selected = provider or default_provider_registry().resolve(provider_model)
+        result = selected.translate(
+            ProviderRequest.create(
+                text=text.strip(),
+                field="general",
+                custom_translations=custom_translations,
                 source_language=source_language,
-                target_language=target_language
-            )
-            # translate_async 返回 {原文: 译文}
-            if isinstance(mapping, dict):
-                # 优先精确匹配整行
-                key = text.strip()
-                if key in mapping:
-                    return mapping[key] or ""
-                # 无精确匹配时，合并所有译文，避免只取首句
-                merged_values: list[str] = []
-                for _, v in mapping.items():
-                    if isinstance(v, str) and v.strip():
-                        merged_values.append(v.strip())
-                if merged_values:
-                    return " ".join(merged_values)
-            # 降级重试：使用备用翻译器直译整段
-            try:
-                from app.function.image_ocr.translator import QwenTranslator
-                # 将内部语言代码映射为人类可读（备用翻译器提示词用）
-                def _map_lang_name(code: str) -> str:
-                    c = (code or "").lower()
-                    if c.startswith("zh") or c == "cn" or c == "chinese":
-                        return "中文"
-                    if c.startswith("en") or c == "english":
-                        return "英文"
-                    if c.startswith("ja") or c == "japanese":
-                        return "日文"
-                    return "英文" if c else "英文"
-                qt = QwenTranslator(target_language=_map_lang_name(target_language))
-                fallback = qt.translate_text(text.strip(), source_language=_map_lang_name(source_language))
-                return fallback or ""
-            except Exception:
-                return ""
-
-        # 独立运行事件循环
-        try:
-            return asyncio.run(_run_once())
-        except RuntimeError:
-            # 若已有事件循环（少见于Flask），则创建新循环执行
-            loop = asyncio.new_event_loop()
-            try:
-                return loop.run_until_complete(_run_once())
-            finally:
-                loop.close()
-    except Exception:
+                target_language=target_language,
+                output_format="plain",
+            ),
+        )
+        return result.text.strip()
+    except ProviderError as error:
+        logger.warning("PDF text translation failed provider=%s code=%s", error.provider, error.code)
         return ""
 
 
@@ -660,7 +630,9 @@ def translate_markdown_to_bilingual_doc(
     target_language: str = "zh",
     image_base_dir: str | None = None,
     custom_translations: Dict[str, str] = None,
-    image_ocr_results: list[dict] | None = None
+    image_ocr_results: list[dict] | None = None,
+    provider_model: str = "qwen",
+    provider: TranslationProvider | None = None,
 ) -> bool:
     """
     将Markdown内容按"标题/段落 → 逐条翻译 → 立即写入Word(原文在前，译文在后)"的方式生成双语Word文档。
@@ -809,9 +781,37 @@ def translate_markdown_to_bilingual_doc(
                 blocks.append({'type': 'paragraph', 'text': merged})
             i = j if j > i else (i + 1)
 
-        # 写入到 Word，使用去重缓存避免重复
-        cache: dict[str, str] = {}
-        for blk in blocks:
+        selected_provider = provider or default_provider_registry().resolve(provider_model)
+        unit_blocks: list[PdfTextBlock] = []
+        title_context = ""
+        for block_index, block in enumerate(blocks):
+            block_type = block.get('type')
+            block_text = str(block.get('text', '')).strip()
+            if block_type == 'heading':
+                title_context = block_text
+            if block_type not in ('blank', 'image') and block_text and '<table' not in block_text:
+                unit_blocks.append(PdfTextBlock(block_index, block_text, title_context))
+        units = build_pdf_units(
+            tuple(unit_blocks),
+            source_language,
+            target_language,
+            glossary=custom_translations,
+        )
+        translated_blocks: dict[int, str] = {}
+        if units:
+            service = DocumentTranslationService(
+                selected_provider,
+                provider_model,
+                current_translation_settings(),
+                current_translation_memory(),
+            )
+            translated = service.translate(units)
+            translated_blocks = {
+                int(result.stable_id.rsplit('b', 1)[1]): result.translated_text
+                for result in translated.results
+            }
+
+        for block_index, blk in enumerate(blocks):
             btype = blk.get('type')
             if btype == 'blank':
                 generator.document.add_paragraph()
@@ -943,10 +943,7 @@ def translate_markdown_to_bilingual_doc(
                     should_skip_translation = True
                     logger.info(f"跳过已是英文的标题: {text[:30]}...")
 
-                translated = cache.get(text)
-                if translated is None and not should_skip_translation:
-                    translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
-                    cache[text] = translated
+                translated = translated_blocks.get(block_index, "")
 
                 if translated and not should_skip_translation:
                     generator.add_translated_text(translated)
@@ -955,10 +952,7 @@ def translate_markdown_to_bilingual_doc(
 
             if btype == 'ul_item':
                 generator.add_list_item(text, numbered=False)
-                translated = cache.get(text)
-                if translated is None:
-                    translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
-                    cache[text] = translated
+                translated = translated_blocks.get(block_index, "")
                 if translated:
                     generator.add_translated_text(translated)
                 generator.document.add_paragraph()
@@ -966,10 +960,7 @@ def translate_markdown_to_bilingual_doc(
 
             if btype == 'ol_item':
                 generator.add_list_item(text, numbered=True)
-                translated = cache.get(text)
-                if translated is None:
-                    translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
-                    cache[text] = translated
+                translated = translated_blocks.get(block_index, "")
                 if translated:
                     generator.add_translated_text(translated)
                 generator.document.add_paragraph()
@@ -982,15 +973,14 @@ def translate_markdown_to_bilingual_doc(
                     text,
                     source_language=source_language,
                     target_language=target_language,
-                    custom_translations=custom_translations
+                    custom_translations=custom_translations,
+                    provider_model=provider_model,
+                    provider=provider,
                 )
                 continue
 
             # 普通段落
-            translated = cache.get(text)
-            if translated is None:
-                translated = _sync_translate_single_text(text, source_language, target_language, custom_translations)
-                cache[text] = translated
+            translated = translated_blocks.get(block_index, "")
 
             # 检查文本语言特性
             is_chinese_content = is_mostly_chinese(text)

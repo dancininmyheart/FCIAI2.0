@@ -8,13 +8,10 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.shapes.picture import Picture
 from pptx.enum.shapes import MSO_SHAPE_TYPE
-import sys
-import os
 import re
-sys.path.insert(0, os.path.dirname(__file__))
 
-# 添加QwenTranslator导入
-from .translator import QwenTranslator
+from app.translation.providers import default_provider_registry
+from app.translation.types import ProviderError, ProviderRequest, TranslationProvider
 
 def perform_ocr_on_image(image_path: str, api_key: str) -> Optional[Dict]:
     """
@@ -122,17 +119,9 @@ def perform_ocr_on_image(image_path: str, api_key: str) -> Optional[Dict]:
         logger.error(f"[OCR识别] OCR识别过程中出错: {str(e)}")
         logger.exception("[OCR识别] 详细错误信息")
         return None
-# 导入日志系统
-from logger_config_ocr import get_logger
-
-# 导入OCR API处理器
-from ocr_api import OCRProcessor
-
-# 导入OCR QWEN API处理程序
-from qwen_ocr_api import process_folder_with_mapping
-
-# 导入翻译模块
-from translator import TranslationManager
+from .logger_config_ocr import get_logger
+from .qwen_ocr_api import process_folder_with_mapping
+from .translator import TranslationManager
 
 # 获取日志记录器
 logger = get_logger("ocr_controller")
@@ -224,7 +213,13 @@ def _create_image_mapping(image_paths: List[str]) -> Dict:
     return mapping
 
 
-def _translate_text(text: str, target_language: str, source_language: str) -> str:
+def _translate_text(
+    text: str,
+    target_language: str,
+    source_language: str,
+    provider_model: str = "qwen",
+    provider: TranslationProvider | None = None,
+) -> str | None:
     """
     翻译文本
     
@@ -237,17 +232,23 @@ def _translate_text(text: str, target_language: str, source_language: str) -> st
         翻译后的文本，如果翻译失败返回None
     """
     try:
-        # 使用QwenTranslator进行翻译
-        translator = QwenTranslator(target_language=target_language)
-        translated = translator.translate_text(text, source_language=source_language)
+        selected = provider or default_provider_registry().resolve(provider_model)
+        translated = selected.translate(
+            ProviderRequest.create(
+                text=text,
+                field="image OCR",
+                source_language=source_language,
+                target_language=target_language,
+                output_format="plain",
+            ),
+        ).text
         # 只有当翻译结果与原文不同时才返回翻译结果，否则返回None表示翻译失败
         if translated and translated.strip() and translated.strip() != text.strip():
             return translated
         else:
             return None
-    except Exception as e:
-        logger.error(f"翻译文本时出错: {str(e)}")
-        logger.exception("翻译错误详情")
+    except ProviderError as error:
+        logger.warning("OCR text translation failed provider=%s code=%s", error.provider, error.code)
         return None
 
 
@@ -255,7 +256,9 @@ def process_markdown_images_ocr_and_translate(
     markdown_content: str,
     markdown_dir: str,
     target_language: str = "zh",
-    source_language: str = "en"
+    source_language: str = "en",
+    provider_model: str = "qwen",
+    provider: TranslationProvider | None = None,
 ) -> List[Dict]:
     """
     处理Markdown中的图片OCR识别和翻译
@@ -391,7 +394,13 @@ def process_markdown_images_ocr_and_translate(
                                 for text_key, text_value in all_text.items():
                                     if text_value and text_value.strip():
                                         logger.info(f"[Markdown OCR] 翻译文本: {text_key} = {text_value.strip()}")
-                                        translated = _translate_text(text_value.strip(), target_language, source_language)
+                                        translated = _translate_text(
+                                            text_value.strip(),
+                                            target_language,
+                                            source_language,
+                                            provider_model,
+                                            provider,
+                                        )
                                         # 检查翻译是否成功
                                         if translated is not None:
                                             translated_texts[text_key] = translated

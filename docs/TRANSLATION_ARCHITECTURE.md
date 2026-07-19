@@ -1,0 +1,179 @@
+# 翻译架构设计与运维说明
+
+## 1. 设计边界
+
+本次优化保持以下产品契约不变：
+
+- 不删除或重命名现有 HTTP 路由、响应字段、任务 ID、下载文件名和鉴权规则。
+- PPT 继续支持选页、`translation_only`、`paragraph_up`、`paragraph_down`、OCR、词库和停翻词。
+- PDF 继续输出双语 DOCX，不把本次架构改造扩展为 PDF 原位写回。
+- UI 当前公开的模型仍为 Qwen 和 DeepSeek；不新增模型选项，也不做静默跨模型降级。
+- 保留旧执行路径作为回滚能力，不引入 Celery、RQ 或其他消息代理。
+
+## 2. 运行时架构
+
+```text
+Browser / API
+      |
+      v
+Web role: app.py or run_async.py
+      |
+      +-- validate request / persist source / create translation_jobs row
+      |
+      v
+MySQL translation_jobs ledger
+      |
+      v
+Worker role: run_worker.py
+      |
+      +-- claim lease -> execute -> verify -> atomically promote artifact
+      |
+      +-- PPT XML pipeline / PDF document pipeline / annotation adapter
+      |
+      v
+Download and existing history views
+```
+
+`create_app()` 只负责配置、扩展和蓝图装配，不启动任务线程、数据库监控或清理调度。运行资源由 `app/runtime.py` 按角色显式启动和逆序停止：
+
+| 入口 | 角色 | 用途 |
+| --- | --- | --- |
+| `python run.py` | `all` | 开发环境，一个命令组合 Web 和内嵌 Worker |
+| `python app.py` | `web` | WSGI Web，不执行后台任务 |
+| `python run_async.py` | `web` | Uvicorn/Hypercorn Web，不执行后台任务 |
+| `python run_worker.py` | `worker` | 生产 Worker、监控和调度资源 |
+
+所有入口的 `--check` 只验证依赖、配置和角色装配，不监听端口，也不启动后台资源。
+
+## 3. 持久化任务与产物
+
+`translation_jobs` 是新增的非破坏式任务账本，覆盖 PPT 翻译、PDF 翻译和 PDF 注释。任务状态为：
+
+```text
+queued -> running -> succeeded
+                  -> failed
+                  -> interrupted
+queued/running -> canceled
+```
+
+Worker 使用版本号和租约进行原子领取，旧 Worker 不能用过期版本覆盖新状态。原有接口需要的 `waiting`、`processing`、`completed` 等字段由统一投影器生成，因此外部响应契约不变。
+
+产物规则：
+
+1. 上传源文件复制到任务私有位置并记录 SHA-256，后续尝试不改源文件。
+2. 每次执行写入独立 attempt 目录。
+3. 只有校验完成的 attempt 才通过原子替换发布为最终产物。
+4. 重复投递、Worker 崩溃或发布后的重复恢复不会重复覆盖有效产物，也不会重复登记 PDF 历史。
+5. 损坏或哈希不匹配的 attempt 不可晋升。
+
+自动恢复由 `TRANSLATION_AUTO_RECOVER` 控制，代码默认关闭。关闭时仍会把失联任务明确投影为 `interrupted`，避免永久显示处理中。
+
+## 4. 翻译执行层
+
+### 4.1 Provider Adapter
+
+`app/translation/providers.py` 将 Qwen 和 DeepSeek 封装为同一请求/响应协议，支持纯文本与结构化输出。Provider 错误具有稳定错误类型，日志会脱敏，选择 DeepSeek 失败时不会再调用 Qwen。
+
+PDF 的 `model` 参数现在沿请求、任务、解析/OCR、文档生成和 Provider 全链路传递。PPT 结构化 XML 翻译也通过同一 Provider 注册表调用。
+
+### 4.2 Translation Unit
+
+PPT 文本框和 PDF 文本块在调用模型前转换为稳定的 `TranslationUnit`，包含：
+
+- 文档类型与稳定 ID；
+- 源/目标语言和源文本；
+- 页码、邻接上下文与布局约束；
+- 占位符、受保护术语和词库约束。
+
+该模型只统一文本级翻译协议，不替换现有 PPT XML 或 PDF/DOCX 文档模型，避免一次性重写整个格式引擎。
+
+### 4.3 质量策略
+
+| 模式 | 行为 |
+| --- | --- |
+| `off` | 保持旧行为，不启用结构质量判定 |
+| `observe` | 记录缺失 ID、重复 ID、空译文、占位符、术语、目标文字和长度问题；返回内容不因检查而改变 |
+| `enforce` | 只对无效单元重试一次，保留有效兄弟单元；第二次仍无效时进入原有降级结果，不进行第三次调用 |
+
+无效结果不会写入翻译记忆。PPT 观察模式保持 Provider 原始结构化响应字节不变。
+
+### 4.4 翻译记忆、去重和并发
+
+翻译记忆键使用完整 SHA-256，输入覆盖源文本、语言、Provider、模型、Prompt/词库/停翻词/质量策略版本及上下文约束。相同完整键的单元在一次任务中只调用一次 Provider，再按原顺序展开。
+
+并发同时受 `TASK_QUEUE_MAX_CONCURRENT` 和 `TRANSLATION_PROVIDER_MAX_CONCURRENT` 限制，实际值取两者较小值。当前应用默认使用进程内记忆；`RedisTranslationMemory` Adapter 已实现，但生产共享缓存接线仍需单独配置和容量策略。
+
+## 5. PPT 版式稳定性
+
+XML 写回对每个被修改文本体只保留一个 `a:normAutofit`，并移除冲突的 `a:noAutofit`/`a:spAutoFit`。这让 PowerPoint/LibreOffice 以缩小字号的方式容纳增长文本，而不是扩大文本框或覆盖相邻元素。
+
+LibreOffice 转换通过 `app/translation/libreoffice.py` 隔离：每个任务使用独立用户配置目录和自有端口；超时只终止本任务创建的进程；完成后验证输出并清理进程及 profile，不再全局结束 `soffice`。
+
+确定性验收会检查：源文件哈希、幻灯片数、选中/未选中页面、HEAD/TAIL 标记、文本字形边界、相邻元素交叠、最小字号、目标区域外像素变化和进程清理。
+
+## 6. 可观测性与健康检查
+
+每个任务绑定关联 ID、任务类型、attempt 和 Provider 字段。指标覆盖阶段耗时、Provider 耗时/失败、质量问题、缓存命中与任务状态计数。日志不得写入 API key、token、完整源文本或完整 Provider 响应。
+
+`GET /api/translation/health` 要求登录：
+
+- 普通用户只看到自己的状态计数；
+- 管理员看到聚合计数；
+- 响应不暴露任务 ID、路径、文本或密钥。
+
+## 7. 配置、上线与回滚
+
+代码默认值以兼容为先：
+
+```dotenv
+TRANSLATION_ARCH_MODE=legacy
+TRANSLATION_QUALITY_MODE=off
+TRANSLATION_MEMORY_ENABLED=0
+TRANSLATION_AUTO_RECOVER=0
+TASK_QUEUE_MAX_CONCURRENT=10
+TRANSLATION_PROVIDER_MAX_CONCURRENT=10
+```
+
+建议上线值：
+
+```dotenv
+TRANSLATION_ARCH_MODE=v2
+TRANSLATION_QUALITY_MODE=observe
+TRANSLATION_MEMORY_ENABLED=1
+TRANSLATION_AUTO_RECOVER=0
+```
+
+上线顺序：先迁移任务表，再部署一个 Worker 和 Web，开启 `v2/observe`，对比失败率、质量问题和产物验收，最后再决定是否启用 `enforce` 或自动恢复。
+
+回滚时恢复四个默认开关并重启 Web/Worker。数据库表和已发布产物保留，不执行 `DROP`、`ALTER` 或历史清理。旧路径是兼容回滚路径，不再承载新能力。
+
+## 8. 当前完成情况与后续边界
+
+| 能力 | 状态 |
+| --- | --- |
+| 运行角色拆分、无副作用应用工厂 | 已实现 |
+| 持久化任务账本、统一状态投影、幂等产物 | 已实现 |
+| Qwen/DeepSeek Adapter 与 PDF 模型全链路选择 | 已实现 |
+| Translation Unit、观察/执行质量模式、单次定向重试 | 已实现 |
+| 进程内翻译记忆、去重、批处理与并发上限 | 已实现 |
+| Redis 翻译记忆 Adapter | 已实现；应用级共享缓存接线未启用 |
+| PPT 自动适配与 LibreOffice 任务隔离 | 已实现 |
+| 关联指标、脱敏日志、鉴权健康接口 | 已实现 |
+| 自动恢复 | 已实现开关和恢复机制；默认关闭，需运行数据验证后启用 |
+| PDF 原位写回 | 未实现，本次明确保持 DOCX 输出 |
+| Broker/多机 Worker 调度 | 未实现，本次明确不引入 |
+| GPT 模型的 UI 到执行闭环 | 未实现，本次不扩展公开模型集合 |
+| 旧路径删除 | 未执行；需经过独立稳定运行周期后决策 |
+
+## 9. 验证命令
+
+```powershell
+python -m pytest -q
+python run.py --check
+python app.py --check
+python run_async.py --check
+python run_worker.py --check
+python tools/qa/benchmark_translation_architecture.py --root D:\project\FCIAI2.0 --output .omo\evidence\benchmark.json
+```
+
+真实 PPT 验收命令见项目 `README.md`。该命令使用确定性 Provider 和源文件副本，不调用真实模型，也不修改用户原文件。

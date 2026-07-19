@@ -1,9 +1,11 @@
 """
 应用配置
 """
+# noqa: SIZE_OK - canonical compatibility config retained intact for Todo 3 startup scope.
 import os
 import json
-from typing import Dict, Any, Optional, Set
+from dataclasses import asdict, dataclass
+from typing import Dict, Any, Literal, Mapping, Optional, Set, TypeAlias
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
@@ -11,12 +13,73 @@ from datetime import timedelta
 # 加载环境变量
 load_dotenv()
 
+
+TranslationArchMode: TypeAlias = Literal["legacy", "v2"]
+TranslationQualityMode: TypeAlias = Literal["off", "observe", "enforce"]
+
+
+@dataclass(frozen=True, slots=True)
+class TranslationSettings:
+    arch_mode: TranslationArchMode = "legacy"
+    quality_mode: TranslationQualityMode = "off"
+    memory_enabled: bool = False
+    auto_recover: bool = False
+    max_concurrency: int = 10
+    provider_max_concurrency: int = 10
+
+    @classmethod
+    def from_environment(cls, environment: Mapping[str, str]) -> 'TranslationSettings':
+        total = _positive_setting(environment.get("TASK_QUEUE_MAX_CONCURRENT"), 10)
+        provider = _positive_setting(environment.get("TRANSLATION_PROVIDER_MAX_CONCURRENT"), total)
+        arch = environment.get("TRANSLATION_ARCH_MODE", "legacy").strip().lower()
+        quality = environment.get("TRANSLATION_QUALITY_MODE", "off").strip().lower()
+        return cls(
+            arch_mode=arch if arch in ("legacy", "v2") else "legacy",
+            quality_mode=quality if quality in ("off", "observe", "enforce") else "off",
+            memory_enabled=_setting_bool(environment.get("TRANSLATION_MEMORY_ENABLED", "0")),
+            auto_recover=_setting_bool(environment.get("TRANSLATION_AUTO_RECOVER", "0")),
+            max_concurrency=total,
+            provider_max_concurrency=provider,
+        )
+
+    def as_flask_config(self) -> dict[str, str | int | bool]:
+        values = asdict(self)
+        return {
+            "TRANSLATION_ARCH_MODE": values["arch_mode"],
+            "TRANSLATION_QUALITY_MODE": values["quality_mode"],
+            "TRANSLATION_MEMORY_ENABLED": values["memory_enabled"],
+            "TRANSLATION_AUTO_RECOVER": values["auto_recover"],
+            "TASK_QUEUE_MAX_CONCURRENT": values["max_concurrency"],
+            "TRANSLATION_PROVIDER_MAX_CONCURRENT": values["provider_max_concurrency"],
+        }
+
+
+def _setting_bool(value: str) -> bool:
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _positive_setting(value: str | None, default: int) -> int:
+    try:
+        parsed = int(value) if value is not None else default
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+TRANSLATION_SETTINGS = TranslationSettings.from_environment(os.environ)
+
 class Config:
     """基础配置"""
     
     # 基本配置
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'hard to guess string'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    TRANSLATION_ARCH_MODE = TRANSLATION_SETTINGS.arch_mode
+    TRANSLATION_QUALITY_MODE = TRANSLATION_SETTINGS.quality_mode
+    TRANSLATION_MEMORY_ENABLED = TRANSLATION_SETTINGS.memory_enabled
+    TRANSLATION_AUTO_RECOVER = TRANSLATION_SETTINGS.auto_recover
+    TASK_QUEUE_MAX_CONCURRENT = TRANSLATION_SETTINGS.max_concurrency
+    TRANSLATION_PROVIDER_MAX_CONCURRENT = TRANSLATION_SETTINGS.provider_max_concurrency
     
     # 文件存储配置
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or 'uploads'
@@ -521,7 +584,7 @@ THREAD_POOL_CONFIG = {
 
 # 任务队列配置 - 限制最大并发翻译任务为10个
 TASK_QUEUE_CONFIG = {
-    'max_concurrent_tasks': _get_env_int('MAX_CONCURRENT_TASKS', 10),
+    'max_concurrent_tasks': _get_env_int('TASK_QUEUE_MAX_CONCURRENT', _get_env_int('MAX_CONCURRENT_TASKS', 10)),
     'task_timeout': _get_env_int('TASK_TIMEOUT', 3600),
     'retry_times': _get_env_int('TASK_RETRY_TIMES', 3)
 }
@@ -613,19 +676,21 @@ app_settings: Dict[str, Any] = {
     'LOG': LOG_CONFIG,
     'DATABASE': DB_CONFIG,
     'SERVER': SERVER_CONFIG,
-    'SQLALCHEMY': SQLALCHEMY_CONFIG
+    'SQLALCHEMY': SQLALCHEMY_CONFIG,
+    'TRANSLATION': TRANSLATION_SETTINGS.as_flask_config(),
 }
 
 # 设置上传文件夹路径
 basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 获取项目根目录
 UPLOAD_FOLDER = os.path.join(basedir, 'uploads')  # 在项目根目录下创建uploads文件夹
 
-print(f"Debug: Upload folder path: {UPLOAD_FOLDER}")
 
-# 确保上传文件夹存在
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-    print(f"Debug: Created upload folder: {UPLOAD_FOLDER}")
+base_model_file = os.environ.get('BASE_MODEL_FILE', r'D:\project\system\model')
+api_key = os.environ.get('API_KEY', '')
+data_file = os.environ.get(
+    'DATA_FILE',
+    r'D:\project\system\app\pythonProjectnewman\data_3\bjsp_dict_merged.json',
+)
 
 PROVINCE_URLS = {
     'ah': 'https://amr.ah.gov.cn/',
@@ -638,3 +703,32 @@ DOWNLOAD_SETTINGS = {
     'timeout': 30,
     'chunk_size': 8192
 } 
+
+__all__ = [
+    'Config',
+    'DevelopmentConfig',
+    'TestingConfig',
+    'ProductionConfig',
+    'config',
+    'AppConfig',
+    'app_config',
+    'THREAD_POOL_CONFIG',
+    'TASK_QUEUE_CONFIG',
+    'HTTP_CLIENT_CONFIG',
+    'UPLOAD_CONFIG',
+    'LOG_CONFIG',
+    'DB_CONFIG',
+    'SERVER_CONFIG',
+    'SQLALCHEMY_CONFIG',
+    'app_settings',
+    'get_database_uri',
+    'basedir',
+    'UPLOAD_FOLDER',
+    'PROVINCE_URLS',
+    'DOWNLOAD_SETTINGS',
+    'TranslationSettings',
+    'TRANSLATION_SETTINGS',
+    'base_model_file',
+    'api_key',
+    'data_file',
+]

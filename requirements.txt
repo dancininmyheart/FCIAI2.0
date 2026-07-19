@@ -24,6 +24,7 @@ nest-asyncio==1.5.8
 # ===== 服务器和部署 =====
 gunicorn==21.2.0
 uvicorn[standard]==0.24.0
+a2wsgi==1.10.10
 gevent==23.9.1
 
 # ===== 翻译和AI相关 =====

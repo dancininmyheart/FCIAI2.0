@@ -1,0 +1,939 @@
+{
+  "routes": [
+    {
+      "rule": "/",
+      "endpoint": "main.index",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/account_settings",
+      "endpoint": "main.account_settings",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/admin/db-stats",
+      "endpoint": "db_management.db_stats_page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/admin/files",
+      "endpoint": "main.get_admin_files",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/admin/files/<int:record_id>",
+      "endpoint": "main.admin_delete_file",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "rule": "/api/db/recycle",
+      "endpoint": "db_management.recycle_connections",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/delete_pdf_translation/<int:record_id>",
+      "endpoint": "main.delete_pdf_translation_by_id",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "rule": "/api/files",
+      "endpoint": "upload.get_user_files",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/files/<int:file_id>",
+      "endpoint": "upload.delete_file",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "rule": "/api/logs/debug",
+      "endpoint": "log_management.debug_logs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/logs/level",
+      "endpoint": "log_management.update_log_level",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/logs/list",
+      "endpoint": "log_management.list_loggers",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/logs/query",
+      "endpoint": "log_management.query_logs",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/pdf_task_status",
+      "endpoint": "main.get_pdf_task_status",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/pdf_translation/delete",
+      "endpoint": "main.delete_pdf_translation",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/pdf_translation_history",
+      "endpoint": "main.pdf_translation_history",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/ppt_translation_history",
+      "endpoint": "main.ppt_translation_history",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/registrations",
+      "endpoint": "main.get_registrations",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/registrations/<int:id>/approve",
+      "endpoint": "main.approve_registration",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/registrations/<int:id>/reject",
+      "endpoint": "main.reject_registration",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/start_pdf_annotation",
+      "endpoint": "main.start_pdf_annotation",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/start_pdf_translation",
+      "endpoint": "main.start_pdf_translation",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/stop-words",
+      "endpoint": "stop_words.add_stop_word",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/stop-words",
+      "endpoint": "stop_words.get_stop_words",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/stop-words/<int:id>",
+      "endpoint": "stop_words.delete_stop_word",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "rule": "/api/stop-words/stats",
+      "endpoint": "stop_words.get_stats",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/storage/usage",
+      "endpoint": "upload.get_storage_usage",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/train",
+      "endpoint": "main.train_model",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/translation/health",
+      "endpoint": "translation_health.translation_health",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/translation_history",
+      "endpoint": "main.translation_history",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/translations",
+      "endpoint": "main.add_translation",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/translations",
+      "endpoint": "main.get_translations",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/translations/<int:id>",
+      "endpoint": "main.delete_translation",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "rule": "/api/translations/<int:id>",
+      "endpoint": "main.update_translation",
+      "methods": [
+        "PUT"
+      ]
+    },
+    {
+      "rule": "/api/translations/batch_upload",
+      "endpoint": "main.batch_upload_translations",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/translations/categories",
+      "endpoint": "main.get_translation_categories",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/translations/stats",
+      "endpoint": "main.get_translation_stats",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/upload",
+      "endpoint": "upload.upload_file",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/upload_pdf",
+      "endpoint": "main.upload_pdf",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/users",
+      "endpoint": "main.get_users",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/api/users/<int:id>/disable",
+      "endpoint": "main.disable_user",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/users/<int:id>/enable",
+      "endpoint": "main.enable_user",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/api/users/sso",
+      "endpoint": "main.get_sso_users",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/change-password",
+      "endpoint": "auth.change_password",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/auth/login",
+      "endpoint": "auth.login",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "rule": "/auth/logout",
+      "endpoint": "auth.logout",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/register",
+      "endpoint": "auth.register",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "rule": "/auth/sso/callback",
+      "endpoint": "sso.sso_callback",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/sso/config",
+      "endpoint": "sso.sso_config",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/sso/dev-callback",
+      "endpoint": "sso.sso_dev_callback",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/sso/dev-test",
+      "endpoint": "sso.sso_dev_test",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/sso/login",
+      "endpoint": "sso.sso_login",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/sso/logout",
+      "endpoint": "sso.sso_logout",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/sso/saml/acs",
+      "endpoint": "sso.saml_acs",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/auth/sso/saml/login",
+      "endpoint": "sso.saml_login",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/sso/status",
+      "endpoint": "sso.sso_status",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/auth/user-info",
+      "endpoint": "auth.user_info",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/batch_process",
+      "endpoint": "main.batch_process",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/cancel_task/<task_id>",
+      "endpoint": "main.cancel_task",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/dashboard",
+      "endpoint": "main.dashboard",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/db_stats",
+      "endpoint": "main.db_stats",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/db_stats_data",
+      "endpoint": "main.get_db_stats_data",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/delete/<int:record_id>",
+      "endpoint": "main.delete_file",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "rule": "/dictionary",
+      "endpoint": "main.dictionary",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/download/<int:record_id>",
+      "endpoint": "main.download_file",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/download/<task_id>",
+      "endpoint": "main.download_simple_translated_file",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/download_translated_pdf/<filename>",
+      "endpoint": "main.download_translated_pdf",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/file_management",
+      "endpoint": "main.file_management",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/file_search",
+      "endpoint": "main.file_search",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/get_annotation_files",
+      "endpoint": "main.get_annotation_files",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/get_annotations/<filename>",
+      "endpoint": "main.get_annotations",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/get_queue_status",
+      "endpoint": "main.get_detailed_queue_status",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/history",
+      "endpoint": "main.get_history",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/index",
+      "endpoint": "main.index_page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/ingredient",
+      "endpoint": "main.ingredient",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/ingredient/api/ingredient/download",
+      "endpoint": "ingredient.download_ingredient_file_qs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/ingredient/api/ingredient/download/<path:image_path>",
+      "endpoint": "ingredient.download_ingredient_file",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/ingredient/api/ingredient/files",
+      "endpoint": "ingredient.list_ingredient_files",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/ingredient/api/ingredient/search",
+      "endpoint": "ingredient.search_ingredient",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/ingredient/api/ingredient/upload-file",
+      "endpoint": "ingredient.upload_ingredient_file",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/ingredient/download",
+      "endpoint": "main.download_ingredient_file",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/ingredient/image/<path:image_path>",
+      "endpoint": "ingredient.serve_ingredient_image",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/ingredient/upload",
+      "endpoint": "main.ingredient_upload_page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/logs",
+      "endpoint": "main.logs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/page1",
+      "endpoint": "main.page1",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/page2",
+      "endpoint": "main.page2",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/pdf/<filename>",
+      "endpoint": "main.get_pdf",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/pdf_annotate",
+      "endpoint": "main.pdf_annotate",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/pdf_translate",
+      "endpoint": "main.pdf_translate",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/pdf_translation",
+      "endpoint": "main.pdf_translation",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/ppt_translate",
+      "endpoint": "main.ppt_translate_simple",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/queue_status",
+      "endpoint": "main.get_queue_status",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/recycle_connections",
+      "endpoint": "main.recycle_connections",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/registration_approval",
+      "endpoint": "main.registration_approval",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/save_annotations",
+      "endpoint": "main.save_annotations",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/search",
+      "endpoint": "main.search_ingredient",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/settings",
+      "endpoint": "main.settings",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/start_translation",
+      "endpoint": "main.start_translation",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/switch_language",
+      "endpoint": "main.switch_language",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/system/reset_task_queue",
+      "endpoint": "main.reset_task_queue",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/system/reset_thread_pool",
+      "endpoint": "main.reset_thread_pool",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/system_monitoring",
+      "endpoint": "main.system_monitoring",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/system_status",
+      "endpoint": "main.system_status",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/task_status",
+      "endpoint": "main.get_task_status",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/task_status/<task_id>",
+      "endpoint": "main.get_simple_task_status",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/translate",
+      "endpoint": "main.translate",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "rule": "/translate_pdf",
+      "endpoint": "main.translate_pdf",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/upload",
+      "endpoint": "main.upload_file",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "rule": "/user_management",
+      "endpoint": "main.user_management",
+      "methods": [
+        "GET"
+      ]
+    }
+  ],
+  "behavior": {
+    "auth": {
+      "login": {
+        "endpoint": "auth.login",
+        "methods": [
+          "GET",
+          "POST"
+        ],
+        "public": true,
+        "get_status": 200,
+        "failed_post_status": 302,
+        "failed_post_location_contains": "/auth/login"
+      }
+    },
+    "ppt": {
+      "authenticated_upload": {
+        "endpoint": "main.upload_file",
+        "rule": "/upload",
+        "method": "POST",
+        "access": "authenticated",
+        "unauthenticated_status": 302,
+        "unauthenticated_location_contains": "/auth/login",
+        "success_status": 200,
+        "success_fields": [
+          "code",
+          "msg",
+          "queue_position",
+          "record_id"
+        ],
+        "task_options": {
+          "mode_field": "bilingual_translation",
+          "modes": [
+            "translation_only",
+            "paragraph_up",
+            "paragraph_down"
+          ],
+          "selected_pages_field": "select_page",
+          "selected_pages_value": "1,3",
+          "selected_pages_parsed": [
+            1,
+            3
+          ],
+          "model_field": "model",
+          "models": [
+            "qwen",
+            "deepseek"
+          ],
+          "text_splitting_field": "enable_text_splitting",
+          "uno_conversion_field": "enable_uno_conversion"
+        }
+      },
+      "start": {
+        "endpoint": "main.start_translation",
+        "rule": "/start_translation",
+        "method": "POST",
+        "access": "public",
+        "missing_file_status": 400,
+        "success_status": 200,
+        "task_identifier": "task_id",
+        "success_fields": [
+          "message",
+          "status",
+          "task_id"
+        ],
+        "modes": [
+          "translation_only",
+          "paragraph_up",
+          "paragraph_down"
+        ],
+        "selected_pages_field": "select_page"
+      },
+      "status": {
+        "endpoint": "main.get_simple_task_status",
+        "rule": "/task_status/<task_id>",
+        "method": "GET",
+        "access": "public",
+        "missing_status": 404,
+        "missing_fields": [
+          "error",
+          "status"
+        ],
+        "known_fields": [
+          "current_slide",
+          "progress",
+          "status",
+          "total_slides"
+        ]
+      },
+      "download": {
+        "endpoint": "main.download_simple_translated_file",
+        "rule": "/download/<task_id>",
+        "method": "GET",
+        "access": "public",
+        "missing_status": 404,
+        "not_complete_status": 400,
+        "success_status": 200,
+        "name_prefix": "translated_",
+        "mimetype": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      }
+    },
+    "pdf": {
+      "status": {
+        "endpoint": "main.get_pdf_task_status",
+        "rule": "/api/pdf_task_status",
+        "method": "GET",
+        "access": "authenticated",
+        "empty_status": 200,
+        "empty_fields": [
+          "status"
+        ]
+      },
+      "start": {
+        "endpoint": "main.start_pdf_translation",
+        "rule": "/api/start_pdf_translation",
+        "method": "POST",
+        "access": "authenticated",
+        "missing_fields_status": 400,
+        "success_status": 200,
+        "task_identifier": "task_id",
+        "success_fields": [
+          "message",
+          "success",
+          "task_id"
+        ],
+        "model_field": "model",
+        "models": [
+          "qwen",
+          "deepseek"
+        ],
+        "ocr_option_field": "enable_image_ocr",
+        "ocr_true_value": "true",
+        "ocr_false_value": "false"
+      },
+      "translate": {
+        "endpoint": "main.translate_pdf",
+        "rule": "/translate_pdf",
+        "method": "POST",
+        "access": "authenticated",
+        "missing_file_status": 400,
+        "success_status": 200,
+        "task_identifier": "task_id",
+        "success_fields": [
+          "message",
+          "success",
+          "task_id"
+        ],
+        "model_field": "model",
+        "models": [
+          "qwen",
+          "deepseek"
+        ],
+        "ocr_option_field": "enable_image_ocr"
+      },
+      "download": {
+        "endpoint": "main.download_translated_pdf",
+        "rule": "/download_translated_pdf/<filename>",
+        "method": "GET",
+        "access": "authenticated",
+        "missing_status": 404,
+        "success_status": 200,
+        "mimetype": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      },
+      "docx": {
+        "name_template": "translated_{source}_{target}_{original_base}.docx",
+        "source_case": "lower",
+        "target_case": "lower",
+        "extension": ".docx"
+      }
+    }
+  }
+}

@@ -7,7 +7,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # 导入日志系统
-from logger_config_ocr import get_logger
+from .logger_config_ocr import get_logger
 
 # 获取日志记录器
 logger = get_logger("translator")

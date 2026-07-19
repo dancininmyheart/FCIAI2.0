@@ -9,12 +9,13 @@ from flask_login import LoginManager
 from flask_caching import Cache
 
 
-from .config import config, app_config
+from .config import TranslationSettings, config, app_config
 from .utils.logger import LogManager
 from .utils.thread_pool_executor import thread_pool
 from .utils.enhanced_task_queue import translation_queue
 from .utils.lazy_http_client import http_client
 from .utils.db_session_manager import setup_db_monitoring
+from .runtime import init_runtime_lifecycle
 
 # 创建扩展实例
 db = SQLAlchemy()
@@ -38,10 +39,11 @@ def create_app(config_name='development'):
     # 加载配置
     app.config.from_object(config[config_name])
     config[config_name].init_app(app)
+    translation_settings = TranslationSettings.from_environment(os.environ)
+    app.config.update(translation_settings.as_flask_config())
 
     # 确保上传目录存在
     uploads_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
-    print(uploads_path)
     os.makedirs(uploads_path, exist_ok=True)
 
     # 初始化日志
@@ -96,28 +98,14 @@ def create_app(config_name='development'):
 
     cache.init_app(app)
 
-    # 配置线程池
-    thread_pool.configure(
-        max_workers=int(os.getenv('THREAD_POOL_MAX_WORKERS', 32)),
-        io_bound_workers=int(os.getenv('THREAD_POOL_IO_WORKERS', 24)),
-        cpu_bound_workers=int(os.getenv('THREAD_POOL_CPU_WORKERS', 8)),
-        thread_name_prefix=os.getenv('THREAD_POOL_NAME_PREFIX', 'app')
-    )
+    from .translation.memory import InMemoryTranslationMemory
+    from .translation.metrics import TranslationMetrics
 
-    # 配置任务队列 - 限制最大并发翻译任务为10个
-    translation_queue.configure(
-        max_concurrent_tasks=int(os.getenv('TASK_QUEUE_MAX_CONCURRENT', 10)),
-        task_timeout=int(os.getenv('TASK_QUEUE_TIMEOUT', 3600)),
-        retry_times=int(os.getenv('TASK_QUEUE_RETRY_TIMES', 3))
-    )
+    app.extensions["translation_settings"] = translation_settings
+    app.extensions["translation_metrics"] = TranslationMetrics()
+    app.extensions["translation_memory"] = InMemoryTranslationMemory()
 
-    # 配置 HTTP 客户端
-    http_client.configure(
-        max_connections=int(os.getenv('HTTP_CLIENT_MAX_CONNECTIONS', 100)),
-        default_timeout=int(os.getenv('HTTP_CLIENT_TIMEOUT', 60)),
-        retry_times=int(os.getenv('HTTP_CLIENT_RETRY_TIMES', 3)),
-        retry_delay=int(os.getenv('HTTP_CLIENT_RETRY_DELAY', 1))
-    )
+    init_runtime_lifecycle(app)
 
     # 注册蓝图
     from .views.main import main as main_bp
@@ -128,6 +116,7 @@ def create_app(config_name='development'):
     from .routes.log_management import router as log_management_bp
     from .routes.stop_words import bp as stop_words_bp
     from .routes.db_management import router as db_management_bp
+    from .views.translation_health import bp as translation_health_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
@@ -137,28 +126,7 @@ def create_app(config_name='development'):
     app.register_blueprint(stop_words_bp)  # 停翻词路由
     app.register_blueprint(log_management_bp)
     app.register_blueprint(db_management_bp)  # 数据库管理路由
-
-    # 创建数据库表
-    with app.app_context():
-        db.create_all()
-        logger.info("数据库表已创建")
-
-    # 启动任务处理器
-    translation_queue.start_processor()
-    logger.info("任务处理器已启动")
-
-    # 启动数据库监控
-    monitor_interval = int(os.getenv('DB_MONITOR_INTERVAL', 3600))  # 默认每小时监控一次
-    db_monitor_thread = setup_db_monitoring(app, interval=monitor_interval)
-    logger.info(f"数据库监控已启动，监控间隔: {monitor_interval}秒")
-    
-    # 启动清理任务 - 确保在任务处理器启动后执行
-    try:
-        from .tasks.cleanup import schedule_cleanup_task
-        cleanup_scheduler = schedule_cleanup_task()
-        logger.info("文件清理任务已调度")
-    except Exception as e:
-        logger.error(f"调度清理任务失败: {str(e)}")
+    app.register_blueprint(translation_health_bp)
 
     logger.info(f"应用已初始化 - 环境: {config_name}")
     return app

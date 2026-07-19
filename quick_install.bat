@@ -40,6 +40,12 @@ if %errorLevel% neq 0 (
 ) else (
     for /f "tokens=2" %%i in ('python --version') do set CURRENT_PYTHON=%%i
     echo [信息] 当前Python版本: !CURRENT_PYTHON!
+    python -c "import sys; raise SystemExit(0 if sys.version_info ^>= (3, 11) else 1)"
+    if !errorLevel! neq 0 (
+        echo [错误] 需要Python 3.11或更高版本
+        pause
+        exit /b 1
+    )
 )
 
 :: 检查pip
@@ -93,6 +99,17 @@ if exist "requirements.txt" (
     echo [错误] requirements.txt 文件不存在
     pause
     exit /b 1
+)
+
+:: 验证所有运行入口，只检查装配，不启动监听器或后台任务
+echo [信息] 验证运行入口...
+for %%e in (run.py app.py run_async.py run_worker.py) do (
+    python %%e --check
+    if !errorLevel! neq 0 (
+        echo [错误] %%e --check 失败
+        pause
+        exit /b 1
+    )
 )
 
 :: 检查MySQL
@@ -149,26 +166,42 @@ echo title PPT翻译系统 - 开发模式 >> start_dev.bat
 echo echo 启动PPT翻译系统（开发模式）... >> start_dev.bat
 echo cd /d "%PROJECT_DIR%" >> start_dev.bat
 echo call "%VENV_DIR%\Scripts\activate.bat" >> start_dev.bat
-echo python app.py >> start_dev.bat
+echo python run.py >> start_dev.bat
 echo pause >> start_dev.bat
 
-:: 创建生产模式启动脚本
+:: 创建生产 Web 入口
+echo @echo off > start_web.bat
+echo chcp 65001 ^>nul >> start_web.bat
+echo cd /d "%PROJECT_DIR%" >> start_web.bat
+echo call "%VENV_DIR%\Scripts\activate.bat" >> start_web.bat
+echo python run_async.py >> start_web.bat
+
+:: 创建生产 Worker 入口
+echo @echo off > start_worker.bat
+echo chcp 65001 ^>nul >> start_worker.bat
+echo cd /d "%PROJECT_DIR%" >> start_worker.bat
+echo call "%VENV_DIR%\Scripts\activate.bat" >> start_worker.bat
+echo python run_worker.py >> start_worker.bat
+
+:: 创建生产模式启动脚本：一个 Web 进程和一个 Worker 进程
 echo @echo off > start_prod.bat
 echo chcp 65001 ^>nul >> start_prod.bat
 echo title PPT翻译系统 - 生产模式 >> start_prod.bat
 echo echo 启动PPT翻译系统（生产模式）... >> start_prod.bat
 echo cd /d "%PROJECT_DIR%" >> start_prod.bat
-echo call "%VENV_DIR%\Scripts\activate.bat" >> start_prod.bat
-echo gunicorn -w 4 -b 0.0.0.0:5000 app:app >> start_prod.bat
-echo pause >> start_prod.bat
+echo if not exist logs mkdir logs >> start_prod.bat
+echo powershell -NoProfile -Command "$files = @('%PROJECT_DIR%logs\web.pid', '%PROJECT_DIR%logs\worker.pid'); foreach ($file in $files) { if (Test-Path -LiteralPath $file) { $processId = [int](Get-Content -LiteralPath $file); if (Get-Process -Id $processId -ErrorAction SilentlyContinue) { Write-Error ('System already running, pid=' + $processId); exit 1 }; Remove-Item -LiteralPath $file -Force } }" >> start_prod.bat
+echo if errorlevel 1 exit /b 1 >> start_prod.bat
+echo powershell -NoProfile -Command "$started = @(); try { $web = Start-Process -FilePath '%VENV_DIR%\Scripts\python.exe' -ArgumentList 'run_async.py' -WorkingDirectory '%PROJECT_DIR%' -WindowStyle Hidden -RedirectStandardOutput '%PROJECT_DIR%logs\web.out.log' -RedirectStandardError '%PROJECT_DIR%logs\web.err.log' -PassThru; $started += $web; $worker = Start-Process -FilePath '%VENV_DIR%\Scripts\python.exe' -ArgumentList 'run_worker.py' -WorkingDirectory '%PROJECT_DIR%' -WindowStyle Hidden -RedirectStandardOutput '%PROJECT_DIR%logs\worker.out.log' -RedirectStandardError '%PROJECT_DIR%logs\worker.err.log' -PassThru; $started += $worker; Set-Content -LiteralPath '%PROJECT_DIR%logs\web.pid' -Value $web.Id; Set-Content -LiteralPath '%PROJECT_DIR%logs\worker.pid' -Value $worker.Id } catch { foreach ($process in $started) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }; Remove-Item -LiteralPath '%PROJECT_DIR%logs\web.pid', '%PROJECT_DIR%logs\worker.pid' -Force -ErrorAction SilentlyContinue; throw }" >> start_prod.bat
+echo if errorlevel 1 exit /b 1 >> start_prod.bat
+echo echo Web 与 Worker 已启动。 >> start_prod.bat
 
 :: 创建停止脚本
 echo @echo off > stop.bat
 echo chcp 65001 ^>nul >> stop.bat
 echo title 停止PPT翻译系统 >> stop.bat
 echo echo 正在停止PPT翻译系统... >> stop.bat
-echo taskkill /f /im python.exe 2^>nul >> stop.bat
-echo taskkill /f /im gunicorn.exe 2^>nul >> stop.bat
+echo powershell -NoProfile -Command "$files = @('%PROJECT_DIR%logs\web.pid', '%PROJECT_DIR%logs\worker.pid'); foreach ($file in $files) { if (Test-Path -LiteralPath $file) { $processId = [int](Get-Content -LiteralPath $file); Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath $file -Force } }" >> stop.bat
 echo echo 系统已停止 >> stop.bat
 echo pause >> stop.bat
 
@@ -180,11 +213,8 @@ echo echo ==================== >> status.bat
 echo echo   PPT翻译系统状态检查 >> status.bat
 echo echo ==================== >> status.bat
 echo echo. >> status.bat
-echo echo Python进程: >> status.bat
-echo tasklist /fi "imagename eq python.exe" 2^>nul ^| find "python.exe" >> status.bat
-echo echo. >> status.bat
-echo echo Gunicorn进程: >> status.bat
-echo tasklist /fi "imagename eq gunicorn.exe" 2^>nul ^| find "gunicorn.exe" >> status.bat
+echo echo 受管进程: >> status.bat
+echo powershell -NoProfile -Command "$roles = @('web', 'worker'); foreach ($role in $roles) { $file = '%PROJECT_DIR%logs\' + $role + '.pid'; if (Test-Path -LiteralPath $file) { $processId = [int](Get-Content -LiteralPath $file); $process = Get-Process -Id $processId -ErrorAction SilentlyContinue; if ($process) { Write-Host ($role + ': running, pid=' + $processId) } else { Write-Host ($role + ': stopped (stale pid file)') } } else { Write-Host ($role + ': stopped') } }" >> status.bat
 echo echo. >> status.bat
 echo echo 端口占用情况: >> status.bat
 echo netstat -an ^| find ":5000" >> status.bat

@@ -20,6 +20,7 @@ aiohttp==3.9.1
 aiofiles==23.2.0
 asyncio-mqtt==0.16.1
 nest-asyncio==1.5.8
+APScheduler==3.11.0
 
 # ===== 服务器和部署 =====
 gunicorn==21.2.0

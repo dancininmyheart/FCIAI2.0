@@ -4,11 +4,16 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from app.translation.providers import DeepSeekProvider, ProviderRegistry, QwenProvider
+from app.translation.providers import (
+    DeepSeekProvider,
+    ProviderRegistry,
+    QwenProvider,
+    _remote_data_text,
+)
 from app.translation.types import ProviderError, ProviderRequest
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class RecordingQwenTransport:
     response: str = '[{"box_index":1}]'
     calls: list[tuple[str, str, str, float]] = field(default_factory=list)
@@ -18,7 +23,7 @@ class RecordingQwenTransport:
         return self.response
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class RecordingRemoteTransport:
     response: str = '[{"box_index":1}]'
     calls: list[tuple[str, dict[str, str | bool], float]] = field(default_factory=list)
@@ -33,10 +38,10 @@ class TimeoutQwenTransport:
         raise TimeoutError("deadline")
 
 
-@dataclass(slots=True)
 class FailingQwenTransport:
-    error: Exception
-    calls: int = 0
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        self.calls = 0
 
     def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
         self.calls += 1
@@ -87,6 +92,20 @@ def test_deepseek_provider_preserves_wire_payload_contract() -> None:
         "source_language": "English",
         "target_language": "Chinese",
     }
+
+
+def test_deepseek_structured_dict_response_is_serialized_as_json() -> None:
+    response = {
+        "translated_json": {
+            "provider_contract_schema_version": 2,
+            "document_kind": "pptx_xml",
+            "translations": [],
+        },
+    }
+
+    assert _remote_data_text(response) == (
+        '{"provider_contract_schema_version":2,"document_kind":"pptx_xml","translations":[]}'
+    )
 
 
 def test_registry_unknown_provider_has_no_fallback_call() -> None:

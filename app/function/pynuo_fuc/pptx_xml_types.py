@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Protocol, TypedDict
 from xml.etree import ElementTree
 
-
 class TextBoxData(TypedDict):
     page_index: int
     box_index: int
@@ -69,3 +68,49 @@ class XmlParagraphTarget:
     runs: tuple[ElementTree.Element, ...]
     text_nodes: tuple[ElementTree.Element, ...]
     text: str
+
+
+class PptxXmlFallbackEligibleError(Exception):
+    """Base class for failures that may use the explicit UNO compatibility lane."""
+
+
+@dataclass(frozen=True, slots=True)
+class PptxXmlReadError(PptxXmlFallbackEligibleError):
+    detail: str
+
+    def __str__(self) -> str:
+        return f"PPTX XML read failed: {self.detail}"
+
+
+@dataclass(frozen=True, slots=True)
+class PptxXmlWriteError(PptxXmlFallbackEligibleError):
+    detail: str
+
+    def __str__(self) -> str:
+        return f"PPTX XML write failed: {self.detail}"
+
+
+@dataclass(frozen=True, slots=True)
+class PptxXmlPackageError(PptxXmlFallbackEligibleError):
+    detail: str
+
+    def __str__(self) -> str:
+        return f"PPTX package validation failed: {self.detail}"
+
+
+@dataclass(frozen=True, slots=True)
+class PptxXmlUnsupportedStructureError(PptxXmlFallbackEligibleError):
+    slide_path: str
+    detail: str
+
+    def __str__(self) -> str:
+        return f"unsupported PPTX text structure in {self.slide_path}: {self.detail}"
+
+
+@dataclass(frozen=True, slots=True)
+class PptxXmlDuplicateShapeIdError(PptxXmlFallbackEligibleError):
+    slide_path: str
+    shape_id: str
+
+    def __str__(self) -> str:
+        return f"duplicate shape ID {self.shape_id} in {self.slide_path}"

@@ -144,10 +144,10 @@ V2 任务系统以 MySQL `translation_jobs` 为状态事实源，Worker 通过�
 | `translation_only` | 已实现 | 仅保留译文，替换原文本节点。 |
 | `paragraph_up` | 已实现 | 保留原文，在同一段落换行后追加译文。 |
 | `paragraph_down` | 已实现 | 先写译文，再换行追加原文。 |
-| 保留文本片段格式 | 已实现但有限制 | 翻译返回的 `[block]` 片段数匹配时克隆原 run 样式；数量不匹配时会合并为单一片段。 |
+| 保留文本片段格式 | 已实现 | `.pptx` 默认使用稳定 unit/segment ID 回写到原 `a:r/a:t`，不再把 `[block]` 作为内部协议；字段、换行、超链接关系和 run 样式保持不变。 |
 | 文本框自动适配 | 已实现并有测试 | 写入译文时移除 `noAutofit/spAutoFit`，写入 `a:normAutofit`，由 Office/LibreOffice 按框缩小文字。 |
 | XML 优先、布局保真 | 已实现 | 直接复制 PPTX ZIP 并只替换目标 slide XML；成功后立即返回，不再进入旧布局调整。 |
-| LibreOffice/PyUNO 降级 | 有条件可用 | XML 路径失败时使用 PPTX/ODP/UNO 流程，需要本机 LibreOffice。 |
+| LibreOffice/PyUNO 降级 | 有条件可用 | 仅类型化 ZIP/XML/包/结构运行时错误可在 `PPTX_XML_RUNTIME_FALLBACK=1` 时进入 UNO；Provider、协议和标记错误不会降级。 |
 | `.ppt` 兼容 | 部分实现 | XML 路径只支持 `.pptx`；`.ppt` 依赖 UNO/转换路径，未有自动化验证。 |
 | PPT 图片 OCR 与翻译 | 部分实现 | 可提取图片、调用 Qwen OCR/翻译并向幻灯片追加文本；依赖密钥，缺端到端测试。 |
 | 队列、进度、重试、取消 | 已实现 | V2 使用数据库任务账本、租约、版本校验和统一状态投影；旧 `EnhancedTranslationQueue` 作为 `legacy` 回滚路径保留。自动恢复默认关闭。 |

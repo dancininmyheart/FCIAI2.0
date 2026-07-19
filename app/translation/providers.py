@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Final, Protocol
 
+from app.translation.pptx_contract_types import JsonValue
 from app.translation.types import ProviderError, ProviderName, ProviderRequest, ProviderResult, TranslationProvider
 from app.translation.metrics import current_correlation, current_metrics, log_translation_event
 
@@ -178,15 +180,47 @@ class _RequestsRemoteTransport:
             raise TimeoutError("remote provider timed out") from exc
         except (requests.RequestException, ValueError) as exc:
             raise RemoteProviderResponseError("remote provider returned an invalid response") from exc
+        if not isinstance(body, dict):
+            raise RemoteProviderResponseError("remote provider returned an invalid response")
         if body.get("code") != 200:
             raise RemoteProviderResponseError(f"remote provider status {body.get('code')}")
-        data = body.get("data", "")
-        if isinstance(data, dict):
-            return str(data.get("translated_json") or data.get("result") or data.get("content") or "")
-        return str(data)
+        return _remote_data_text(body.get("data", ""))
+
+
+def _remote_data_text(data: JsonValue) -> str:
+    if isinstance(data, str):
+        return data
+    if isinstance(data, dict):
+        for key in ("translated_json", "result", "content", "output"):
+            candidate = data.get(key)
+            if candidate is not None and candidate != "":
+                return _remote_data_text(candidate)
+        return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return _json_or_text(data)
+
+
+def _json_or_text(value: JsonValue) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value)
 
 
 def _semantic_system_prompt(request: ProviderRequest) -> str:
+    if request.field == "pptx_structured_v2":
+        return "\n".join(
+            (
+                f"Translate PPTX text from {request.source_language} to {request.target_language}.",
+                "The user message is one JSON object with provider_contract_schema_version 2 and document_kind pptx_xml.",
+                "Translate each unit as one semantic paragraph while preserving its unit_id and input order.",
+                "Return exactly one JSON object with provider_contract_schema_version, document_kind, and translations.",
+                "Each translation must contain exactly unit_id, target_text, and an ordered segments array.",
+                "Each segment must contain exactly segment_id and target_text, preserving every text segment ID and order.",
+                "Keep line_break controls as newlines in target_text and copy protected_field text unchanged.",
+                "Do not return source_stream controls, unknown fields, prose, comments, or Markdown fences.",
+                f"Keep these terms unchanged: {_quoted_words(request.stop_words)}.",
+                f"Apply this glossary: {_quoted_translations(request.custom_translations)}.",
+            ),
+        )
     if request.output_format == "plain":
         return "\n".join(
             (

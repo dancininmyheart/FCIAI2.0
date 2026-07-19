@@ -177,3 +177,42 @@ python tools/qa/benchmark_translation_architecture.py --root D:\project\FCIAI2.0
 ```
 
 真实 PPT 验收命令见项目 `README.md`。该命令使用确定性 Provider 和源文件副本，不调用真实模型，也不修改用户原文件。
+
+## 10. PPTX 结构化翻译 V2
+
+`.pptx` 默认使用 `PPTX_XML_ENGINE=structured_v2`。旧页面协议仍可通过
+`PPTX_XML_ENGINE=legacy` 显式回滚，但两条 XML 写回路径都会执行命名空间保留、
+ZIP/XML/关系目标检查和原子发布。
+
+V2 链路如下：
+
+```text
+slide XML
+  -> 物理 slide + shape id + text-body ordinal + paragraph ordinal 稳定 ID
+  -> paragraph source_stream（text / line_break / protected_field）
+  -> provider_contract_schema_version=2 JSON
+  -> 严格校验 unit/segment ID、顺序、数量、目标重建和保留标记来源
+  -> 精确写回原 a:r/a:t
+  -> changed text body 设置单一 a:normAutofit
+  -> 临时 PPTX 静态审计
+  -> os.replace 原子发布
+```
+
+结构校验不受 `TRANSLATION_QUALITY_MODE` 影响。Provider 返回缺失字段、未知字段、
+错序 ID、错段数、空译文，或凭空新增 `[block]` / `[块]` 及其规范化变体时，当前
+批次只重试一次；第二次仍失败则任务失败，不写出部分文件，也不会切换模型或进入
+旧提示词。
+
+运行时降级由独立开关控制：
+
+```dotenv
+PPTX_XML_ENGINE=structured_v2
+PPTX_XML_RUNTIME_FALLBACK=0
+```
+
+只有 ZIP、XML、写入、包完整性、重复 shape ID 和不支持的文本结构等类型化运行时
+错误，才可在 `PPTX_XML_RUNTIME_FALLBACK=1` 时进入 UNO 兼容路径。Provider、协议
+和保留标记错误始终失败关闭。
+
+当前范围覆盖幻灯片正文和表格单元格中已有的 `txBody`。图表、SmartArt、备注、
+母版、嵌入对象等非 slide XML 正文不翻译，但其 ZIP 成员保持原样。

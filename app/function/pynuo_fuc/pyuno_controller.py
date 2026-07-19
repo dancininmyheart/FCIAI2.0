@@ -448,9 +448,8 @@ def _try_translate_pptx_with_xml(presentation_path: str,
 
     try:
         from pathlib import Path
-        from xml.etree import ElementTree
-        import zipfile
         from pptx_xml_translate import XmlTranslationRequest, translate_pptx_with_xml
+        from app.function.pynuo_fuc.pptx_xml_types import PptxXmlFallbackEligibleError
 
         validated_page_indices = _validate_and_normalize_page_indices(select_page)
         original_dir = os.path.dirname(presentation_path)
@@ -472,9 +471,18 @@ def _try_translate_pptx_with_xml(presentation_path: str,
         result_path = translate_pptx_with_xml(request)
         logger.info(f"底层XML翻译完成: {result_path}")
         return result_path
-    except (ImportError, OSError, RuntimeError, ValueError, zipfile.BadZipFile, ElementTree.ParseError) as e:
-        logger.warning(f"底层XML翻译失败，降级到PyUNO流程: {e}", exc_info=True)
-        return None
+    except PptxXmlFallbackEligibleError as e:
+        fallback_enabled = os.getenv("PPTX_XML_RUNTIME_FALLBACK", "0").strip().lower()
+        if fallback_enabled in ("1", "true", "yes", "on"):
+            logger.warning(f"底层XML运行时失败，降级到PyUNO流程: {e}", exc_info=True)
+            return None
+        raise
+    except ImportError:
+        fallback_enabled = os.getenv("PPTX_XML_RUNTIME_FALLBACK", "0").strip().lower()
+        if fallback_enabled in ("1", "true", "yes", "on"):
+            logger.warning("底层XML模块不可用，降级到PyUNO流程", exc_info=True)
+            return None
+        raise
 
 def apply_uno_format_conversion(result_path, original_name, timestamp, temp_dir, original_dir):
     """

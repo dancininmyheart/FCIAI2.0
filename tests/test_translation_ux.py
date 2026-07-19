@@ -58,6 +58,25 @@ def test_translation_feedback_does_not_use_blocking_alerts() -> None:
     assert "toast-close" in main_js
 
 
+def test_ppt_translation_switches_from_page_selection_to_upload_feedback_immediately() -> None:
+    template = _read(PPT_TEMPLATE)
+    start = template.index("async function startTranslation()")
+    end = template.index("function checkTaskStatus()", start)
+    launch_flow = template[start:end]
+
+    hide_selector = launch_flow.index("pageSelector.style.display = 'none';")
+    send_upload = launch_flow.index("xhr.send(formData);")
+    error_handler = launch_flow.index("} catch (error) {")
+
+    assert "let isTranslationLaunching = false;" in template
+    assert "if (isTranslationLaunching) return;" in launch_flow
+    assert hide_selector < send_upload
+    assert "startButton.disabled = true;" in launch_flow[:send_upload]
+    assert "if (resultContainer) resultContainer.hidden = true;" in launch_flow[:send_upload]
+    assert "pageSelector.style.display = 'block';" in launch_flow[error_handler:]
+    assert "updateStartButton();" in launch_flow[error_handler:]
+
+
 def test_experience_styles_define_responsive_drawer_and_readable_type() -> None:
     css = _read(EXPERIENCE_CSS)
 

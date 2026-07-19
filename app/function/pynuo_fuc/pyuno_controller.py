@@ -593,10 +593,19 @@ def pyuno_controller(presentation_path: str,
                      model=model,
                      enable_uno_conversion=enable_uno_conversion)
     
-    logger.info(f"开始处理PPT（重构版 - PPTX->ODP->操作->PPTX，使用PyUNO格式转换）: {presentation_path}")
+    logger.info(f"开始处理演示文稿: {presentation_path}")
     logger.info(f"翻译模式: {bilingual_translation}")
     logger.info(f"指定页面: {select_page if select_page else '所有页面'}")
-    logger.info(f"UNO格式转换: {'启用' if enable_uno_conversion else '禁用'}")
+    if presentation_path.lower().endswith(".pptx"):
+        xml_engine = os.getenv("PPTX_XML_ENGINE", "structured_v2").strip().lower()
+        runtime_fallback = os.getenv("PPTX_XML_RUNTIME_FALLBACK", "0").strip().lower()
+        logger.info(
+            "PPTX主流程: engine=%s, runtime_fallback=%s",
+            xml_engine,
+            "启用" if runtime_fallback in ("1", "true", "yes", "on") else "禁用",
+        )
+    else:
+        logger.info("旧格式PPT兼容流程: PyUNO")
     
     # 检查PPT文件是否存在
     if not os.path.exists(presentation_path):
@@ -620,6 +629,11 @@ def pyuno_controller(presentation_path: str,
     if xml_result_path:
         log_execution_time(logger, "pyuno_controller", start_time)
         return xml_result_path
+
+    logger.warning(
+        "进入PyUNO兼容流程，UNO格式转换: %s",
+        "启用" if enable_uno_conversion else "禁用",
+    )
 
     # 确保soffice服务存活
     ensure_soffice_running()

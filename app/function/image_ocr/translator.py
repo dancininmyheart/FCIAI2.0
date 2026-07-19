@@ -6,6 +6,8 @@ from typing import Dict, List, Optional, Union
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from app.translation.qwen_config import qwen_model_name
+
 # 导入日志系统
 from .logger_config_ocr import get_logger
 
@@ -70,7 +72,7 @@ class QwenTranslator:
         }
         
         data = {
-            "model": "qwen3-235b-a22b-instruct-2507",  # 使用qwen-turbo模型，更快更便宜
+            "model": qwen_model_name(),
             "input": {
                 "messages": [
                     {
@@ -82,7 +84,8 @@ class QwenTranslator:
             "parameters": {
                 "max_tokens": 16000,  # Increased from 1000 to 16000 to handle longer texts
                 "temperature": 0.1,  # 较低的温度确保翻译准确性
-                "top_p": 0.8
+                "top_p": 0.8,
+                "enable_thinking": False,
             }
         }
         

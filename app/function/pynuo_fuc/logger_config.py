@@ -25,6 +25,7 @@ def setup_default_logging(level=logging.INFO):
     """
     # 创建主日志记录器
     logger = logging.getLogger("pyuno.main")
+    logger.propagate = False
     
     # 避免重复配置
     if logger.handlers:

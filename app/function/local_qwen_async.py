@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from functools import lru_cache
 
+from app.translation.qwen_config import qwen_model_name
+
 # 导入工具函数
 from ..utils.translation_utils import (
     build_map,
@@ -40,7 +42,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # 模型配置
-MODEL_NAME = "qwen3-235b-a22b-instruct-2507"
+MODEL_NAME = qwen_model_name()
 API_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 API_KEY = os.environ.get("QWEN_API_KEY")
 
@@ -215,7 +217,8 @@ async def get_field_async(text: str) -> str:
                     {"role": "user", "content": f"请分析以下文本内容属于哪个领域：\n\n{text[:1000]}"}  # 限制文本长度
                 ],
                 temperature=0.1,
-                max_tokens=100  # Increased from 50 to 100 to allow for slightly longer responses
+                max_tokens=100,  # Increased from 50 to 100 to allow for slightly longer responses
+                extra_body={"enable_thinking": False},
             )
             result = response.choices[0].message.content.strip()
             logger.info(f"成功获取领域信息: {result}")
@@ -314,7 +317,8 @@ async def translate_by_fields_async(field, text, stop_words, custom_translations
                 ],
                 temperature=0.7,
                 max_tokens=16000,  # Increased from 8000 to 16000 to handle longer paragraphs
-                timeout=600
+                timeout=600,
+                extra_body={"enable_thinking": False},
             )
             result = response.choices[0].message.content
             logger.info(f"翻译成功，返回结果长度: {len(result)}")
@@ -386,7 +390,8 @@ async def re_parse_formatted_text_async(text: str):
                     {"role": "user", "content": text}
                 ],
                 temperature=0.3,
-                max_tokens=16000  # Increased from 8000 to 16000 to handle larger JSON responses
+                max_tokens=16000,  # Increased from 8000 to 16000 to handle larger JSON responses
+                extra_body={"enable_thinking": False},
             )
             result = response.choices[0].message.content
             logger.info("JSON修复成功")

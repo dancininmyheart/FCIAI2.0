@@ -249,6 +249,12 @@ if not exist ".env" (
     echo. >> .env
     echo # API配置 >> .env
     echo DASHSCOPE_API_KEY=your-dashscope-api-key >> .env
+    echo QWEN_API_KEY=your-dashscope-api-key >> .env
+    echo QWEN_MODEL=qwen3.7-plus >> .env
+    echo. >> .env
+    echo # PPTX结构化翻译配置 >> .env
+    echo PPTX_XML_ENGINE=structured_v2 >> .env
+    echo PPTX_XML_RUNTIME_FALLBACK=0 >> .env
     echo [信息] 请编辑 .env 文件配置相关参数
 )
 

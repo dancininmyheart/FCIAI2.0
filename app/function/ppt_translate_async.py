@@ -26,6 +26,7 @@ from .local_qwen_async import translate_async, batch_translate_async, get_field_
 # from .translate_gpt4o_async import translate_gpt4o_async
 from ..utils.thread_pool_executor import thread_pool, TaskType
 from ..utils.enhanced_task_queue import translation_queue
+from ..translation.metrics import current_correlation
 
 # 导入基于页面的翻译机制
 from .page_based_translation import translate_slide_by_page, get_translation_statistics
@@ -648,8 +649,24 @@ async def process_presentation_async(presentation_path: str,
                     progress_callback=progress_callback,
                 )
             )
+        if presentation_path.lower().endswith(".pptx"):
+            raise RuntimeError("PPTX XML or explicit compatibility path produced no output")
     except Exception as e:
-        logger.error(f"XML优先翻译流程失败，继续旧布局调整降级路径: {str(e)}")
+        if presentation_path.lower().endswith(".pptx"):
+            correlation = current_correlation(model)
+            logger.error(
+                "pptx_xml_failed_closed job_id=%s file=%s error_code=%s detail=%s",
+                correlation.public_job_id,
+                os.path.basename(presentation_path),
+                getattr(e, "code", type(e).__name__),
+                str(e),
+            )
+            raise
+        logger.warning(
+            "legacy_ppt_primary_path_failed file=%s detail=%s",
+            os.path.basename(presentation_path),
+            str(e),
+        )
 
 
 

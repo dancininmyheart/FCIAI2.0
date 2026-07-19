@@ -429,6 +429,8 @@ MAIL_PASSWORD=your-email-password
 
 # API配置
 DASHSCOPE_API_KEY=your-dashscope-api-key
+QWEN_API_KEY=your-dashscope-api-key
+QWEN_MODEL=qwen3.7-plus
 
 # 任务队列配置 - 限制最大并发翻译任务为10个
 TASK_QUEUE_MAX_CONCURRENT=10
@@ -464,6 +466,8 @@ CLEANUP_DAYS=30
 # 翻译配置
 TRANSLATION_TIMEOUT=300
 TRANSLATION_MAX_RETRIES=3
+PPTX_XML_ENGINE=structured_v2
+PPTX_XML_RUNTIME_FALLBACK=0
 
 # PDF配置
 PDF_MAX_SIZE=52428800

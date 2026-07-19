@@ -15,6 +15,8 @@ import unicodedata
 import ast
 from typing import List, Dict
 
+from app.translation.qwen_config import qwen_model_name
+
 # 获取日志记录器
 logger = get_logger("pyuno")
 
@@ -56,9 +58,9 @@ def translate(text: str,
     stop_words_str = ", ".join(f'"{word}"' for word in stop_words)
     custom_translations_str = ", ".join(f'"{k}": "{v}"' for k, v in custom_translations.items())
     if model == "qwen":
-        logger.info("model参数设置为qwen,使用qwen2.5-72b-instruct模型")
+        logger.info("model参数设置为qwen,使用%s模型", qwen_model_name())
         client = OpenAI(api_key=QWEN_API_KEY, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
-        used_model = "qwen3-235b-a22b-instruct-2507"
+        used_model = qwen_model_name()
         response = client.chat.completions.create(
             model = used_model,
             messages=[
@@ -124,7 +126,8 @@ def translate(text: str,
                 {"role": "user", "content": text}
             ],
             stream=False,
-            max_tokens = 32768
+            max_tokens=32768,
+            extra_body={"enable_thinking": False},
         )
         return response.choices[0].message.content
     
@@ -362,7 +365,7 @@ def re_parse_formatted_text_async(text: str):
     try:
         client = OpenAI(api_key=QWEN_API_KEY, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
         response = client.chat.completions.create(
-            model="qwen3-235b-a22b-instruct-2507",
+            model=qwen_model_name(),
             messages=[
                 {"role": "system", "content": """
                  你是一个 JSON 解析和修复专家。你的任务是修复一段 **可能存在格式错误的 JSON**，并输出一个 **严格符合 JSON 标准** 的 **格式正确的 JSON**。
@@ -380,7 +383,8 @@ def re_parse_formatted_text_async(text: str):
                 {"role": "user", "content": text}
             ],
             temperature=0.3,
-            max_tokens=16000  # Increased from 8000 to 16000 to handle larger JSON responses
+            max_tokens=16000,  # Increased from 8000 to 16000 to handle larger JSON responses
+            extra_body={"enable_thinking": False},
         )
         result = response.choices[0].message.content
         logger.info(f"JSON修复成功")

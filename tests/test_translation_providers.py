@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -8,6 +10,7 @@ from app.translation.providers import (
     DeepSeekProvider,
     ProviderRegistry,
     QwenProvider,
+    _OpenAiQwenTransport,
     _remote_data_text,
 )
 from app.translation.types import ProviderError, ProviderRequest
@@ -48,6 +51,19 @@ class FailingQwenTransport:
         raise self.error
 
 
+class JsonModeQwenTransport:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        self.calls.append("text")
+        return "plain"
+
+    def complete_json(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        self.calls.append("json")
+        return '{"provider_contract_schema_version":2,"document_kind":"pptx_xml","translations":[]}'
+
+
 def _request() -> ProviderRequest:
     return ProviderRequest.create(
         text="[block] Milk",
@@ -66,12 +82,77 @@ def test_qwen_provider_preserves_semantic_prompt_contract() -> None:
 
     model, system, user, timeout = transport.calls[0]
     assert result.provider == "qwen"
-    assert model == "qwen3-235b-a22b-instruct-2507"
+    assert model == "qwen3.7-plus"
     assert user == "[block] Milk"
     assert timeout == 9
     assert "[block]" in system
     assert "box_index" in system and "paragraph_index" in system
     assert '"HMO"' in system and '"milk": "乳汁"' in system
+
+
+def test_qwen_provider_uses_json_mode_for_pptx_contract() -> None:
+    transport = JsonModeQwenTransport()
+    request = ProviderRequest.create(
+        text='{"provider_contract_schema_version":2,"document_kind":"pptx_xml","units":[]}',
+        field="pptx_structured_v2",
+        source_language="English",
+        target_language="Chinese",
+        output_format="structured",
+    )
+
+    result = QwenProvider(transport).translate(request)
+
+    assert transport.calls == ["json"]
+    assert result.text.startswith('{"provider_contract_schema_version":2')
+
+
+def test_qwen_provider_never_downgrades_pptx_contract_to_plain_text() -> None:
+    request = ProviderRequest.create(
+        text='{"provider_contract_schema_version":2,"document_kind":"pptx_xml","units":[]}',
+        field="pptx_structured_v2",
+        source_language="English",
+        target_language="Chinese",
+        output_format="structured",
+    )
+
+    with pytest.raises(ProviderError) as raised:
+        QwenProvider(RecordingQwenTransport()).translate(request)
+
+    assert raised.value.code == "structured_output_unsupported"
+
+
+def test_openai_qwen_transport_sends_json_object_response_format(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeCompletions:
+        def create(self, **kwargs: object) -> SimpleNamespace:
+            calls.append(kwargs)
+            message = SimpleNamespace(content='{"status":"ok"}')
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    fake_openai = ModuleType("openai")
+    fake_openai.APIConnectionError = type("APIConnectionError", (Exception,), {})
+    fake_openai.APITimeoutError = type("APITimeoutError", (Exception,), {})
+    fake_openai.OpenAI = FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+    result = _OpenAiQwenTransport().complete_json(
+        "qwen-test",
+        "Return JSON.",
+        '{"units":[]}',
+        12,
+    )
+
+    assert result == '{"status":"ok"}'
+    assert calls[0]["response_format"] == {"type": "json_object"}
+    assert calls[0]["extra_body"] == {"enable_thinking": False}
+    assert "max_tokens" not in calls[0]
 
 
 def test_deepseek_provider_preserves_wire_payload_contract() -> None:

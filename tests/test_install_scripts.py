@@ -20,6 +20,17 @@ def test_windows_installer_builds_one_web_and_one_worker() -> None:
     assert "System already running" in production
     assert "taskkill /f /im python.exe" not in script.lower()
     assert "gunicorn" not in production.lower()
+    assert "QWEN_MODEL=qwen3.7-plus" in script
+    assert "PPTX_XML_ENGINE=structured_v2" in script
+    assert "PPTX_XML_RUNTIME_FALLBACK=0" in script
+
+
+def test_database_setup_writes_fail_closed_pptx_defaults() -> None:
+    script = (ROOT / "setup_database.py").read_text(encoding="utf-8")
+
+    assert "QWEN_MODEL=qwen3.7-plus" in script
+    assert "PPTX_XML_ENGINE=structured_v2" in script
+    assert "PPTX_XML_RUNTIME_FALLBACK=0" in script
 
 
 def test_linux_installer_builds_supervisor_web_worker_group() -> None:

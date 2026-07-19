@@ -94,6 +94,9 @@ class PromptTransport:
         self.calls.append((model, system, user, timeout_seconds))
         return "{}"
 
+    def complete_json(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        return self.complete(model, system, user, timeout_seconds)
+
 
 def test_structured_manifest_uses_stable_ids_and_explicit_control_stream(tmp_path: Path) -> None:
     source = tmp_path / "source.pptx"

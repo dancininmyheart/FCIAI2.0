@@ -7,13 +7,15 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Final, Protocol
 
+from app.translation.pptx_contract import PPTX_PROVIDER_FIELD
 from app.translation.pptx_contract_types import JsonValue
+from app.translation.qwen_config import qwen_model_name
 from app.translation.types import ProviderError, ProviderName, ProviderRequest, ProviderResult, TranslationProvider
 from app.translation.metrics import current_correlation, current_metrics, log_translation_event
 
 logger = logging.getLogger(__name__)
 
-_QWEN_MODEL: Final = "qwen3-235b-a22b-instruct-2507"
+_QWEN_MODEL: Final = qwen_model_name()
 _QWEN_BASE_URL: Final = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 _REMOTE_BASE_URL: Final = "http://117.50.216.15/agent_server/app/run"
 _DEEPSEEK_ENDPOINT: Final = "d145ae592efa4240867c3b1f99c7a5d7"
@@ -42,7 +44,17 @@ class QwenProvider:
 
     def translate(self, request: ProviderRequest) -> ProviderResult:
         try:
-            text = self.transport.complete(
+            complete = self.transport.complete
+            if request.field == PPTX_PROVIDER_FIELD:
+                complete_json = getattr(self.transport, "complete_json", None)
+                if complete_json is None:
+                    raise ProviderError(
+                        "qwen",
+                        "structured_output_unsupported",
+                        "provider transport does not support JSON output",
+                    )
+                complete = complete_json
+            text = complete(
                 _QWEN_MODEL,
                 _semantic_system_prompt(request),
                 request.text,
@@ -149,6 +161,20 @@ def default_provider_registry() -> ProviderRegistry:
 
 class _OpenAiQwenTransport:
     def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        return self._complete(model, system, user, timeout_seconds, json_mode=False)
+
+    def complete_json(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        return self._complete(model, system, user, timeout_seconds, json_mode=True)
+
+    def _complete(
+        self,
+        model: str,
+        system: str,
+        user: str,
+        timeout_seconds: float,
+        *,
+        json_mode: bool,
+    ) -> str:
         from openai import APIConnectionError, APITimeoutError, OpenAI
 
         client = OpenAI(
@@ -157,12 +183,17 @@ class _OpenAiQwenTransport:
             timeout=timeout_seconds,
         )
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                stream=False,
-                max_tokens=32768,
-            )
+            request = {
+                "model": model,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "stream": False,
+                "extra_body": {"enable_thinking": False},
+            }
+            if json_mode:
+                request["response_format"] = {"type": "json_object"}
+            else:
+                request["max_tokens"] = 32768
+            response = client.chat.completions.create(**request)
         except (APIConnectionError, APITimeoutError) as exc:
             raise TimeoutError("Qwen request timed out or could not connect") from exc
         return response.choices[0].message.content or ""

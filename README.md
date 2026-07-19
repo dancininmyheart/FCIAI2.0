@@ -87,6 +87,9 @@ TRANSLATION_ARCH_MODE=legacy
 TRANSLATION_QUALITY_MODE=off
 TRANSLATION_MEMORY_ENABLED=0
 TRANSLATION_AUTO_RECOVER=0
+QWEN_MODEL=qwen3.7-plus
+PPTX_XML_ENGINE=structured_v2
+PPTX_XML_RUNTIME_FALLBACK=0
 ```
 
 建议先使用观察模式上线：
@@ -96,9 +99,16 @@ TRANSLATION_ARCH_MODE=v2
 TRANSLATION_QUALITY_MODE=observe
 TRANSLATION_MEMORY_ENABLED=1
 TRANSLATION_AUTO_RECOVER=0
+QWEN_MODEL=qwen3.7-plus
+PPTX_XML_ENGINE=structured_v2
+PPTX_XML_RUNTIME_FALLBACK=0
 ```
 
-观察指标和产物稳定后，可将 `TRANSLATION_QUALITY_MODE` 改为 `enforce`。出现回归时，恢复上面的四个默认值并重启 Web 与 Worker；回滚不需要删除任务表或产物。
+`TRANSLATION_ARCH_MODE` 控制任务编排版本，`PPTX_XML_ENGINE` 独立控制 `.pptx` 的提取和写回方式。`structured_v2` 直接处理底层 XML；`PPTX_XML_RUNTIME_FALLBACK=0` 会让 Provider 或结构化协议错误直接结束任务，不再静默进入旧版 `[block]`/UNO 翻译路径。只有在明确接受版式风险时，才可临时把运行时回退设为 `1`，该回退仅处理允许降级的 ZIP、XML、包或不支持结构错误。
+
+Qwen 默认使用 `qwen3.7-plus`，并在翻译时关闭思考模式。PPTX 结构化请求会额外启用 JSON Object 输出模式。修改上述开关后，必须同时重启 Web 与 Worker，确保任务进程读取到相同配置。
+
+观察指标和产物稳定后，可将 `TRANSLATION_QUALITY_MODE` 改为 `enforce`。出现回归时，恢复上面的默认值并重启 Web 与 Worker；回滚不需要删除任务表或产物。
 
 鉴权用户可访问 `GET /api/translation/health`。普通用户只看到自己的任务汇总，管理员可以看到全局汇总；接口不返回任务 ID、源文本或密钥。
 

@@ -8,6 +8,8 @@ import random
 from http import HTTPStatus
 from dashscope import Generation
 
+from app.translation.qwen_config import qwen_model_name
+
 # 导入工具函数
 from ..utils.translation_utils import (
     build_map,
@@ -19,7 +21,7 @@ from ..utils.translation_utils import (
 # 配置
 from config import api_key
 
-model = 'qwen3-235b-a22b-instruct-2507'
+model = qwen_model_name()
 logging.basicConfig(level=logging.INFO, format='%(message)s', encoding='utf-8')
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,8 @@ def get_field(text: str) -> str:
             messages=messages,
             api_key=api_key,
             seed=random.randint(1, 10000),
-            result_format='message'
+            result_format='message',
+            enable_thinking=False,
         )
 
         if response.status_code == HTTPStatus.OK:
@@ -131,7 +134,8 @@ def translate_by_fields(field: str, text: str, stop_words: list, custom_translat
             messages=messages,
             api_key=api_key,
             seed=random.randint(1, 10000),
-            result_format='message'
+            result_format='message',
+            enable_thinking=False,
         )
 
         if response.status_code == HTTPStatus.OK:

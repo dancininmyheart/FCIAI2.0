@@ -214,5 +214,11 @@ PPTX_XML_RUNTIME_FALLBACK=0
 错误，才可在 `PPTX_XML_RUNTIME_FALLBACK=1` 时进入 UNO 兼容路径。Provider、协议
 和保留标记错误始终失败关闭。
 
+Qwen 默认模型由 `QWEN_MODEL` 控制，当前为 `qwen3.7-plus`。翻译请求显式关闭思考
+模式；结构化 PPTX 请求使用 OpenAI 兼容接口的 JSON Object 输出模式，并不设置
+`max_tokens`，避免截断 JSON。若响应仍未通过严格协议校验，系统执行一次契约重试；
+再次失败后结束任务，并记录关联任务 ID、
+契约错误码和响应长度，不记录原始响应内容，也不会进入旧版页面翻译流程。
+
 当前范围覆盖幻灯片正文和表格单元格中已有的 `txBody`。图表、SmartArt、备注、
 母版、嵌入对象等非 slide XML 正文不翻译，但其 ZIP 成员保持原样。

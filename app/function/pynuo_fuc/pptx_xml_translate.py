@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -15,7 +16,11 @@ from app.translation.pptx_contract import (
 )
 from app.translation.pptx_contract_types import PptxRequestUnit, PptxUnitTranslation
 from app.translation.providers import ProviderRegistry, default_provider_registry
+from app.translation.metrics import current_correlation
 from app.translation.types import ProviderError, ProviderRequest
+
+
+logger = logging.getLogger(__name__)
 
 try:
     from .pptx_xml_ops import (
@@ -157,6 +162,15 @@ def _translate_structured_batch(
             return parse_pptx_response(response.text, units)
         except PptxContractError as error:
             last_contract_error = error
+            correlation = current_correlation(request.model)
+            logger.warning(
+                "pptx_contract_rejected job_id=%s contract_attempt=%d first_unit=%s error_code=%s response_chars=%d",
+                correlation.public_job_id,
+                attempt + 1,
+                units[0].unit_id,
+                error.code,
+                len(response.text),
+            )
             if attempt == 0:
                 continue
             raise

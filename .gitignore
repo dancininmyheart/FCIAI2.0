@@ -5,3 +5,7 @@ logs/
 .env
 app/Ingredient_Search/data
 uploads/
+.omo/
+.playwright-cli/
+output/
+.idea/.name

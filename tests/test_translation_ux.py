@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from flask import render_template
+
+
+ROOT = Path(__file__).resolve().parents[1]
+BASE_TEMPLATE = ROOT / "app" / "templates" / "main" / "base_layout.html"
+PPT_TEMPLATE = ROOT / "app" / "templates" / "main" / "index.html"
+PDF_TEMPLATE = ROOT / "app" / "templates" / "main" / "pdf_translate.html"
+EXPERIENCE_CSS = ROOT / "app" / "static" / "css" / "experience.css"
+MAIN_JS = ROOT / "app" / "static" / "js" / "main.js"
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def test_application_shell_is_zoomable_and_keyboard_navigable() -> None:
+    template = _read(BASE_TEMPLATE)
+
+    assert 'content="width=device-width, initial-scale=1.0"' in template
+    assert "user-scalable=no" not in template
+    assert "maximum-scale" not in template
+    assert 'class="skip-link"' in template
+    assert 'id="mobileMenuBtn"' in template
+    assert 'id="primaryNavigation"' in template
+    assert 'id="main-content"' in template
+    assert 'aria-live="polite"' in template
+    assert "css/experience.css" in template
+    assert "url_for('main.user_management')" in template
+
+
+def test_translation_uploads_and_history_expose_accessible_states() -> None:
+    ppt = _read(PPT_TEMPLATE)
+    pdf = _read(PDF_TEMPLATE)
+
+    assert 'id="dropZone" role="button" tabindex="0"' in ppt
+    assert 'id="pptUploadProgressbar" role="progressbar"' in ppt
+    assert 'class="history-table-wrap" tabindex="0" role="region"' in ppt
+    assert 'class="history-loading-state"' in ppt
+    assert 'id="pptResultContainer"' in ppt
+
+    assert 'id="pdfUploadZone" role="button" tabindex="0"' in pdf
+    assert 'id="pdfUploadStatus" role="status" aria-live="polite"' in pdf
+    assert 'class="table-responsive" tabindex="0" role="region"' in pdf
+    assert 'class="history-loading-state"' in pdf
+    assert 'id="pdfResultContainer"' in pdf
+
+
+def test_translation_feedback_does_not_use_blocking_alerts() -> None:
+    assert "alert(" not in _read(PPT_TEMPLATE)
+    assert "alert(" not in _read(PDF_TEMPLATE)
+
+    main_js = _read(MAIN_JS)
+    assert "aria-atomic" in main_js
+    assert "toast-close" in main_js
+
+
+def test_experience_styles_define_responsive_drawer_and_readable_type() -> None:
+    css = _read(EXPERIENCE_CSS)
+
+    assert "--ux-sidebar-width: 240px" in css
+    assert "@media (max-width: 900px)" in css
+    assert ".nav-menu.is-open" in css
+    assert "margin-left: 0 !important" in css
+    assert "font-size: 15px !important" in css
+    assert "@media (prefers-reduced-motion: reduce)" in css
+
+
+def test_translation_templates_render_with_the_application_routes(isolated_app) -> None:
+    with isolated_app.test_request_context("/"):
+        ppt = render_template("main/index.html")
+        pdf = render_template("main/pdf_translate.html")
+
+    assert 'aria-current="page"' in ppt
+    assert 'id="dropZone"' in ppt
+    assert 'id="pdfUploadZone"' in pdf

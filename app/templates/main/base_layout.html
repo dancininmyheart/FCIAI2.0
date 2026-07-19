@@ -2,8 +2,9 @@
 <html lang="{% if session.get('language') == 'en' %}en{% else %}zh-CN{% endif %}">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{% endblock %} - {% if session.get('language') == 'en' %}Translation Management System{% else %}翻译管理系统{% endif %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='images/logo.svg') }}" type="image/svg+xml">
     <!-- 基础样式 -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}">
@@ -270,40 +271,54 @@
     </style>
     
     {% block styles %}{% endblock %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/experience.css') }}">
 </head>
 <body>
-    <nav class="nav-menu">
+    <a class="skip-link" href="#main-content">{% if session.get('language') == 'en' %}Skip to main content{% else %}跳到主要内容{% endif %}</a>
+
+    <header class="mobile-app-bar">
+        <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-controls="primaryNavigation" aria-expanded="false" aria-label="{% if session.get('language') == 'en' %}Open navigation{% else %}打开导航{% endif %}">
+            <i class="bi bi-list" aria-hidden="true"></i>
+        </button>
+        <span class="mobile-app-title">{% if session.get('language') == 'en' %}Translation Management System{% else %}翻译管理系统{% endif %}</span>
+    </header>
+
+    <button type="button" class="nav-overlay" id="navOverlay" tabindex="-1" aria-label="{% if session.get('language') == 'en' %}Close navigation{% else %}关闭导航{% endif %}"></button>
+
+    <nav class="nav-menu" id="primaryNavigation" aria-label="{% if session.get('language') == 'en' %}Primary navigation{% else %}主导航{% endif %}">
         <div class="nav-container">
             <a href="{{ url_for('main.index') }}" class="nav-brand">
                 <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="Logo" class="brand-logo">
                 <span style="display: none;">{% if session.get('language') == 'en' %}Translation Management System{% else %}翻译管理系统{% endif %}</span>
             </a>
+            <button type="button" class="nav-close-btn" id="navCloseBtn" aria-label="{% if session.get('language') == 'en' %}Close navigation{% else %}关闭导航{% endif %}">
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
+            </button>
             <div class="nav-links">
-                <a href="{{ url_for('main.index') }}" class="nav-link {% if request.endpoint == 'main.index' %}active{% endif %}">
-                    <i class="bi bi-translate"></i>
+                <a href="{{ url_for('main.index') }}" class="nav-link {% if request.endpoint == 'main.index' %}active{% endif %}" {% if request.endpoint == 'main.index' %}aria-current="page"{% endif %}>
+                    <i class="bi bi-translate" aria-hidden="true"></i>
                     {% if session.get('language') == 'en' %}PPT Translation{% else %}PPT翻译{% endif %}
                 </a>
-                <a href="{{ url_for('main.dictionary') }}" class="nav-link {% if request.endpoint == 'main.dictionary' %}active{% endif %}">
-                    <i class="bi bi-book"></i>
+                <a href="{{ url_for('main.dictionary') }}" class="nav-link {% if request.endpoint == 'main.dictionary' %}active{% endif %}" {% if request.endpoint == 'main.dictionary' %}aria-current="page"{% endif %}>
+                    <i class="bi bi-book" aria-hidden="true"></i>
                     {% if session.get('language') == 'en' %}Dictionary{% else %}词库管理{% endif %}
                 </a>
-                <a href="{{ url_for('main.ingredient') }}" class="nav-link {% if request.endpoint == 'main.ingredient' %}active{% endif %}">
-                    <i class="bi bi-search"></i>
+                <a href="{{ url_for('main.ingredient') }}" class="nav-link {% if request.endpoint == 'main.ingredient' %}active{% endif %}" {% if request.endpoint == 'main.ingredient' %}aria-current="page"{% endif %}>
+                    <i class="bi bi-search" aria-hidden="true"></i>
                     {% if session.get('language') == 'en' %}Ingredient Search{% else %}成分搜索{% endif %}
                 </a>
-                <a href="{{ url_for('main.pdf_translate') }}" class="nav-link {% if request.endpoint == 'main.pdf_translate' %}active{% endif %}">
-                            <i class="bi bi-file-pdf"></i>
+                <a href="{{ url_for('main.pdf_translate') }}" class="nav-link {% if request.endpoint == 'main.pdf_translate' %}active{% endif %}" {% if request.endpoint == 'main.pdf_translate' %}aria-current="page"{% endif %}>
+                            <i class="bi bi-file-pdf" aria-hidden="true"></i>
                             {% if session.get('language') == 'en' %}PDF Translation{% else %}PDF翻译{% endif %}
                 </a>
                 {% if current_user.is_authenticated %}
                     {% if current_user.is_administrator() %}
-                        <a href="{{ url_for('main.registration_approval') }}" class="nav-link">
-                            <i class="bi bi-person-check"></i> 
+                        <a href="{{ url_for('main.registration_approval') }}" class="nav-link {% if request.endpoint == 'main.registration_approval' %}active{% endif %}" {% if request.endpoint == 'main.registration_approval' %}aria-current="page"{% endif %}>
+                            <i class="bi bi-person-check" aria-hidden="true"></i>
                             {% if session.get('language') == 'en' %}Registration Approval{% else %}注册审批{% endif %}
                         </a>
-                        <!-- 修复：将不存在的main.user_management端点改为已存在的端点 -->
-                        <a href="{{ url_for('main.registration_approval') }}" class="nav-link">
-                            <i class="bi bi-people"></i> 
+                        <a href="{{ url_for('main.user_management') }}" class="nav-link {% if request.endpoint == 'main.user_management' %}active{% endif %}" {% if request.endpoint == 'main.user_management' %}aria-current="page"{% endif %}>
+                            <i class="bi bi-people" aria-hidden="true"></i>
                             {% if session.get('language') == 'en' %}User Management{% else %}用户管理{% endif %}
                         </a>
 
@@ -348,17 +363,17 @@
         </div>
     </nav>
 
-    <div class="container">
+    <main class="container" id="main-content" tabindex="-1">
         {% block content %}{% endblock %}
-    </div>
+    </main>
 
     <!-- 右上角悬浮语言切换按钮 -->
-    <button class="floating-language-btn" onclick="switchLanguage()" title="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}">
-        <i class="bi bi-translate"></i>
-        {% if session.get('language') == 'en' %}中文{% else %}English{% endif %}
+    <button type="button" class="floating-language-btn" onclick="switchLanguage()" title="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}" aria-label="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}">
+        <i class="bi bi-translate" aria-hidden="true"></i>
+        <span>{% if session.get('language') == 'en' %}中文{% else %}English{% endif %}</span>
     </button>
 
-    <div id="toastContainer" class="toast-container"></div>
+    <div id="toastContainer" class="toast-container" role="region" aria-label="{% if session.get('language') == 'en' %}Notifications{% else %}通知{% endif %}" aria-live="polite" aria-atomic="true"></div>
 
     <!-- 基础脚本 -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
@@ -402,6 +417,58 @@
             showToast('{% if session.get("language") == "en" %}Language switch failed{% else %}语言切换失败{% endif %}', 'error');
         });
     }
+
+    const mobileNavigationQuery = window.matchMedia('(max-width: 900px)');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const navCloseBtn = document.getElementById('navCloseBtn');
+    const primaryNavigation = document.getElementById('primaryNavigation');
+    const navOverlay = document.getElementById('navOverlay');
+
+    function setNavigationOpen(isOpen, restoreFocus = true) {
+        const compact = mobileNavigationQuery.matches;
+        const nextOpen = compact && isOpen;
+        primaryNavigation.classList.toggle('is-open', nextOpen);
+        navOverlay.classList.toggle('is-visible', nextOpen);
+        document.body.classList.toggle('nav-open', nextOpen);
+        mobileMenuBtn.setAttribute('aria-expanded', String(nextOpen));
+        primaryNavigation.inert = compact && !nextOpen;
+
+        if (nextOpen) {
+            requestAnimationFrame(() => primaryNavigation.querySelector('.nav-link')?.focus());
+        } else if (restoreFocus && compact) {
+            mobileMenuBtn.focus();
+        }
+    }
+
+    function syncNavigationMode() {
+        if (mobileNavigationQuery.matches) {
+            setNavigationOpen(false, false);
+        } else {
+            primaryNavigation.inert = false;
+            primaryNavigation.classList.remove('is-open');
+            navOverlay.classList.remove('is-visible');
+            document.body.classList.remove('nav-open');
+            mobileMenuBtn.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    mobileMenuBtn.addEventListener('click', () => setNavigationOpen(true, false));
+    navCloseBtn.addEventListener('click', () => setNavigationOpen(false));
+    navOverlay.addEventListener('click', () => setNavigationOpen(false));
+    primaryNavigation.querySelectorAll('.nav-link').forEach((link) => {
+        link.addEventListener('click', () => setNavigationOpen(false, false));
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && primaryNavigation.classList.contains('is-open')) {
+            setNavigationOpen(false);
+        }
+    });
+    if (typeof mobileNavigationQuery.addEventListener === 'function') {
+        mobileNavigationQuery.addEventListener('change', syncNavigationMode);
+    } else {
+        mobileNavigationQuery.addListener(syncNavigationMode);
+    }
+    syncNavigationMode();
     </script>
 
     <!-- 防抖动工具函数 -->

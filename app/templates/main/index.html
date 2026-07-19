@@ -809,8 +809,8 @@
 </div>
 
 <!-- 队列状态提示 -->
-<div id="queue-status" class="queue-status">
-    <div class="loading-spinner" style="width: 20px; height: 20px; border-width: 2px;"></div>
+<div id="queue-status" class="queue-status" role="status" aria-live="polite" aria-atomic="true">
+    <div class="loading-spinner" style="width: 20px; height: 20px; border-width: 2px;" aria-hidden="true"></div>
     <span id="queue-message"></span>
 </div>
 
@@ -913,29 +913,31 @@
         <div class="upload-card">
             <h2>{% if session.get('language') == 'en' %}PPT Translation{% else %}PPT翻译{% endif %}</h2>
             
-            <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+            <div class="upload-zone" id="dropZone" role="button" tabindex="0" aria-controls="fileInput" aria-describedby="pptUploadHint" aria-busy="false">
                 <div class="upload-zone-content">
+                    <i class="bi bi-cloud-arrow-up upload-zone-icon" aria-hidden="true"></i>
                     <div class="upload-text">{% if session.get('language') == 'en' %}Drag PPT file here or click to upload{% else %}拖拽PPT文件到这里或点击上传{% endif %}</div>
-                    <button class="upload-btn">
-                        <i class="bi bi-upload"></i>
+                    <span class="upload-btn">
+                        <i class="bi bi-upload" aria-hidden="true"></i>
                         {% if session.get('language') == 'en' %}Upload PPT File{% else %}上传 PPT文件{% endif %}
-                    </button>
+                    </span>
+                    <p class="upload-hint" id="pptUploadHint">{% if session.get('language') == 'en' %}PPT or PPTX, up to 50 MB{% else %}支持 PPT 或 PPTX，最大 50 MB{% endif %}</p>
                 </div>
-                <input type="file" id="fileInput" accept=".ppt,.pptx" style="display: none;">
+                <input type="file" id="fileInput" accept=".ppt,.pptx" style="display: none;" aria-label="{% if session.get('language') == 'en' %}Select a PPT file{% else %}选择 PPT 文件{% endif %}">
             </div>
 
-            <div id="uploadProgressWrapper" class="upload-progress">
+            <div id="uploadProgressWrapper" class="upload-progress" role="status" aria-live="polite">
                 <div class="upload-progress-info">
                     <span id="uploadProgressLabel">{% if session.get('language') == 'en' %}Uploading file...{% else %}正在上传文件...{% endif %}</span>
                     <span id="uploadProgressText">0%</span>
                 </div>
-                <div class="upload-progress-bar">
+                <div class="upload-progress-bar" id="pptUploadProgressbar" role="progressbar" aria-labelledby="uploadProgressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div id="uploadProgressBar" class="upload-progress-bar-fill"></div>
                 </div>
             </div>
 
             <!-- 进度显示区域 -->
-            <div id="progressContainer" class="progress-container">
+            <div id="progressContainer" class="progress-container" aria-live="polite">
                 <div class="progress-info">
                     <div class="slide-info">
                         {% if session.get('language') == 'en' %}
@@ -948,7 +950,7 @@
                         <span id="progressText">0%</span>
                     </div>
                 </div>
-                <div class="progress-bar-container">
+                <div class="progress-bar-container" id="translationProgressbar" role="progressbar" aria-label="{% if session.get('language') == 'en' %}Translation progress{% else %}翻译进度{% endif %}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div id="progressBarFill" class="progress-bar-fill"></div>
                 </div>
 
@@ -956,8 +958,8 @@
                 <div id="detailedStatus" class="detailed-status">
                     <div class="status-header">
                         <h4>{% if session.get('language') == 'en' %}Translation Details{% else %}翻译详情{% endif %}</h4>
-                        <button id="toggleDetailBtn" class="toggle-detail-btn" onclick="toggleDetailView()">
-                            <i class="bi bi-chevron-down"></i>
+                        <button type="button" id="toggleDetailBtn" class="toggle-detail-btn" onclick="toggleDetailView()" aria-controls="detailContent" aria-expanded="false" aria-label="{% if session.get('language') == 'en' %}Show translation details{% else %}展开翻译详情{% endif %}">
+                            <i class="bi bi-chevron-down" aria-hidden="true"></i>
                         </button>
                     </div>
                     <div id="detailContent" class="detail-content">
@@ -974,51 +976,63 @@
                     </div>
                 </div>
             </div>
+
+            <div id="pptResultContainer" class="translation-result" role="status" aria-live="polite" hidden>
+                <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+                <span>{% if session.get('language') == 'en' %}Translation completed. Download the result from the history below.{% else %}翻译已完成，请在下方历史记录中下载结果。{% endif %}</span>
+            </div>
         </div>
 
         <!-- 历史记录表格 -->
         <div class="history-card">
-            <h3>
-                <i class="bi bi-clock-history"></i>
-                {% if session.get('language') == 'en' %}History{% else %}历史记录{% endif %}
-            </h3>
+            <div class="history-header">
+                <h3>
+                    <i class="bi bi-clock-history" aria-hidden="true"></i>
+                    {% if session.get('language') == 'en' %}History{% else %}历史记录{% endif %}
+                </h3>
+                <button type="button" class="refresh-btn-header" id="refreshHistoryBtn" title="{% if session.get('language') == 'en' %}Refresh history{% else %}刷新历史记录{% endif %}" aria-label="{% if session.get('language') == 'en' %}Refresh history{% else %}刷新历史记录{% endif %}">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                </button>
+            </div>
             
-            <table class="history-table">
-                <thead>
-                    <tr>
-                        <th>{% if session.get('language') == 'en' %}File Name{% else %}文件名{% endif %}</th>
-                        <th>{% if session.get('language') == 'en' %}Upload Time{% else %}上传时间{% endif %}</th>
-                        <th>{% if session.get('language') == 'en' %}File Size{% else %}文件大小{% endif %}</th>
-                        <th>{% if session.get('language') == 'en' %}Translation Status{% else %}翻译状态{% endif %}</th>
-                        <th>{% if session.get('language') == 'en' %}Actions{% else %}操作{% endif %}</th>
-                    </tr>
-                </thead>
-                <tbody id="historyTableBody">
-                    <!-- 历史记录通过JavaScript动态加载 -->
-                </tbody>
-            </table>
+            <div class="history-table-wrap" tabindex="0" role="region" aria-label="{% if session.get('language') == 'en' %}PPT translation history table{% else %}PPT 翻译历史表格{% endif %}">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>{% if session.get('language') == 'en' %}File Name{% else %}文件名{% endif %}</th>
+                            <th>{% if session.get('language') == 'en' %}Upload Time{% else %}上传时间{% endif %}</th>
+                            <th>{% if session.get('language') == 'en' %}File Size{% else %}文件大小{% endif %}</th>
+                            <th>{% if session.get('language') == 'en' %}Translation Status{% else %}翻译状态{% endif %}</th>
+                            <th>{% if session.get('language') == 'en' %}Actions{% else %}操作{% endif %}</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr class="history-loading-state"><td colspan="5">{% if session.get('language') == 'en' %}Loading history...{% else %}正在加载历史记录...{% endif %}</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- 页面选择悬浮窗 -->
-<div id="pageSelector" class="page-selector">
+<div id="pageSelector" class="page-selector" role="region" aria-labelledby="pageSelectorTitle">
     <div class="page-selector-header">
-        <div class="page-selector-title">{% if session.get('language') == 'en' %}Select pages to translate{% else %}选择要翻译的页面{% endif %}</div>
-        <div style="display: flex; gap: 8px;">
-            <button class="btn" style="padding: 4px 8px; font-size: 12px; background: rgb(0,148,217); color: white;" onclick="selectAllPages()">
+        <div class="page-selector-title" id="pageSelectorTitle">{% if session.get('language') == 'en' %}Select pages to translate{% else %}选择要翻译的页面{% endif %}</div>
+        <div class="page-selector-actions">
+            <button type="button" class="btn btn-primary" onclick="selectAllPages()">
                 {% if session.get('language') == 'en' %}Select All{% else %}全选{% endif %}
             </button>
-            <button class="btn" style="padding: 4px 8px; font-size: 12px; background: #f8f9fa; color: rgb(110,111,114);" onclick="deselectAllPages()">
-                {% if session.get('language') == 'en' %}Cancel{% else %}取消{% endif %}
+            <button type="button" class="btn btn-secondary" onclick="deselectAllPages()">
+                {% if session.get('language') == 'en' %}Clear{% else %}清空{% endif %}
             </button>
         </div>
     </div>
     <div id="pageList" class="page-list">
         <!-- 页面列表将通过JavaScript动态生成 -->
     </div>
-    <button id="startTranslateBtn" class="start-translate-btn" onclick="startTranslation()" disabled>
-        <i class="bi bi-translate"></i>
+    <button type="button" id="startTranslateBtn" class="start-translate-btn" onclick="startTranslation()" disabled>
+        <i class="bi bi-translate" aria-hidden="true"></i>
         {% if session.get('language') == 'en' %}Start Translation{% else %}开始翻译{% endif %}
     </button>
 </div>
@@ -1069,7 +1083,7 @@
             deleteConfirm: '确定要删除这个文件吗？',
             deleteSuccess: '文件删除成功',
             deleteFailed: '删除失败: ',
-            completionPopup: '翻译任务已完成！点击确定刷新页面查看结果。',
+            completionPopup: '翻译任务已完成，可在下方历史记录中下载结果。',
             notConfigured: '未配置',
             configured: '已配置'
         },
@@ -1096,7 +1110,7 @@
             deleteConfirm: 'Are you sure you want to delete this file?',
             deleteSuccess: 'File deleted successfully',
             deleteFailed: 'Delete failed: ',
-            completionPopup: 'Translation task completed! Click OK to refresh the page and view results.',
+            completionPopup: 'Translation completed. Download the result from the history below.',
             notConfigured: 'Not Configured',
             configured: 'Configured'
         }
@@ -1106,6 +1120,8 @@
     const uploadProgressBar = document.getElementById('uploadProgressBar');
     const uploadProgressText = document.getElementById('uploadProgressText');
     const uploadProgressLabel = document.getElementById('uploadProgressLabel');
+    const uploadProgressbar = document.getElementById('pptUploadProgressbar');
+    const translationProgressbar = document.getElementById('translationProgressbar');
 
     function showUploadProgress(labelKey = 'uploadingFile') {
         if (!uploadProgressWrapper) return;
@@ -1119,6 +1135,7 @@
         const normalized = Math.max(0, Math.min(100, Math.round(value)));
         if (uploadProgressBar) uploadProgressBar.style.width = normalized + '%';
         if (uploadProgressText) uploadProgressText.textContent = normalized + '%';
+        if (uploadProgressbar) uploadProgressbar.setAttribute('aria-valuenow', String(normalized));
     }
 
     function markUploadCompleted() {
@@ -1189,6 +1206,18 @@
     const fileInput = document.getElementById('fileInput');
     const pageSelector = document.getElementById('pageSelector');
 
+    dropZone.addEventListener('click', (event) => {
+        if (event.target === fileInput) return;
+        if (dropZone.getAttribute('aria-busy') !== 'true') fileInput.click();
+    });
+
+    dropZone.addEventListener('keydown', (event) => {
+        if ((event.key === 'Enter' || event.key === ' ') && dropZone.getAttribute('aria-busy') !== 'true') {
+            event.preventDefault();
+            fileInput.click();
+        }
+    });
+
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -1229,6 +1258,7 @@
         }
 
         uploadedFile = file;
+        dropZone.setAttribute('aria-busy', 'true');
 
         try {
             // 使用 JSZip 获取页数
@@ -1241,11 +1271,16 @@
             generatePageList(totalPageCount);
             pageSelector.style.display = 'block';
             selectAllPages();
+            const uploadText = dropZone.querySelector('.upload-text');
+            if (uploadText) uploadText.textContent = file.name;
+            requestAnimationFrame(() => pageSelector.querySelector('.page-item')?.focus());
 
             showToast(getText('fileProcessedTitle'), 'success');
         } catch (error) {
             console.error('Error processing file:', error);
             showToast(getText('fileProcessError'), 'error');
+        } finally {
+            dropZone.setAttribute('aria-busy', 'false');
         }
     }
 
@@ -1255,10 +1290,13 @@
         pageList.innerHTML = '';
 
         for (let i = 1; i <= pageCount; i++) {
-            const pageItem = document.createElement('div');
+            const pageItem = document.createElement('button');
+            pageItem.type = 'button';
             pageItem.className = 'page-item';
             pageItem.textContent = i;
             pageItem.dataset.page = i;
+            pageItem.setAttribute('aria-pressed', 'false');
+            pageItem.setAttribute('aria-label', currentLanguage === 'en' ? `Page ${i}` : `第 ${i} 页`);
             pageItem.addEventListener('click', () => togglePage(i, pageItem));
             pageList.appendChild(pageItem);
         }
@@ -1269,9 +1307,11 @@
         if (selectedPages.has(pageNum)) {
             selectedPages.delete(pageNum);
             element.classList.remove('selected');
+            element.setAttribute('aria-pressed', 'false');
         } else {
             selectedPages.add(pageNum);
             element.classList.add('selected');
+            element.setAttribute('aria-pressed', 'true');
         }
         updateStartButton();
     }
@@ -1284,6 +1324,7 @@
             const pageNum = parseInt(item.dataset.page);
             selectedPages.add(pageNum);
             item.classList.add('selected');
+            item.setAttribute('aria-pressed', 'true');
         });
         updateStartButton();
     }
@@ -1294,6 +1335,7 @@
         const pageItems = document.querySelectorAll('.page-item');
         pageItems.forEach(item => {
             item.classList.remove('selected');
+            item.setAttribute('aria-pressed', 'false');
         });
         updateStartButton();
     }
@@ -1423,6 +1465,9 @@ async function startTranslation() {
         document.getElementById('totalSlides').textContent = totalPageCount;
         document.getElementById('progressBarFill').style.width = '0%';
         document.getElementById('progressText').textContent = '0%';
+        if (translationProgressbar) translationProgressbar.setAttribute('aria-valuenow', '0');
+        const resultContainer = document.getElementById('pptResultContainer');
+        if (resultContainer) resultContainer.hidden = true;
 
         window.isTranslationActive = true;
         window.waitingCount = 0;
@@ -1510,6 +1555,7 @@ async function startTranslation() {
                     const progress = data.progress || 0;
                     document.getElementById('progressBarFill').style.width = progress + '%';
                     document.getElementById('progressText').textContent = progress + '%';
+                    if (translationProgressbar) translationProgressbar.setAttribute('aria-valuenow', String(progress));
                 }
                 else if (data.status === 'completed') {
                     window.isTranslationActive = false;
@@ -1533,6 +1579,9 @@ async function startTranslation() {
                     if (popupAlreadyShown) {
                         loadHistory();
 
+                        const resultContainer = document.getElementById('pptResultContainer');
+                        if (resultContainer) resultContainer.hidden = false;
+
                         if (window.statusCheckInterval) {
                             clearInterval(window.statusCheckInterval);
                             window.statusCheckInterval = null;
@@ -1542,6 +1591,8 @@ async function startTranslation() {
                         if (progressContainer) progressContainer.style.display = 'none';
                         if (messageSpan) messageSpan.textContent = '';
                     } else {
+                        const resultContainer = document.getElementById('pptResultContainer');
+                        if (resultContainer) resultContainer.hidden = false;
                         if (typeof showCompletionPopup === 'function') {
                             showCompletionPopup(getText('completionPopup'), effectiveKey);
                         }
@@ -1568,10 +1619,7 @@ async function startTranslation() {
                         window.statusCheckInterval = null;
                     }
 
-                    setTimeout(() => {
-                        statusDiv.style.display = 'none';
-                        progressContainer.style.display = 'none';
-                    }, 5000);
+                    progressContainer.style.display = 'none';
                 }
             })
             .catch(error => {
@@ -1586,19 +1634,34 @@ async function startTranslation() {
 
         if (detailContent.classList.contains('expanded')) {
             detailContent.classList.remove('expanded');
-            toggleBtn.innerHTML = '<i class="bi bi-chevron-down"></i>';
+            toggleBtn.innerHTML = '<i class="bi bi-chevron-down" aria-hidden="true"></i>';
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            toggleBtn.setAttribute('aria-label', currentLanguage === 'en' ? 'Show translation details' : '展开翻译详情');
         } else {
             detailContent.classList.add('expanded');
-            toggleBtn.innerHTML = '<i class="bi bi-chevron-up"></i>';
+            toggleBtn.innerHTML = '<i class="bi bi-chevron-up" aria-hidden="true"></i>';
+            toggleBtn.setAttribute('aria-expanded', 'true');
+            toggleBtn.setAttribute('aria-label', currentLanguage === 'en' ? 'Hide translation details' : '收起翻译详情');
         }
     }
 
     // 加载历史记录
     function loadHistory() {
+        const tbody = document.getElementById('historyTableBody');
+        const refreshButton = document.getElementById('refreshHistoryBtn');
+        tbody.innerHTML = `<tr class="history-loading-state"><td colspan="5">${currentLanguage === 'en' ? 'Loading history...' : '正在加载历史记录...'}</td></tr>`;
+        if (refreshButton) refreshButton.setAttribute('aria-busy', 'true');
         fetch('/api/ppt_translation_history')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
             .then(records => {
-                const tbody = document.getElementById('historyTableBody');
+                if (!Array.isArray(records)) throw new Error('Invalid history response');
+                if (records.length === 0) {
+                    tbody.innerHTML = `<tr class="history-empty-state"><td colspan="5">${currentLanguage === 'en' ? 'No translation history yet' : '暂无翻译历史'}</td></tr>`;
+                    return;
+                }
                 tbody.innerHTML = records.map(record => {
                     const statusClass = record.status === 'completed' ? 'completed' : 
                                       record.status === 'processing' ? 'processing' : 'pending';
@@ -1607,18 +1670,18 @@ async function startTranslation() {
                     
                     return `
                         <tr>
-                            <td>translated_${record.filename}</td>
+                            <td title="translated_${escapeHtml(record.filename)}">translated_${escapeHtml(record.filename)}</td>
                             <td>${formatDateTime(record.upload_time)}</td>
                             <td>${formatFileSize(record.file_size)}</td>
                             <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                             <td>
                                 ${record.file_exists ?
-                                    `<a href="/download/${record.id}" class="action-btn download" title="${currentLanguage === 'en' ? 'Download' : '下载'}">
-                                        <i class="bi bi-download"></i>
+                                    `<a href="/download/${record.id}" class="action-btn download" title="${currentLanguage === 'en' ? 'Download' : '下载'}" aria-label="${currentLanguage === 'en' ? 'Download' : '下载'}">
+                                        <i class="bi bi-download" aria-hidden="true"></i>
                                     </a>` : ''
                                 }
-                                <button class="action-btn delete" onclick="deleteFile(${record.id})" title="${currentLanguage === 'en' ? 'Delete' : '删除'}">
-                                    <i class="bi bi-trash"></i>
+                                <button type="button" class="action-btn delete danger" onclick="deleteFile(${record.id})" title="${currentLanguage === 'en' ? 'Delete' : '删除'}" aria-label="${currentLanguage === 'en' ? 'Delete' : '删除'}">
+                                    <i class="bi bi-trash" aria-hidden="true"></i>
                                 </button>
                             </td>
                         </tr>
@@ -1627,6 +1690,10 @@ async function startTranslation() {
             })
             .catch(error => {
                 console.error('Error loading history:', error);
+                tbody.innerHTML = `<tr class="history-error-state"><td colspan="5">${currentLanguage === 'en' ? 'History could not be loaded. Use refresh to retry.' : '历史记录加载失败，请点击刷新重试。'}</td></tr>`;
+            })
+            .finally(() => {
+                if (refreshButton) refreshButton.removeAttribute('aria-busy');
             });
     }
 

@@ -2,18 +2,38 @@
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
+  const normalizedType = type === 'danger' ? 'error' : type;
   const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
+  toast.className = `toast ${normalizedType}`;
+  toast.setAttribute('role', normalizedType === 'error' ? 'alert' : 'status');
+  toast.setAttribute('aria-atomic', 'true');
   const icon = document.createElement('i');
   icon.className =
-    type === 'success' ? 'bi bi-check-circle-fill'
-    : type === 'warning' ? 'bi bi-exclamation-triangle-fill'
-    : type === 'error'   ? 'bi bi-x-circle-fill'
+    normalizedType === 'success' ? 'bi bi-check-circle-fill'
+    : normalizedType === 'warning' ? 'bi bi-exclamation-triangle-fill'
+    : normalizedType === 'error'   ? 'bi bi-x-circle-fill'
     : 'bi bi-info-circle-fill';
+  icon.setAttribute('aria-hidden', 'true');
+  const text = document.createElement('span');
+  text.className = 'toast-message';
+  text.textContent = message;
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'toast-close';
+  closeButton.setAttribute('aria-label', document.documentElement.lang === 'en' ? 'Dismiss notification' : '关闭通知');
+  closeButton.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
+  closeButton.addEventListener('click', () => toast.remove());
   toast.appendChild(icon);
-  toast.appendChild(document.createTextNode(message));
+  toast.appendChild(text);
+  toast.appendChild(closeButton);
   container.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
+  setTimeout(() => toast.remove(), normalizedType === 'error' ? 6000 : 4000);
+}
+
+function escapeHtml(value) {
+  const element = document.createElement('div');
+  element.textContent = String(value ?? '');
+  return element.innerHTML;
 }
 
 /************* 安全存储工具 *************/
@@ -88,10 +108,14 @@ function showCompletionPopup(message, taskKey = 'GLOBAL') {
     // 背景
     const modal = document.createElement('div');
     modal.id = 'completionModal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'completionMessage');
 
     // 内容
     const modalContent = document.createElement('div');
     const messageElement = document.createElement('p');
+    messageElement.id = 'completionMessage';
     messageElement.textContent = message;
 
     const confirmButton = document.createElement('button');
@@ -107,8 +131,7 @@ function showCompletionPopup(message, taskKey = 'GLOBAL') {
       catch (e) { console.error('Error removing modal:', e); }
       finally {
         completionPopupCreating = false;
-        // 不清除存储，刷新后仍然记得这次任务已经弹过
-        window.location.reload();
+        if (typeof loadHistory === 'function') loadHistory();
       }
     };
 
@@ -120,6 +143,7 @@ function showCompletionPopup(message, taskKey = 'GLOBAL') {
     const ensureAppend = () => {
       if (document.body) {
         document.body.appendChild(modal);
+        requestAnimationFrame(() => confirmButton.focus());
       } else {
         // 极端情况：还没解析到 <body>，推迟一帧
         requestAnimationFrame(ensureAppend);

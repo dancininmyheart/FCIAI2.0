@@ -25,69 +25,41 @@ function debounce(func, wait) {
  * 查找所有带有 data-debounce 属性的按钮并应用防抖
  */
 function initDebouncedButtons() {
-    const buttons = document.querySelectorAll('[data-debounce]');
-    
-    buttons.forEach(button => {
-        const debounceTime = parseInt(button.getAttribute('data-debounce')) || 500;
-        const originalClick = button.onclick;
-        
-        if (originalClick) {
-            button.onclick = null;
-            
-            // 保存按钮的原始文本内容和加载中文本
-            const originalText = button.innerHTML;
-            const loadingText = button.getAttribute('data-loading-text') || '处理中...';
-            
-            button.addEventListener('click', debounce(function(e) {
-                // 防止多次点击
-                if (button.classList.contains('disabled')) {
-                    return;
-                }
-                
-                // 设置按钮为禁用状态
-                button.classList.add('disabled');
-                button.innerHTML = loadingText;
-                
-                // 执行原始点击事件
-                try {
-                    originalClick.call(this, e);
-                } catch (error) {
-                    console.error('按钮点击事件执行出错:', error);
-                }
-                
-                // 延迟恢复按钮状态
-                setTimeout(() => {
-                    button.classList.remove('disabled');
-                    button.innerHTML = originalText;
-                }, Math.max(debounceTime, 1000)); // 至少禁用1秒
-            }, debounceTime));
+    if (document.documentElement.dataset.debounceReady === 'true') return;
+    document.documentElement.dataset.debounceReady = 'true';
+
+    document.addEventListener('click', function(event) {
+        const button = event.target.closest('[data-debounce]');
+        if (!button) return;
+
+        const wait = parseInt(button.getAttribute('data-debounce'), 10) || 500;
+        const now = Date.now();
+        const lastClick = Number(button.dataset.lastDebouncedClick || 0);
+        if (now - lastClick < wait) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
         }
-    });
-    
-    // 处理 jQuery 和普通按钮点击事件
-    $(document).on('click', '[data-debounce]', function(e) {
-        const $btn = $(this);
-        
-        // 如果按钮已经被禁用，阻止点击
-        if ($btn.hasClass('disabled') || $btn.prop('disabled')) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-        }
-        
-        // 获取防抖时间和加载文本
-        const debounceTime = parseInt($btn.data('debounce')) || 500;
-        const originalText = $btn.html();
-        const loadingText = $btn.data('loading-text') || '处理中...';
-        
-        // 禁用按钮并更改文本
-        $btn.addClass('disabled').prop('disabled', true).html(loadingText);
-        
-        // 设置定时器恢复按钮状态
+        button.dataset.lastDebouncedClick = String(now);
+
+        const loadingText = button.getAttribute('data-loading-text');
+        if (!loadingText) return;
+        const originalHtml = button.innerHTML;
         setTimeout(() => {
-            $btn.removeClass('disabled').prop('disabled', false).html(originalText);
-        }, Math.max(debounceTime, 1000));
-    });
+            if (!button.isConnected) return;
+            button.classList.add('btn-loading');
+            button.setAttribute('aria-busy', 'true');
+            if (button instanceof HTMLButtonElement) button.disabled = true;
+            button.innerHTML = loadingText;
+        }, 0);
+        setTimeout(() => {
+            if (!button.isConnected) return;
+            button.classList.remove('btn-loading');
+            button.removeAttribute('aria-busy');
+            if (button instanceof HTMLButtonElement) button.disabled = false;
+            button.innerHTML = originalHtml;
+        }, Math.max(wait, 1000));
+    }, true);
 }
 
 /**
@@ -150,7 +122,8 @@ function addButtonDebounce(button, clickHandler, debounceTime = 1000, loadingTex
     button.addEventListener('click', debouncedClickHandler);
 }
 
-// 在文档加载完成后初始化
-$(document).ready(function() {
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDebouncedButtons);
+} else {
     initDebouncedButtons();
-}); 
+}

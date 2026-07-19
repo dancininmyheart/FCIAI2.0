@@ -687,7 +687,7 @@
 </div>
 
 <!-- 队列状态提示 -->
-<div id="queue-status" class="queue-status">
+<div id="queue-status" class="queue-status" role="status" aria-live="polite" aria-atomic="true">
     <span id="queue-message"></span>
 </div>
 
@@ -763,9 +763,9 @@
         <!-- PDF翻译卡片 -->
         <div class="upload-card">
             <h2><i class="bi bi-file-pdf"></i> {% if session.get('language') == 'en' %}PDF Translation{% else %}PDF翻译{% endif %}</h2>
-            <div class="upload-zone" id="pdfUploadZone">
-                <div class="upload-zone-content">
-                    <i class="bi bi-cloud-upload" style="font-size: 48px; color: #6c757d; margin-bottom: 15px;"></i>
+            <div class="upload-zone" id="pdfUploadZone" role="button" tabindex="0" aria-controls="pdfFileInput" aria-describedby="pdfUploadHint" aria-busy="false">
+                <div class="upload-zone-content pdf-upload-default">
+                    <i class="bi bi-cloud-arrow-up upload-zone-icon" aria-hidden="true"></i>
                     <div class="upload-text">
                         {% if session.get('language') == 'en' %}
                             Drag and drop PDF files here or
@@ -773,36 +773,41 @@
                             将PDF文件拖拽到此处或
                         {% endif %}
                     </div>
-                    <button class="upload-btn" id="pdfUploadBtn">
+                    <span class="upload-btn" id="pdfUploadBtn">
                         {% if session.get('language') == 'en' %}Select PDF File{% else %}选择PDF文件{% endif %}
-                    </button>
-                    <input type="file" id="pdfFileInput" accept=".pdf" style="display: none;">
+                    </span>
+                    <p class="upload-hint" id="pdfUploadHint">{% if session.get('language') == 'en' %}PDF files only{% else %}仅支持 PDF 文件{% endif %}</p>
                 </div>
+                <div class="upload-zone-content pdf-upload-busy" id="pdfUploadStatus" role="status" aria-live="polite" hidden>
+                    <div class="spinner" style="width: 40px; height: 40px;" aria-hidden="true"></div>
+                    <div class="upload-text">{% if session.get('language') == 'en' %}Uploading file...{% else %}正在上传文件...{% endif %}</div>
+                </div>
+                <input type="file" id="pdfFileInput" accept=".pdf" style="display: none;" aria-label="{% if session.get('language') == 'en' %}Select a PDF file{% else %}选择 PDF 文件{% endif %}">
             </div>
             
             <!-- 处理中提示 -->
-            <div class="processing-container" id="processingContainer">
-                <div class="spinner"></div>
+            <div class="processing-container" id="processingContainer" role="status" aria-live="polite">
+                <div class="spinner" aria-hidden="true"></div>
                 <div class="processing-text">
                     {% if session.get('language') == 'en' %}Translating, please wait...{% else %}正在翻译中，请稍候...{% endif %}
                 </div>
             </div>
 
             <!-- 结果展示 -->
-            <div id="pdfResultContainer" style="display: none; margin-top: 20px;">
+            <div id="pdfResultContainer" class="translation-result" role="status" aria-live="polite" style="display: none;">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <i class="bi bi-check-circle-fill" style="color: #28a745; font-size: 24px;"></i>
+                    <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
                     <span id="pdfResultText">{% if session.get('language') == 'en' %}Translation completed. Please download from the history list below.{% else %}翻译完成，请在下方历史记录中下载。{% endif %}</span>
                 </div>
             </div>
 
             <!-- 翻译完成弹窗 -->
-            <div class="completion-modal" id="completionModal">
+            <div class="completion-modal" id="completionModal" role="dialog" aria-modal="true" aria-labelledby="completionModalTitle">
                 <div class="modal-content">
                     <div class="modal-icon">
-                        <i class="bi bi-check-circle-fill"></i>
+                        <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
                     </div>
-                    <h3 class="modal-title">
+                    <h3 class="modal-title" id="completionModalTitle">
                         {% if session.get('language') == 'en' %}Translation Completed{% else %}翻译完成{% endif %}
                     </h3>
                     <p class="modal-message" id="modalMessage">
@@ -812,7 +817,7 @@
                         <a href="#" id="modalDownloadBtn" class="modal-btn modal-btn-primary" style="text-decoration: none; display:none;" rel="noopener">
                             {% if session.get('language') == 'en' %}Download{% else %}下载{% endif %}
                         </a>
-                        <button class="modal-btn modal-btn-secondary" id="modalConfirmBtn">
+                        <button type="button" class="modal-btn modal-btn-secondary" id="modalConfirmBtn">
                             {% if session.get('language') == 'en' %}OK{% else %}确定{% endif %}
                         </button>
                     </div>
@@ -820,9 +825,9 @@
             </div>
 
             <!-- PDF翻译选择器 - 参考PPT翻译的页面选择器 -->
-            <div id="translationSelector" class="translation-selector">
+            <div id="translationSelector" class="translation-selector" role="region" aria-labelledby="pdfTranslationSelectorTitle">
                 <div class="selector-header">
-                    <div class="selector-title">
+                    <div class="selector-title" id="pdfTranslationSelectorTitle">
                         {% if session.get('language') == 'en' %}Ready to Translate{% else %}准备翻译{% endif %}
                     </div>
                     <div class="file-info" id="selectorFileName"></div>
@@ -834,8 +839,8 @@
                     请在左侧查看并调整翻译设置（源语言、目标语言、翻译模型、词汇表），然后点击下方"开始翻译"按钮。
                     {% endif %}
                 </div>
-                <button id="startTranslateBtn" class="start-translate-btn">
-                    <i class="bi bi-translate"></i>
+                <button type="button" id="startTranslateBtn" class="start-translate-btn">
+                    <i class="bi bi-translate" aria-hidden="true"></i>
                     {% if session.get('language') == 'en' %}Start Translation{% else %}开始翻译{% endif %}
                 </button>
             </div>
@@ -843,16 +848,13 @@
 
         <!-- 历史记录卡片 -->
         <div class="history-card">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <h3 style="margin-right: auto;"><i class="bi bi-clock-history"></i> {% if session.get('language') == 'en' %}Translation History{% else %}翻译历史{% endif %}</h3>
-                <button class="refresh-btn-header" id="refreshHistoryBtn" title="{% if session.get('language') == 'en' %}Refresh{% else %}刷新{% endif %}">
-                    <i class="bi bi-arrow-clockwise"></i>
-                </button>
-                <button id="refreshHistoryBtnText" class="upload-btn" style="padding: 6px 12px; border-radius: 6px;">
-                    {% if session.get('language') == 'en' %}Refresh{% else %}刷新{% endif %}
+            <div class="history-header">
+                <h3><i class="bi bi-clock-history" aria-hidden="true"></i> {% if session.get('language') == 'en' %}Translation History{% else %}翻译历史{% endif %}</h3>
+                <button type="button" class="refresh-btn-header" id="refreshHistoryBtn" title="{% if session.get('language') == 'en' %}Refresh history{% else %}刷新历史记录{% endif %}" aria-label="{% if session.get('language') == 'en' %}Refresh history{% else %}刷新历史记录{% endif %}">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
                 </button>
             </div>
-            <div class="table-responsive">
+            <div class="table-responsive" tabindex="0" role="region" aria-label="{% if session.get('language') == 'en' %}PDF translation history table{% else %}PDF 翻译历史表格{% endif %}">
                 <table class="history-table">
                     <thead>
                         <tr>
@@ -864,7 +866,7 @@
                         </tr>
                     </thead>
                     <tbody id="historyTableBody">
-                        <!-- 历史记录将通过JavaScript动态加载 -->
+                        <tr class="history-loading-state"><td colspan="5">{% if session.get('language') == 'en' %}Loading history...{% else %}正在加载历史记录...{% endif %}</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -882,6 +884,7 @@
     let pdfTaskStatusTimer = null;
     let isTranslationActive = false;  // 标记是否有活动的翻译任务
     let waitingCount = 0;  // 等待计数器
+    let statusConnectionWarningShown = false;
     
     document.addEventListener('DOMContentLoaded', function() {
         initializePDFTranslation();
@@ -925,11 +928,17 @@ function formatShanghaiTime(input) {
     function initializePDFTranslation() {
         const uploadZone = document.getElementById('pdfUploadZone');
         const fileInput = document.getElementById('pdfFileInput');
-        const uploadBtn = document.getElementById('pdfUploadBtn');
-        
-        // 点击上传按钮时触发文件选择
-        uploadBtn.addEventListener('click', () => {
+
+        uploadZone.addEventListener('click', (event) => {
+            if (event.target === fileInput || uploadZone.getAttribute('aria-busy') === 'true') return;
             fileInput.click();
+        });
+
+        uploadZone.addEventListener('keydown', (event) => {
+            if ((event.key === 'Enter' || event.key === ' ') && uploadZone.getAttribute('aria-busy') !== 'true') {
+                event.preventDefault();
+                fileInput.click();
+            }
         });
         
         // 文件选择后处理
@@ -956,9 +965,16 @@ function formatShanghaiTime(input) {
         
         // 刷新历史记录按钮
         const refreshBtnHeader = document.getElementById('refreshHistoryBtn');
-        const refreshBtnText = document.getElementById('refreshHistoryBtnText');
         if (refreshBtnHeader) refreshBtnHeader.addEventListener('click', loadHistory);
-        if (refreshBtnText) refreshBtnText.addEventListener('click', loadHistory);
+    }
+
+    function setPDFUploadBusy(isBusy) {
+        const uploadZone = document.getElementById('pdfUploadZone');
+        const defaultContent = uploadZone.querySelector('.pdf-upload-default');
+        const busyContent = document.getElementById('pdfUploadStatus');
+        uploadZone.setAttribute('aria-busy', String(isBusy));
+        if (defaultContent) defaultContent.hidden = isBusy;
+        if (busyContent) busyContent.hidden = !isBusy;
     }
     
     // 处理文件选择
@@ -975,7 +991,7 @@ function formatShanghaiTime(input) {
         
         // 检查文件类型
         if (!file.name.toLowerCase().endsWith('.pdf')) {
-            alert(currentLanguage === 'en' ? 'Please select a PDF file' : '请选择PDF文件');
+            showToast(currentLanguage === 'en' ? 'Please select a PDF file' : '请选择PDF文件', 'error');
             return;
         }
         
@@ -985,15 +1001,8 @@ function formatShanghaiTime(input) {
     
     // 上传PDF文件到服务器（不开始翻译）
     function uploadPDFFile(file) {
-        // 显示上传中提示
         const uploadZone = document.getElementById('pdfUploadZone');
-        const originalContent = uploadZone.innerHTML;
-        uploadZone.innerHTML = `
-            <div class="upload-zone-content">
-                <div class="spinner" style="width: 40px; height: 40px;"></div>
-                <div class="upload-text">${currentLanguage === 'en' ? 'Uploading file...' : '正在上传文件...'}</div>
-            </div>
-        `;
+        setPDFUploadBusy(true);
         
         const formData = new FormData();
         formData.append('file', file);
@@ -1003,7 +1012,10 @@ function formatShanghaiTime(input) {
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
                 // 保存文件信息
@@ -1013,20 +1025,21 @@ function formatShanghaiTime(input) {
                     unique_filename: data.unique_filename
                 };
                 
-                // 恢复上传区域
-                uploadZone.innerHTML = originalContent;
-                
+                const uploadText = uploadZone.querySelector('.pdf-upload-default .upload-text');
+                if (uploadText) uploadText.textContent = file.name;
                 // 显示翻译选择器
                 showTranslationSelector(file.name);
+                showToast(currentLanguage === 'en' ? 'PDF uploaded and ready to translate' : 'PDF 已上传，可以开始翻译', 'success');
             } else {
-                uploadZone.innerHTML = originalContent;
-                alert(currentLanguage === 'en' ? 'Upload failed: ' + data.error : '上传失败: ' + data.error);
+                showToast(currentLanguage === 'en' ? 'Upload failed: ' + data.error : '上传失败: ' + data.error, 'error');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            uploadZone.innerHTML = originalContent;
-            alert(currentLanguage === 'en' ? 'Upload failed' : '上传失败');
+            showToast(currentLanguage === 'en' ? 'Upload failed. Please retry.' : '上传失败，请重试', 'error');
+        })
+        .finally(() => {
+            setPDFUploadBusy(false);
         });
     }
     
@@ -1037,6 +1050,7 @@ function formatShanghaiTime(input) {
         
         fileNameElement.textContent = filename;
         selector.style.display = 'block';
+        requestAnimationFrame(() => document.getElementById('startTranslateBtn')?.focus());
         
         // 为开始翻译按钮绑定事件
         const startBtn = document.getElementById('startTranslateBtn');
@@ -1123,7 +1137,8 @@ function formatShanghaiTime(input) {
                 waitingCount = 0;
                 document.getElementById('processingContainer').style.display = 'none';
                 if (queueStatus) queueStatus.style.display = 'none';
-                alert(currentLanguage === 'en' ? 'Processing failed: ' + data.error : '处理失败: ' + data.error);
+                showTranslationSelector(fileInfo.name);
+                showToast(currentLanguage === 'en' ? 'Processing failed: ' + data.error : '处理失败: ' + data.error, 'error');
             }
         })
         .catch(error => {
@@ -1133,15 +1148,20 @@ function formatShanghaiTime(input) {
             waitingCount = 0;
             document.getElementById('processingContainer').style.display = 'none';
             if (queueStatus) queueStatus.style.display = 'none';
-            alert(currentLanguage === 'en' ? 'Processing failed' : '处理失败');
+            showTranslationSelector(fileInfo.name);
+            showToast(currentLanguage === 'en' ? 'Processing failed. Please retry.' : '处理失败，请重试', 'error');
         });
     }
     
     // 检查PDF翻译任务状态
     function checkPDFTaskStatus() {
         fetch('/api/pdf_task_status')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
             .then(data => {
+                statusConnectionWarningShown = false;
                 const statusDiv = document.getElementById('queue-status');
                 const messageSpan = document.getElementById('queue-message');
                 const processingContainer = document.getElementById('processingContainer');
@@ -1165,9 +1185,10 @@ function formatShanghaiTime(input) {
                             waitingCount = 0;
                             if (statusDiv) statusDiv.style.display = 'none';
                             if (processingContainer) processingContainer.style.display = 'none';
-                            alert(currentLanguage === 'en' 
+                            showToast(currentLanguage === 'en'
                                 ? 'Translation task startup timeout, please retry' 
-                                : '翻译任务启动超时，请重试');
+                                : '翻译任务启动超时，请重试', 'error');
+                            if (pendingFile) showTranslationSelector(pendingFile.name);
                             
                             // 停止轮询
                             if (pdfTaskStatusTimer) {
@@ -1200,6 +1221,7 @@ function formatShanghaiTime(input) {
 
                 if (data.status === 'waiting') {
                     statusDiv.className = 'queue-status alert-info';
+                    statusDiv.setAttribute('role', 'status');
                     if (messageSpan) {
                         let message = backendMessage;
                         if (currentLanguage === 'en') {
@@ -1213,6 +1235,7 @@ function formatShanghaiTime(input) {
                 }
                 else if (data.status === 'processing') {
                     statusDiv.className = 'queue-status alert-info';
+                    statusDiv.setAttribute('role', 'status');
                     if (messageSpan) {
                         let message = backendMessage;
                         if (currentLanguage === 'en') {
@@ -1236,6 +1259,8 @@ function formatShanghaiTime(input) {
                     
                     if (statusDiv) statusDiv.style.display = 'none';
                     if (processingContainer) processingContainer.style.display = 'none';
+                    const resultContainer = document.getElementById('pdfResultContainer');
+                    if (resultContainer) resultContainer.style.display = 'flex';
                     
                     // 更新弹窗消息
                     const modalMessage = document.getElementById('modalMessage');
@@ -1263,7 +1288,15 @@ function formatShanghaiTime(input) {
                     }
                     
                     // 显示完成弹窗
-                    document.getElementById('completionModal').style.display = 'flex';
+                    const completionModal = document.getElementById('completionModal');
+                    completionModal.style.display = 'flex';
+                    requestAnimationFrame(() => {
+                        const primaryAction = data.stored_filename
+                            ? document.getElementById('modalDownloadBtn')
+                            : document.getElementById('modalConfirmBtn');
+                        primaryAction?.focus();
+                    });
+                    showToast(currentLanguage === 'en' ? 'PDF translation completed' : 'PDF 翻译已完成', 'success');
                     
                     // 刷新历史记录
                     loadHistory();
@@ -1285,54 +1318,61 @@ function formatShanghaiTime(input) {
                             : `翻译失败: ${errorText}`;
                     }
                     statusDiv.className = 'queue-status alert-danger';
-                    if (processingContainer) processingContainer.style.display = 'flex';
-
-                    // 5秒后隐藏错误信息
-                    setTimeout(() => {
-                        if (statusDiv) statusDiv.style.display = 'none';
-                        if (processingContainer) processingContainer.style.display = 'none';
-                    }, 5000);
+                    statusDiv.setAttribute('role', 'alert');
+                    if (processingContainer) processingContainer.style.display = 'none';
+                    if (pendingFile) showTranslationSelector(pendingFile.name);
+                    showToast(messageSpan?.textContent || (currentLanguage === 'en' ? 'Translation failed' : '翻译失败'), 'error');
                 }
             })
             .catch(error => {
                 console.error('Error checking PDF task status:', error);
+                if (isTranslationActive && !statusConnectionWarningShown) {
+                    statusConnectionWarningShown = true;
+                    showToast(currentLanguage === 'en' ? 'Task status is temporarily unavailable. Retrying automatically.' : '暂时无法获取任务状态，系统将自动重试。', 'warning');
+                }
             });
     }
     
     // 加载历史记录
     function loadHistory() {
         const refreshBtn = document.getElementById('refreshHistoryBtn');
+        const tbody = document.getElementById('historyTableBody');
         if (refreshBtn) refreshBtn.classList.add('rotating');
+        if (refreshBtn) refreshBtn.setAttribute('aria-busy', 'true');
+        tbody.innerHTML = `<tr class="history-loading-state"><td colspan="5">${currentLanguage === 'en' ? 'Loading history...' : '正在加载历史记录...'}</td></tr>`;
         
         fetch('/api/pdf_translation_history')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
             .then(data => {
-                if (refreshBtn) refreshBtn.classList.remove('rotating');
-                const tbody = document.getElementById('historyTableBody');
+                if (!Array.isArray(data)) throw new Error('Invalid history response');
                 tbody.innerHTML = '';
                 
                 if (data.length > 0) {
                     data.forEach(record => {
                         const row = document.createElement('tr');
                         const storedFilename = record.stored_filename || '';
+                        const encodedFilename = encodeURIComponent(storedFilename).replace(/'/g, '%27');
                         const canDownload = Boolean(storedFilename) && record.file_exists;
                         const downloadLabel = canDownload
                             ? (currentLanguage === 'en' ? 'Download' : '下载')
                             : (currentLanguage === 'en' ? 'File not found' : '文件不存在或已清理');
                         const downloadHtml = canDownload
-                            ? `<a href="/download_translated_pdf/${encodeURIComponent(storedFilename)}" class="action-btn download" title="${downloadLabel}" target="_blank">
-                                    <i class="bi bi-download"></i>
+                            ? `<a href="/download_translated_pdf/${encodeURIComponent(storedFilename)}" class="action-btn download" title="${downloadLabel}" aria-label="${downloadLabel}" target="_blank" rel="noopener">
+                                    <i class="bi bi-download" aria-hidden="true"></i>
                                 </a>`
                             : `<span class="text-muted">${downloadLabel}</span>`;
                         const deleteHtml = storedFilename
-                            ? `<button class="action-btn" style="background:#dc3545;color:#fff;" title="${currentLanguage === 'en' ? 'Delete' : '删除'}" onclick="deleteHistory('${storedFilename}')">
-                                    <i class="bi bi-trash"></i>
+                            ? `<button type="button" class="action-btn danger pdf-history-delete" data-filename="${encodedFilename}" title="${currentLanguage === 'en' ? 'Delete' : '删除'}" aria-label="${currentLanguage === 'en' ? 'Delete' : '删除'}">
+                                    <i class="bi bi-trash" aria-hidden="true"></i>
                                 </button>`
-                            : `<button class="action-btn" style="background:#dc3545;color:#fff; opacity:0.4; cursor:not-allowed;" title="${currentLanguage === 'en' ? 'Cannot delete: missing file info' : '无法删除：缺少文件信息'}" disabled>
-                                    <i class="bi bi-trash"></i>
+                            : `<button type="button" class="action-btn danger" title="${currentLanguage === 'en' ? 'Cannot delete: missing file info' : '无法删除：缺少文件信息'}" aria-label="${currentLanguage === 'en' ? 'Cannot delete: missing file info' : '无法删除：缺少文件信息'}" disabled>
+                                    <i class="bi bi-trash" aria-hidden="true"></i>
                                 </button>`;
                         row.innerHTML = `
-                            <td title="${record.filename}">${record.filename}</td>
+                            <td title="${escapeHtml(record.filename)}">${escapeHtml(record.filename)}</td>
                             <td>${formatShanghaiTime(record.upload_time)}</td>
                             <td>${formatFileSize(record.file_size)}</td>
                             <td><span class="status-badge completed">${currentLanguage === 'en' ? 'Completed' : '已完成'}</span></td>
@@ -1343,15 +1383,20 @@ function formatShanghaiTime(input) {
                         `;
                         tbody.appendChild(row);
                     });
+                    tbody.querySelectorAll('.pdf-history-delete').forEach((button) => {
+                        button.addEventListener('click', () => deleteHistory(decodeURIComponent(button.dataset.filename)));
+                    });
                 } else {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td colspan="5" style="text-align: center;">${currentLanguage === 'en' ? 'No translation history' : '暂无翻译历史'}</td>`;
-                    tbody.appendChild(row);
+                    tbody.innerHTML = `<tr class="history-empty-state"><td colspan="5">${currentLanguage === 'en' ? 'No translation history yet' : '暂无翻译历史'}</td></tr>`;
                 }
             })
             .catch(error => {
-                if (refreshBtn) refreshBtn.classList.remove('rotating');
                 console.error('Error loading history:', error);
+                tbody.innerHTML = `<tr class="history-error-state"><td colspan="5">${currentLanguage === 'en' ? 'History could not be loaded. Use refresh to retry.' : '历史记录加载失败，请点击刷新重试。'}</td></tr>`;
+            })
+            .finally(() => {
+                if (refreshBtn) refreshBtn.classList.remove('rotating');
+                if (refreshBtn) refreshBtn.removeAttribute('aria-busy');
             });
     }
     
@@ -1364,17 +1409,21 @@ function formatShanghaiTime(input) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filename })
         })
-        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        })
         .then(res => {
             if (res.success) {
+                showToast(currentLanguage === 'en' ? 'History item deleted' : '历史记录已删除', 'success');
                 loadHistory();
             } else {
-                alert((currentLanguage === 'en' ? 'Delete failed: ' : '删除失败：') + (res.error || ''));
+                showToast((currentLanguage === 'en' ? 'Delete failed: ' : '删除失败：') + (res.error || ''), 'error');
             }
         })
         .catch(err => {
             console.error('Delete error:', err);
-            alert(currentLanguage === 'en' ? 'Delete failed' : '删除失败');
+            showToast(currentLanguage === 'en' ? 'Delete failed' : '删除失败', 'error');
         });
     }
     
@@ -1780,7 +1829,7 @@ function formatShanghaiTime(input) {
                 } else {
                     // 无有效链接时，避免显示无效按钮
                     e.preventDefault();
-                    alert(currentLanguage === 'en' ? 'Download link is not available' : '下载链接不可用');
+                    showToast(currentLanguage === 'en' ? 'Download link is not available' : '下载链接不可用', 'error');
                     return false;
                 }
             });
@@ -1795,6 +1844,12 @@ function formatShanghaiTime(input) {
                 }
             });
         }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && modal && modal.style.display === 'flex') {
+                modal.style.display = 'none';
+            }
+        });
     });
 </script>
 {% endblock %}

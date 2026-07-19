@@ -26,6 +26,7 @@ from app.translation.pptx_contract_validation import (
 PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION: Final = 2
 PPTX_DOCUMENT_KIND: Final = "pptx_xml"
 PPTX_PROVIDER_FIELD: Final = "pptx_structured_v2"
+PPTX_PROVIDER_REPAIR_FIELD: Final = "pptx_structured_v2_repair"
 
 _ROOT_FIELDS: Final = frozenset(
     {"provider_contract_schema_version", "document_kind", "translations"},
@@ -63,9 +64,15 @@ def parse_pptx_response(
         unit_id = _string(item["unit_id"], unit.unit_id)
         if unit_id != unit.unit_id:
             raise PptxContractError("unit_order", "unit ID or order differs from request", unit.unit_id)
-        target_text = _string(item["target_text"], unit.unit_id)
+        # The aggregate field is retained for provider compatibility, but the
+        # segment stream is the source of truth because it is what gets written.
+        _string(item["target_text"], unit.unit_id)
         segments = _parse_segments(item["segments"], unit)
-        translation = PptxUnitTranslation(unit_id, target_text, segments)
+        translation = PptxUnitTranslation(
+            unit_id,
+            reconstruct_target(unit, segments),
+            segments,
+        )
         validate_unit_translation(unit, translation)
         translations.append(translation)
     return tuple(translations)

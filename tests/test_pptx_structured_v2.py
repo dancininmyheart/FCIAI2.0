@@ -196,6 +196,29 @@ def test_provider_contract_is_exact_json_and_contains_no_internal_sentinel(tmp_p
     }
 
 
+def test_response_parser_canonicalizes_target_text_from_written_stream(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _structured_slide_xml())
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        "natural reordered aggregate",
+        [
+            (unit.text_items[0].segment_id, "translated hello"),
+            (unit.text_items[1].segment_id, "translated world"),
+        ],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert parsed[0].target_text == "translated hello\n1translated world"
+
+
 def test_qwen_v2_prompt_uses_ids_and_never_teaches_the_legacy_sentinel() -> None:
     transport = PromptTransport()
     request = ProviderRequest.create(
@@ -390,11 +413,56 @@ def test_default_xml_engine_retries_invalid_contract_once_and_never_publishes_ma
 
     assert result == str(output)
     assert len(provider.requests) == 2
-    assert all(item.field == "pptx_structured_v2" for item in provider.requests)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    repair_payload = json.loads(provider.requests[1].text)
+    assert repair_payload["validation_error"]["code"] == "reserved_marker_added"
+    assert repair_payload["source_contract"]["document_kind"] == "pptx_xml"
+    assert repair_payload["candidate_response"]["translations"][0]["target_text"] == "母乳[块]"
     with zipfile.ZipFile(output) as archive:
         slide_data = archive.read("ppt/slides/slide1.xml")
     assert "[块]" not in slide_data.decode("utf-8")
     assert [node.text for node in ElementTree.fromstring(slide_data).findall(".//a:t", NS)] == ["母乳"]
+
+
+def test_structured_translation_splits_an_invalid_multi_unit_batch(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    slide = (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        f"<p:sld xmlns:a='{A_NS}' xmlns:p='{P_NS}'><p:cSld><p:spTree>"
+        f"{_simple_shape_xml(7, 'First')}{_simple_shape_xml(8, 'Second')}"
+        "</p:spTree></p:cSld></p:sld>"
+    )
+    _write_minimal_pptx(source, slide)
+    provider = ContractProvider(responses=["{}"])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2",
+        "pptx_structured_v2",
+    ]
+    assert [len(json.loads(item.text)["units"]) for item in provider.requests] == [2, 1, 1]
 
 
 def test_selected_page_translation_preserves_unselected_slide_bytes(tmp_path: Path) -> None:
@@ -460,6 +528,7 @@ def test_default_xml_engine_fails_closed_after_second_invalid_response(tmp_path:
         translate_pptx_with_xml(request, provider_registry=ProviderRegistry((provider,)))
 
     assert len(provider.requests) == 2
+    assert provider.requests[1].field == "pptx_structured_v2_repair"
     assert not output.exists()
 
 

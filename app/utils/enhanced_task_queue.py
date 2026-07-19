@@ -20,6 +20,15 @@ from app.utils.timezone_helper import now_with_timezone
 # 配置日志记录器
 logger = logging.getLogger(__name__)
 
+
+def _thread_task_outcome(thread_task) -> str:
+    if thread_task.status == TaskStatus.CANCELED:
+        return "canceled"
+    if thread_task.status == TaskStatus.COMPLETED and thread_task.result is True:
+        return "completed"
+    return "failed"
+
+
 class TranslationTask:
     """翻译任务类，用于存储任务信息"""
 
@@ -581,23 +590,28 @@ class EnhancedTranslationQueue:
                             f"回调在任务执行线程中运行，这可能导致问题 - 任务: {task.task_id}"
                         )
                     
-                    # 更新任务状态
-                    if thread_task.status == TaskStatus.COMPLETED:
+                    # 线程池的 COMPLETED 仅表示函数正常返回；业务任务还必须显式返回 True。
+                    outcome = _thread_task_outcome(thread_task)
+                    if outcome == "completed":
                         task.status = "completed"
                         task.completed_at = now_with_timezone()
                         task.event.set()
                         queue_instance.logger.info(f"任务完成: {task.task_id}")
                         # 更新数据库记录状态
                         queue_instance._schedule_database_update(task)
-                    elif thread_task.status == TaskStatus.FAILED:
+                    elif outcome == "failed":
                         task.status = "failed"
-                        task.error = str(thread_task.error)
+                        task.error = str(
+                            getattr(thread_task, "error", None)
+                            or task.error
+                            or "translation processor returned an unsuccessful result"
+                        )
                         task.completed_at = now_with_timezone()
                         task.event.set()
                         queue_instance.logger.error(f"任务失败: {task.task_id}, 错误: {task.error}")
                         # 更新数据库记录状态
                         queue_instance._schedule_database_update(task)
-                    elif thread_task.status == TaskStatus.CANCELED:
+                    elif outcome == "canceled":
                         task.status = "canceled"
                         task.completed_at = now_with_timezone()
                         task.event.set()
@@ -873,6 +887,8 @@ class EnhancedTranslationQueue:
                 from app.jobs.executor import execute_legacy_task
 
                 success = execute_legacy_task(task, progress_callback)
+                if not success and not task.error:
+                    task.error = "translation processor returned an unsuccessful result"
 
                 # 记录数据库连接使用情况变化
                 db_conn_after = self._get_db_connection_info()

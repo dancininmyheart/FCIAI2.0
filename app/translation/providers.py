@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Final, Protocol
 
-from app.translation.pptx_contract import PPTX_PROVIDER_FIELD
+from app.translation.pptx_contract import PPTX_PROVIDER_FIELD, PPTX_PROVIDER_REPAIR_FIELD
 from app.translation.pptx_contract_types import JsonValue
 from app.translation.qwen_config import qwen_model_name
 from app.translation.types import ProviderError, ProviderName, ProviderRequest, ProviderResult, TranslationProvider
@@ -45,7 +45,7 @@ class QwenProvider:
     def translate(self, request: ProviderRequest) -> ProviderResult:
         try:
             complete = self.transport.complete
-            if request.field == PPTX_PROVIDER_FIELD:
+            if request.field in (PPTX_PROVIDER_FIELD, PPTX_PROVIDER_REPAIR_FIELD):
                 complete_json = getattr(self.transport, "complete_json", None)
                 if complete_json is None:
                     raise ProviderError(
@@ -237,6 +237,18 @@ def _json_or_text(value: JsonValue) -> str:
 
 
 def _semantic_system_prompt(request: ProviderRequest) -> str:
+    if request.field == PPTX_PROVIDER_REPAIR_FIELD:
+        return "\n".join(
+            (
+                "Repair a rejected PPTX translation JSON response.",
+                "The user JSON contains validation_error, source_contract, and candidate_response.",
+                "Return exactly one corrected provider response JSON object with provider_contract_schema_version, document_kind, and translations.",
+                "Preserve every unit_id and segment_id in source_contract order and return no unknown fields.",
+                "For each unit, target_text must exactly equal its translated source_stream: use each text segment target_text, a newline for each line_break, and unchanged protected_field text.",
+                "When target_text and segments disagree, redistribute the translated wording across segments so their reconstructed text is exactly target_text.",
+                "Do not copy source-language text as a workaround, remove content, add reserved markers, or return prose or Markdown fences.",
+            ),
+        )
     if request.field == "pptx_structured_v2":
         return "\n".join(
             (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -10,6 +11,7 @@ from xml.etree import ElementTree
 
 from app.translation.pptx_contract import (
     PPTX_PROVIDER_FIELD,
+    PPTX_PROVIDER_REPAIR_FIELD,
     PptxContractError,
     parse_pptx_response,
     serialize_pptx_request,
@@ -171,12 +173,62 @@ def _translate_structured_batch(
                 error.code,
                 len(response.text),
             )
+            if len(units) > 1:
+                midpoint = len(units) // 2
+                logger.info(
+                    "pptx_contract_split job_id=%s units=%d left=%d right=%d error_code=%s",
+                    correlation.public_job_id,
+                    len(units),
+                    midpoint,
+                    len(units) - midpoint,
+                    error.code,
+                )
+                return (
+                    _translate_structured_batch(request, registry, units[:midpoint])
+                    + _translate_structured_batch(request, registry, units[midpoint:])
+                )
             if attempt == 0:
+                provider_request = _repair_provider_request(
+                    request,
+                    provider_request.text,
+                    response.text,
+                    error,
+                )
                 continue
             raise
     if last_contract_error is not None:
         raise last_contract_error
     raise PptxContractError("provider_failure", "provider did not return a response")
+
+
+def _repair_provider_request(
+    request: XmlTranslationRequest,
+    source_contract: str,
+    candidate_response: str,
+    error: PptxContractError,
+) -> ProviderRequest:
+    try:
+        candidate: object = json.loads(candidate_response)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        candidate = candidate_response
+    payload = {
+        "validation_error": {
+            "code": error.code,
+            "unit_id": error.unit_id,
+            "detail": error.detail,
+        },
+        "source_contract": json.loads(source_contract),
+        "candidate_response": candidate,
+    }
+    return ProviderRequest.create(
+        text=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        source_language=request.source_language,
+        target_language=request.target_language,
+        field=PPTX_PROVIDER_REPAIR_FIELD,
+        stop_words=tuple(request.stop_words),
+        custom_translations=dict(request.custom_translations),
+        output_format="structured",
+    )
 
 
 def _slide_batches(

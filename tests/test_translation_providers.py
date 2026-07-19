@@ -106,6 +106,21 @@ def test_qwen_provider_uses_json_mode_for_pptx_contract() -> None:
     assert result.text.startswith('{"provider_contract_schema_version":2')
 
 
+def test_qwen_provider_uses_json_mode_for_pptx_repair_contract() -> None:
+    transport = JsonModeQwenTransport()
+    request = ProviderRequest.create(
+        text='{"validation_error":{"code":"target_mismatch"}}',
+        field="pptx_structured_v2_repair",
+        source_language="English",
+        target_language="Chinese",
+        output_format="structured",
+    )
+
+    QwenProvider(transport).translate(request)
+
+    assert transport.calls == ["json"]
+
+
 def test_qwen_provider_never_downgrades_pptx_contract_to_plain_text() -> None:
     request = ProviderRequest.create(
         text='{"provider_contract_schema_version":2,"document_kind":"pptx_xml","units":[]}',

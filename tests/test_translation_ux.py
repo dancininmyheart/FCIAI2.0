@@ -87,6 +87,51 @@ def test_ppt_translation_submits_current_language_display_selection() -> None:
     assert "formData.append('bilingual_translation', bilingualTranslation);" in launch_flow
 
 
+def test_ppt_translation_defaults_to_source_first_bilingual_display() -> None:
+    template = _read(PPT_TEMPLATE)
+    select_start = template.index('<select id="bilingual_translation"')
+    select_end = template.index("</select>", select_start)
+    language_display = template[select_start:select_end]
+
+    assert 'name="bilingual_translation"' in language_display
+    assert '<option value="paragraph_up" selected>' in language_display
+    assert '<option value="translation_only" selected>' not in language_display
+
+
+def test_ppt_translation_rejects_a_server_display_mode_mismatch() -> None:
+    template = _read(PPT_TEMPLATE)
+    start = template.index("async function startTranslation()")
+    end = template.index("function checkTaskStatus()", start)
+    launch_flow = template[start:end]
+
+    upload_response = launch_flow.index("const result = await new Promise")
+    validate_mode = launch_flow.index(
+        "if (result.bilingual_translation !== bilingualTranslation)"
+    )
+    mark_complete = launch_flow.index("markUploadCompleted();")
+
+    assert upload_response < validate_mode < mark_complete
+    assert "throw new Error(getText('translationModeMismatch'));" in launch_flow
+    assert "translationModeMismatch:" in template
+
+
+def test_ppt_translation_polls_the_uploaded_task_without_losing_legacy_status() -> None:
+    template = _read(PPT_TEMPLATE)
+    start = template.index("async function startTranslation()")
+    status_start = template.index("function checkTaskStatus()", start)
+    launch_flow = template[start:status_start]
+    status_flow = template[status_start:]
+
+    assert "let currentTaskId = null;" in template[:start]
+    assert "currentTaskId = result.task_id || null;" in launch_flow
+    assert (
+        "const statusUrl = currentTaskId\n"
+        "            ? `/task_status/${encodeURIComponent(currentTaskId)}`\n"
+        "            : '/task_status';"
+    ) in status_flow
+    assert "fetch(statusUrl)" in status_flow
+
+
 def test_experience_styles_define_responsive_drawer_and_readable_type() -> None:
     css = _read(EXPERIENCE_CSS)
 

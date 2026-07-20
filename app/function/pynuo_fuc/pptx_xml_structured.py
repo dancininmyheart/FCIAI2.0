@@ -56,6 +56,7 @@ def write_structured_translated_pptx(
     requested_ids = frozenset(item.unit_id for item in translations)
     expected_subset = tuple(unit for unit in expected if unit.unit_id in requested_ids)
     validate_pptx_translations(expected_subset, translations)
+    write_mode = _resolve_write_mode(bilingual_translation)
 
     with tempfile.NamedTemporaryFile(
         prefix=f".{output_file.stem}.",
@@ -69,11 +70,17 @@ def write_structured_translated_pptx(
             input_file,
             temporary_path,
             translations,
-            _resolve_write_mode(bilingual_translation),
+            write_mode,
         )
         with zipfile.ZipFile(input_file) as source:
             expected_members = tuple(source.namelist())
         validate_pptx_package(temporary_path, expected_members)
+        _validate_bilingual_writeback(
+            input_file,
+            temporary_path,
+            translations,
+            write_mode,
+        )
         os.replace(temporary_path, output_file)
     except (PptxContractError, PptxXmlFallbackEligibleError):
         temporary_path.unlink(missing_ok=True)
@@ -114,6 +121,88 @@ def _write_package(
             target.writestr(item, data)
     if written_ids != set(by_id):
         raise PptxContractError("writeback_unit_mismatch", "not every translation unit was written")
+
+
+def _validate_bilingual_writeback(
+    input_path: Path,
+    output_path: Path,
+    translations: tuple[PptxUnitTranslation, ...],
+    mode: WriteMode,
+) -> None:
+    if mode is WriteMode.TRANSLATION_ONLY:
+        return
+    source_targets = _package_targets(input_path)
+    output_targets = _package_targets(output_path)
+    for translation in translations:
+        source = source_targets.get(translation.unit_id)
+        output = output_targets.get(translation.unit_id)
+        if source is None or output is None:
+            raise PptxContractError(
+                "bilingual_source_missing",
+                "could not locate the translated paragraph to confirm its source text",
+                translation.unit_id,
+            )
+        if _normalized_text(source.unit.source_text) == _normalized_text(
+            translation.target_text,
+        ):
+            continue
+
+        source_runs = _normalized_run_texts(source)
+        translated_runs = _normalized_translated_runs(source, translation)
+        output_runs = _normalized_run_texts(output)
+        if mode is WriteMode.PARAGRAPH_UP:
+            source_present = output_runs[: len(source_runs)] == source_runs
+            translation_present = output_runs[-len(translated_runs) :] == translated_runs
+        else:
+            source_present = output_runs[-len(source_runs) :] == source_runs
+            translation_present = output_runs[: len(translated_runs)] == translated_runs
+
+        if not source_present:
+            raise PptxContractError(
+                "bilingual_source_missing",
+                "bilingual writeback did not preserve the source text",
+                translation.unit_id,
+            )
+        if not translation_present:
+            raise PptxContractError(
+                "bilingual_translation_missing",
+                "bilingual writeback did not preserve the translated text",
+                translation.unit_id,
+            )
+
+
+def _package_targets(path: Path) -> dict[str, StructuredParagraphTarget]:
+    targets: dict[str, StructuredParagraphTarget] = {}
+    with zipfile.ZipFile(path) as archive:
+        for page_index, slide_path in enumerate(slide_paths(archive)):
+            root = ElementTree.fromstring(archive.read(slide_path))
+            for target in structured_slide_targets(
+                root,
+                page_index,
+                slide_path,
+                "",
+                "",
+                (),
+                (),
+            ):
+                targets[target.unit.unit_id] = target
+    return targets
+
+
+def _normalized_run_texts(
+    target: StructuredParagraphTarget,
+) -> tuple[str, ...]:
+    return tuple(_normalized_text(node.text or "") for _, node in target.segment_nodes)
+
+
+def _normalized_translated_runs(
+    target: StructuredParagraphTarget,
+    translation: PptxUnitTranslation,
+) -> tuple[str, ...]:
+    repeated = _repeated_full_sentence_translation(target, translation)
+    if repeated is not None:
+        return (_normalized_text(repeated),)
+    return tuple(_normalized_text(segment.target_text) for segment in translation.segments)
 
 
 def _translated_slide(

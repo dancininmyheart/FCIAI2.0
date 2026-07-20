@@ -25,6 +25,7 @@ from app.function.pynuo_fuc.pptx_xml_translate import translate_pptx_with_xml
 from app.function.pynuo_fuc.pptx_xml_types import (
     PptxXmlDuplicateShapeIdError,
     PptxXmlPackageError,
+    WriteMode,
     XmlTranslationRequest,
 )
 from app.translation.pptx_contract import (
@@ -505,6 +506,153 @@ def test_bilingual_writer_does_not_append_normalized_source_equivalent_target(
     assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == ["Milk 72%"]
     assert root.findall(".//a:br", NS) == []
     assert root.find(".//a:bodyPr/a:normAutofit", NS) is None
+
+
+@pytest.mark.parametrize("mode", ("paragraph_up", "paragraph_down"))
+def test_bilingual_writer_rejects_missing_source_before_publishing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    from app.function.pynuo_fuc import pptx_xml_structured as structured_module
+
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Milk"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    translations = (
+        PptxUnitTranslation(
+            unit_id=unit.unit_id,
+            target_text="translated milk",
+            segments=(
+                PptxSegmentTranslation(
+                    unit.text_items[0].segment_id,
+                    "translated milk",
+                ),
+            ),
+        ),
+    )
+    real_write_package = structured_module._write_package
+
+    def write_translation_only_regression(
+        input_path: Path,
+        output_path: Path,
+        requested: tuple[PptxUnitTranslation, ...],
+        _mode: WriteMode,
+    ) -> None:
+        real_write_package(
+            input_path,
+            output_path,
+            requested,
+            WriteMode.TRANSLATION_ONLY,
+        )
+
+    monkeypatch.setattr(
+        structured_module,
+        "_write_package",
+        write_translation_only_regression,
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        write_structured_translated_pptx(source, output, translations, mode)
+
+    assert raised.value.code == "bilingual_source_missing"
+    assert raised.value.unit_id == unit.unit_id
+    assert not output.exists()
+    assert list(tmp_path.glob(".translated.*.tmp.pptx")) == []
+
+
+@pytest.mark.parametrize("mode", ("paragraph_up", "paragraph_down"))
+def test_bilingual_writer_rejects_missing_translation_before_publishing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    from app.function.pynuo_fuc import pptx_xml_structured as structured_module
+
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Milk"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    translations = (
+        PptxUnitTranslation(
+            unit_id=unit.unit_id,
+            target_text="translated milk",
+            segments=(
+                PptxSegmentTranslation(
+                    unit.text_items[0].segment_id,
+                    "translated milk",
+                ),
+            ),
+        ),
+    )
+
+    def write_source_only_regression(
+        input_path: Path,
+        output_path: Path,
+        _requested: tuple[PptxUnitTranslation, ...],
+        _mode: WriteMode,
+    ) -> None:
+        output_path.write_bytes(input_path.read_bytes())
+
+    monkeypatch.setattr(
+        structured_module,
+        "_write_package",
+        write_source_only_regression,
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        write_structured_translated_pptx(source, output, translations, mode)
+
+    assert raised.value.code == "bilingual_translation_missing"
+    assert raised.value.unit_id == unit.unit_id
+    assert not output.exists()
+    assert list(tmp_path.glob(".translated.*.tmp.pptx")) == []
+
+
+@pytest.mark.parametrize("mode", ("paragraph_up", "paragraph_down"))
+def test_bilingual_writeback_validation_ignores_protected_fields(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _structured_slide_xml())
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    translations = (
+        PptxUnitTranslation(
+            unit_id=unit.unit_id,
+            target_text="translated hello\n1translated world",
+            segments=(
+                PptxSegmentTranslation(
+                    unit.text_items[0].segment_id,
+                    "translated hello",
+                ),
+                PptxSegmentTranslation(
+                    unit.text_items[1].segment_id,
+                    "translated world",
+                ),
+            ),
+        ),
+    )
+
+    write_structured_translated_pptx(source, output, translations, mode)
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text or "" for node in root.findall(".//a:fld/a:t", NS)] == ["1", "1"]
 
 
 def test_default_xml_engine_retries_invalid_contract_once_and_never_publishes_marker(

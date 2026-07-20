@@ -109,6 +109,47 @@ def test_upload_requires_authentication(isolated_app: Flask) -> None:
     assert "/auth/login" in response.headers["Location"]
 
 
+def test_authenticated_ppt_upload_rejects_invalid_translation_mode_before_creating_task(
+    isolated_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    import app.views.main as main_views
+
+    class FakeUploadRecord:
+        def __init__(self, **kwargs) -> None:
+            self.id = 321
+
+    task_calls: list[dict] = []
+    fake_session = SimpleNamespace(
+        add=lambda record: None,
+        commit=lambda: None,
+        rollback=lambda: None,
+        remove=lambda: None,
+    )
+    isolated_app.config.update(LOGIN_DISABLED=True, TRANSLATION_ARCH_MODE="legacy")
+    monkeypatch.delenv("TRANSLATION_ARCH_MODE", raising=False)
+    monkeypatch.setattr(main_views, "current_user", SimpleNamespace(id=42, username="tester", is_authenticated=True))
+    monkeypatch.setattr(main_views, "UploadRecord", FakeUploadRecord)
+    monkeypatch.setattr(main_views.db, "session", fake_session)
+    monkeypatch.setattr(main_views.translation_queue, "add_task", lambda **kwargs: task_calls.append(kwargs))
+    client = isolated_app.test_client()
+
+    # When
+    response = client.post(
+        "/upload",
+        data={
+            "file": (BytesIO(b"pptx"), "demo.pptx"),
+            "bilingual_translation": "keep_both",
+        },
+    )
+
+    # Then
+    assert response.status_code == 400
+    assert response.get_json()["code"] == 400
+    assert task_calls == []
+
+
 def test_auth_login_public_status_and_failed_post_match_contract(isolated_app: Flask) -> None:
     # Given
     contract = behavior_contract()["auth"]["login"]
@@ -196,7 +237,8 @@ def test_authenticated_ppt_upload_pins_options_response_fields_and_queue_payload
         captured["queue"] = kwargs
         return 7
 
-    isolated_app.config["LOGIN_DISABLED"] = True
+    isolated_app.config.update(LOGIN_DISABLED=True, TRANSLATION_ARCH_MODE="legacy")
+    monkeypatch.delenv("TRANSLATION_ARCH_MODE", raising=False)
     (Path(isolated_app.config["UPLOAD_FOLDER"]) / "user_42").mkdir(parents=True)
     monkeypatch.setattr(main_views, "current_user", SimpleNamespace(id=42, username="tester", is_authenticated=True))
     monkeypatch.setattr(main_views, "UploadRecord", FakeUploadRecord)
@@ -222,12 +264,66 @@ def test_authenticated_ppt_upload_pins_options_response_fields_and_queue_payload
     # Then
     assert response.status_code == contract["success_status"]
     assert sorted(response.get_json()) == sorted(contract["success_fields"])
-    assert captured["queue"]["bilingual_translation"] in options["modes"]
+    assert response.get_json()["bilingual_translation"] == "paragraph_down"
+    assert captured["queue"]["bilingual_translation"] == "paragraph_down"
     assert captured["queue"]["select_page"] == options["selected_pages_parsed"]
     assert captured["queue"]["model"] in options["models"]
     assert captured["queue"]["model"] == "deepseek"
     assert captured["queue"]["enable_text_splitting"] == "True_spliting"
     assert captured["queue"]["enable_uno_conversion"] is False
+
+
+def test_authenticated_ppt_upload_v2_response_echoes_accepted_translation_mode(
+    isolated_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    import app.views.main as main_views
+
+    class FakeUploadRecord:
+        def __init__(self, **kwargs) -> None:
+            self.id = 321
+
+    captured: dict[str, str] = {}
+    fake_session = SimpleNamespace(
+        add=lambda record: None,
+        commit=lambda: None,
+        rollback=lambda: None,
+        remove=lambda: None,
+    )
+
+    def create_ledger_job(*args):
+        captured["bilingual_translation"] = args[6]
+        return SimpleNamespace(public_id="ppt-task-123")
+
+    isolated_app.config.update(LOGIN_DISABLED=True, TRANSLATION_ARCH_MODE="v2")
+    monkeypatch.delenv("TRANSLATION_ARCH_MODE", raising=False)
+    (Path(isolated_app.config["UPLOAD_FOLDER"]) / "user_42").mkdir(parents=True)
+    monkeypatch.setattr(main_views, "current_user", SimpleNamespace(id=42, username="tester", is_authenticated=True))
+    monkeypatch.setattr(main_views, "UploadRecord", FakeUploadRecord)
+    monkeypatch.setattr(main_views.db, "session", fake_session)
+    monkeypatch.setattr(main_views, "_create_ppt_ledger_job", create_ledger_job)
+    monkeypatch.setattr(
+        main_views.translation_queue,
+        "add_task",
+        lambda **kwargs: pytest.fail("v2 upload must not enqueue a legacy task"),
+    )
+    client = isolated_app.test_client()
+
+    # When
+    response = client.post(
+        "/upload",
+        data={
+            "file": (BytesIO(b"pptx"), "demo.pptx"),
+            "bilingual_translation": "paragraph_up",
+        },
+    )
+
+    # Then
+    assert response.status_code == 200
+    assert response.get_json()["task_id"] == "ppt-task-123"
+    assert response.get_json()["bilingual_translation"] == "paragraph_up"
+    assert captured["bilingual_translation"] == "paragraph_up"
 
 
 def test_pdf_routes_pin_status_models_ocr_task_ids_docx_download(

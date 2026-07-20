@@ -109,6 +109,32 @@ def test_build_translation_job_request_rejects_dormant_gpt_aliases():
         build_translation_job_request(spec)
 
 
+def test_build_translation_job_request_rejects_unsupported_bilingual_translation_mode():
+    # Given
+    import pytest
+
+    from app.services.translation_jobs import (
+        InvalidTranslationJobSpec,
+        TranslationJobSpec,
+        build_translation_job_request,
+    )
+
+    spec = TranslationJobSpec(
+        file_type="pptx",
+        source_language="english",
+        target_language="chinese",
+        model="qwen",
+        bilingual_translation="keep_both",
+    )
+
+    # When / Then
+    with pytest.raises(InvalidTranslationJobSpec) as raised:
+        build_translation_job_request(spec)
+
+    assert raised.value.field == "bilingual_translation"
+    assert raised.value.value == "keep_both"
+
+
 def test_ppt_upload_limit_uses_current_flask_config():
     # Given
     from flask import Flask

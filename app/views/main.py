@@ -19,11 +19,13 @@ from config import base_model_file
 from ..models import User, UploadRecord, Translation, StopWord
 from ..services.sso_service import get_sso_service
 from ..services.translation_jobs import (
+    InvalidTranslationJobSpec,
     TranslationJobSpec,
     build_custom_translation_map,
     build_translation_job_request,
     get_upload_size_limit,
     parse_vocabulary_ids,
+    validate_bilingual_translation_mode,
 )
 from ..jobs.store import IllegalJobTransition, JobNotFound, StaleJobState, TranslationJobStore
 from ..jobs.types import JobCreation, JobKind, TaskId, legacy_status
@@ -333,7 +335,15 @@ def upload_file():
         # 获取表单数据
         user_language = request.form.get('source_language', 'English')
         target_language = request.form.get('target_language', 'Chinese')
-        bilingual_translation = request.form.get('bilingual_translation', 'paragraph_up')
+        try:
+            bilingual_translation = validate_bilingual_translation_mode(
+                request.form.get('bilingual_translation', 'paragraph_up')
+            )
+        except InvalidTranslationJobSpec:
+            return jsonify({
+                'code': 400,
+                'msg': '不支持的双语翻译模式',
+            }), 400
         select_page = request.form.getlist('select_page')
         model = request.form.get('model', 'qwen')
         enable_text_splitting = request.form.get('enable_text_splitting', 'False')  # 字符串: "False" 或 "True_spliting"
@@ -505,6 +515,7 @@ def upload_file():
                     'queue_position': 1,
                     'record_id': record.id,
                     'task_id': snapshot.public_id,
+                    'bilingual_translation': bilingual_translation,
                 })
 
             queue_position = translation_queue.add_task(
@@ -526,7 +537,8 @@ def upload_file():
                 'code': 200,
                 'msg': '文件上传成功，已加入翻译队列',
                 'queue_position': queue_position,
-                'record_id': record.id
+                'record_id': record.id,
+                'bilingual_translation': bilingual_translation,
             })
 
         except Exception as e:

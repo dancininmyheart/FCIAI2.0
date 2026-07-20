@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Final, Iterable, Literal, Mapping, Protocol, TypeAlias, assert_never
+from typing import Final, Iterable, Literal, Mapping, Protocol, TypeAlias, assert_never, cast
 
 from app.jobs.types import JsonValue, TranslationJobRequest
 
@@ -9,6 +9,11 @@ from app.jobs.types import JsonValue, TranslationJobRequest
 DEFAULT_UPLOAD_SIZE_LIMIT: Final = 200 * 1024 * 1024
 
 LanguageField: TypeAlias = Literal["english", "chinese", "dutch"]
+BilingualTranslationMode: TypeAlias = Literal[
+    "translation_only",
+    "paragraph_up",
+    "paragraph_down",
+]
 
 _LANGUAGE_FIELD_ALIASES: Final[Mapping[str, LanguageField]] = {
     "english": "english",
@@ -21,6 +26,9 @@ _LANGUAGE_FIELD_ALIASES: Final[Mapping[str, LanguageField]] = {
 }
 
 _SUPPORTED_DURABLE_MODELS: Final = frozenset({"qwen", "deepseek"})
+SUPPORTED_BILINGUAL_TRANSLATION_MODES: Final = frozenset(
+    {"translation_only", "paragraph_up", "paragraph_down"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +54,7 @@ class TranslationJobSpec:
     model: str
     access: Literal["private", "public"] = "private"
     selected_pages: tuple[int, ...] = ()
-    bilingual_translation: str = "paragraph_up"
+    bilingual_translation: BilingualTranslationMode = "paragraph_up"
     enable_image_ocr: bool = False
     enable_text_splitting: str = "False"
     enable_uno_conversion: bool = True
@@ -63,6 +71,7 @@ def build_translation_job_request(spec: TranslationJobSpec) -> TranslationJobReq
     model = spec.model.strip()
     if model not in _SUPPORTED_DURABLE_MODELS:
         raise InvalidTranslationJobSpec(field="model", value=spec.model)
+    bilingual_translation = validate_bilingual_translation_mode(spec.bilingual_translation)
     return TranslationJobRequest(
         file_type=spec.file_type,
         source_language=spec.source_language,
@@ -70,7 +79,7 @@ def build_translation_job_request(spec: TranslationJobSpec) -> TranslationJobReq
         model=model,
         access=spec.access,
         selected_pages=spec.selected_pages,
-        bilingual_translation=spec.bilingual_translation,
+        bilingual_translation=bilingual_translation,
         enable_image_ocr=spec.enable_image_ocr,
         enable_text_splitting=spec.enable_text_splitting,
         enable_uno_conversion=spec.enable_uno_conversion,
@@ -82,6 +91,12 @@ def build_translation_job_request(spec: TranslationJobSpec) -> TranslationJobReq
         annotations=spec.annotations,
         output_path=spec.output_path,
     )
+
+
+def validate_bilingual_translation_mode(value: str) -> BilingualTranslationMode:
+    if value not in SUPPORTED_BILINGUAL_TRANSLATION_MODES:
+        raise InvalidTranslationJobSpec(field="bilingual_translation", value=value)
+    return cast(BilingualTranslationMode, value)
 
 
 def parse_vocabulary_ids(raw_ids: str | None) -> list[int]:

@@ -859,9 +859,9 @@
 
         <div class="form-group">
             <label for="bilingual_translation">{% if session.get('language') == 'en' %}Language display{% else %}语言展示方式{% endif %}</label>
-            <select id="bilingual_translation" class="form-control">
+            <select id="bilingual_translation" name="bilingual_translation" class="form-control">
                 <option value="translation_only">{% if session.get('language') == 'en' %}Keep translated content only{% else %}只保留翻译内容{% endif %}</option>
-                <option value="paragraph_up">{% if session.get('language') == 'en' %}Keep both source and translated content(source on top){% else %}保留源语言和翻译内容（源语言在上）{% endif %}</option>
+                <option value="paragraph_up" selected>{% if session.get('language') == 'en' %}Keep both source and translated content(source on top){% else %}保留源语言和翻译内容（源语言在上）{% endif %}</option>
                 <option value="paragraph_down">{% if session.get('language') == 'en' %}Keep both source and translated content(translation on top){% else %}保留源语言和翻译内容（译文在上）{% endif %}</option>
             </select>
         </div>
@@ -1052,6 +1052,7 @@
     let enable_text_splitting = "False";
     let enable_uno_conversion = true;
     let currentTaskKey = 'GLOBAL';
+    let currentTaskId = null;
     let isTranslationLaunching = false;
     const MAX_PPT_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -1067,6 +1068,7 @@
             selectPagesError: '请选择要翻译的页面',
             translationStarted: '翻译任务已启动，正在处理中...',
             translationLaunchFailed: '启动翻译失败: ',
+            translationModeMismatch: '服务端返回的语言展示方式与当前选择不一致，请重试',
             uploadingFile: '正在上传文件...',
             uploadCompleted: '文件上传完成',
             uploadFailed: '文件上传失败，请重试',
@@ -1094,6 +1096,7 @@
             selectPagesError: 'Please select pages to translate',
             translationStarted: 'Translation task started, processing...',
             translationLaunchFailed: 'Failed to start translation: ',
+            translationModeMismatch: 'The server returned a different language display mode. Please retry.',
             uploadingFile: 'Uploading file...',
             uploadCompleted: 'Upload completed',
             uploadFailed: 'File upload failed, please retry',
@@ -1437,6 +1440,11 @@ async function startTranslation() {
             xhr.send(formData);
         });
 
+        if (result.bilingual_translation !== bilingualTranslation) {
+            throw new Error(getText('translationModeMismatch'));
+        }
+
+        currentTaskId = result.task_id || null;
         markUploadCompleted();
 
         const newTaskKey = result.record_id ? `record_${result.record_id}` : 'GLOBAL';
@@ -1501,7 +1509,10 @@ async function startTranslation() {
     // 检查任务状态
 
     function checkTaskStatus() {
-        fetch('/task_status')
+        const statusUrl = currentTaskId
+            ? `/task_status/${encodeURIComponent(currentTaskId)}`
+            : '/task_status';
+        fetch(statusUrl)
             .then(response => response.json())
             .then(data => {
                 const statusDiv = document.getElementById('queue-status');

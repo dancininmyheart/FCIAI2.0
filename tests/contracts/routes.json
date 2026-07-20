@@ -790,6 +790,7 @@
         "unauthenticated_location_contains": "/auth/login",
         "success_status": 200,
         "success_fields": [
+          "bilingual_translation",
           "code",
           "msg",
           "queue_position",

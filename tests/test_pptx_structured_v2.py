@@ -367,6 +367,146 @@ def test_structured_writer_preserves_runs_fields_breaks_and_required_prefix(
     assert "p14" in _declared_prefixes(slide_data)
 
 
+def test_paragraph_up_appends_repeated_full_sentence_translation_only_once(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _three_run_slide_xml())
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )
+    unit = units[0]
+    repeated = "这是完整译文"
+    translations = (
+        PptxUnitTranslation(
+            unit_id=unit.unit_id,
+            target_text="\n".join((repeated, repeated, repeated)),
+            segments=tuple(
+                PptxSegmentTranslation(item.segment_id, repeated)
+                for item in unit.text_items
+            ),
+        ),
+    )
+
+    write_structured_translated_pptx(source, output, translations, "paragraph_up")
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == [
+        "First source fragment",
+        "Second source fragment",
+        "Third source fragment",
+        repeated,
+    ]
+    assert len(root.findall(".//a:br", NS)) == 3
+    assert root.find(".//p:spPr/a:xfrm/a:off", NS).attrib == {"x": "10", "y": "20"}
+    assert root.find(".//p:spPr/a:xfrm/a:ext", NS).attrib == {"cx": "3000", "cy": "4000"}
+
+
+def test_paragraph_down_writes_repeated_full_sentence_translation_only_once(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _three_run_slide_xml())
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    repeated = "这是完整译文"
+    translations = (
+        PptxUnitTranslation(
+            unit_id=unit.unit_id,
+            target_text="\n".join((repeated, repeated, repeated)),
+            segments=tuple(
+                PptxSegmentTranslation(item.segment_id, repeated)
+                for item in unit.text_items
+            ),
+        ),
+    )
+
+    write_structured_translated_pptx(source, output, translations, "paragraph_down")
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == [
+        repeated,
+        "First source fragment",
+        "Second source fragment",
+        "Third source fragment",
+    ]
+    assert len(root.findall(".//a:br", NS)) == 3
+
+
+def test_translation_only_writes_repeated_full_sentence_translation_only_once(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _three_run_slide_xml())
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    repeated = "这是完整译文"
+    translation = PptxUnitTranslation(
+        unit_id=unit.unit_id,
+        target_text="\n".join((repeated, repeated, repeated)),
+        segments=tuple(
+            PptxSegmentTranslation(item.segment_id, repeated)
+            for item in unit.text_items
+        ),
+    )
+
+    write_structured_translated_pptx(
+        source,
+        output,
+        (translation,),
+        "translation_only",
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == [repeated]
+    assert root.findall(".//a:br", NS) == []
+
+
+def test_bilingual_writer_does_not_append_normalized_source_equivalent_target(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Milk 72%"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )
+    unit = units[0]
+    translations = (
+        PptxUnitTranslation(
+            unit_id=unit.unit_id,
+            target_text=" milk\u300072% ",
+            segments=(
+                PptxSegmentTranslation(unit.text_items[0].segment_id, " milk\u300072% "),
+            ),
+        ),
+    )
+
+    write_structured_translated_pptx(source, output, translations, "paragraph_up")
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == ["Milk 72%"]
+    assert root.findall(".//a:br", NS) == []
+    assert root.find(".//a:bodyPr/a:normAutofit", NS) is None
+
+
 def test_default_xml_engine_retries_invalid_contract_once_and_never_publishes_marker(
     tmp_path: Path,
 ) -> None:
@@ -693,6 +833,22 @@ def _structured_slide_xml(*, required_prefix_only: bool = False) -> str:
         "<a:r><a:rPr lang='en-US' sz='1800'/><a:t>world</a:t></a:r>"
         "</a:p></p:txBody></p:sp></p:spTree></p:cSld>"
         f"{compatibility}</p:sld>"
+    )
+
+
+def _three_run_slide_xml() -> str:
+    return (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        f"<p:sld xmlns:a='{A_NS}' xmlns:p='{P_NS}'>"
+        "<p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id='7' name='Text'/></p:nvSpPr>"
+        "<p:spPr><a:xfrm><a:off x='10' y='20'/><a:ext cx='3000' cy='4000'/></a:xfrm></p:spPr>"
+        "<p:txBody><a:bodyPr/><a:lstStyle/><a:p>"
+        "<a:r><a:rPr lang='en-US' sz='2400'/><a:t>First source fragment</a:t></a:r>"
+        "<a:br/>"
+        "<a:r><a:rPr lang='en-US' sz='1800'/><a:t>Second source fragment</a:t></a:r>"
+        "<a:br/>"
+        "<a:r><a:rPr lang='en-US' sz='1600'/><a:t>Third source fragment</a:t></a:r>"
+        "</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
     )
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import os
 import tempfile
+import unicodedata
 import zipfile
 from pathlib import Path
 from typing import Final, assert_never
@@ -138,8 +139,9 @@ def _translated_slide(
         translation = translations.get(target.unit.unit_id)
         if translation is None:
             continue
-        _apply_translation(target, translation, mode)
-        _ = autofit_targets.setdefault(target.text_body, target.paragraph)
+        changed = _apply_translation(target, translation, mode)
+        if changed:
+            _ = autofit_targets.setdefault(target.text_body, target.paragraph)
         written.add(target.unit.unit_id)
     if not written:
         return slide_data, written
@@ -152,34 +154,67 @@ def _apply_translation(
     target: StructuredParagraphTarget,
     translation: PptxUnitTranslation,
     mode: WriteMode,
-) -> None:
+) -> bool:
+    if (
+        mode is not WriteMode.TRANSLATION_ONLY
+        and _normalized_text(target.unit.source_text)
+        == _normalized_text(translation.target_text)
+    ):
+        return False
     original_content = tuple(copy.deepcopy(node) for node in target.content_nodes)
     match mode:
         case WriteMode.TRANSLATION_ONLY:
-            _replace_segments(target, translation)
+            translated_content = _translated_content(target, translation)
+            _replace_content(target.paragraph, target.content_nodes, translated_content)
         case WriteMode.PARAGRAPH_UP:
             translated_content = _translated_content(target, translation)
             _append_content(target.paragraph, translated_content)
         case WriteMode.PARAGRAPH_DOWN:
-            _replace_segments(target, translation)
+            translated_content = _translated_content(target, translation)
+            _replace_content(target.paragraph, target.content_nodes, translated_content)
             _append_content(target.paragraph, original_content)
         case _ as unreachable:
             assert_never(unreachable)
+    return True
 
 
-def _replace_segments(
-    target: StructuredParagraphTarget,
-    translation: PptxUnitTranslation,
+def _replace_content(
+    paragraph: ElementTree.Element,
+    original: tuple[ElementTree.Element, ...],
+    replacement: tuple[ElementTree.Element, ...],
 ) -> None:
-    translated = {item.segment_id: item.target_text for item in translation.segments}
-    for segment_id, text_node in target.segment_nodes:
-        _set_text(text_node, translated[segment_id])
+    children = list(paragraph)
+    insert_at = min(
+        (children.index(node) for node in original),
+        default=_paragraph_insert_index(paragraph),
+    )
+    for node in original:
+        paragraph.remove(node)
+    for node in replacement:
+        paragraph.insert(insert_at, node)
+        insert_at += 1
 
 
 def _translated_content(
     target: StructuredParagraphTarget,
     translation: PptxUnitTranslation,
 ) -> tuple[ElementTree.Element, ...]:
+    repeated_translation = _repeated_full_sentence_translation(target, translation)
+    if repeated_translation is not None:
+        for source in target.content_nodes:
+            if source.tag != A_R:
+                continue
+            clone = copy.deepcopy(source)
+            text_node = clone.find(A_T)
+            if text_node is None:
+                raise PptxContractError(
+                    "writeback_segment",
+                    "cloned run has no text",
+                    target.unit.unit_id,
+                )
+            _set_text(text_node, repeated_translation)
+            return (clone,)
+
     segment_iter = iter(translation.segments)
     translated: list[ElementTree.Element] = []
     for source in target.content_nodes:
@@ -192,6 +227,28 @@ def _translated_content(
             _set_text(text_node, segment.target_text)
         translated.append(clone)
     return tuple(translated)
+
+
+def _repeated_full_sentence_translation(
+    target: StructuredParagraphTarget,
+    translation: PptxUnitTranslation,
+) -> str | None:
+    if len(translation.segments) < 2:
+        return None
+    # Collapsing several runs into one would discard protected fields. Keep the
+    # normal stream-preserving path for paragraphs that contain anything other
+    # than translatable runs and explicit line breaks.
+    if any(node.tag not in {A_R, A_BR} for node in target.content_nodes):
+        return None
+    source_texts = {_normalized_text(item.source_text) for item in target.unit.text_items}
+    translated_texts = {_normalized_text(item.target_text) for item in translation.segments}
+    if len(source_texts) > 1 and len(translated_texts) == 1 and "" not in translated_texts:
+        return translation.segments[0].target_text
+    return None
+
+
+def _normalized_text(text: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", text).split()).casefold()
 
 
 def _append_content(

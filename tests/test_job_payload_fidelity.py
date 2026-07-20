@@ -54,6 +54,7 @@ def test_ppt_ledger_payload_preserves_full_options_and_custom_map(
         enable_uno_conversion=False,
         custom_translations={"Milk": "Nai"},
         original_filename="deck.pptx",
+        upload_record_id=401,
     )
 
     # Then
@@ -65,6 +66,7 @@ def test_ppt_ledger_payload_preserves_full_options_and_custom_map(
     assert request["enable_text_splitting"] == "True_spliting"
     assert request["enable_uno_conversion"] is False
     assert request["custom_translations"] == {"Milk": "Nai"}
+    assert request["upload_record_id"] == 401
 
 
 def test_worker_reconstructs_pdf_and_annotation_adapter_arguments(

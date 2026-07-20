@@ -183,6 +183,49 @@ def test_payload_parser_rejects_malformed_nested_keys() -> None:
         raise AssertionError("expected malformed annotations to be rejected")
 
 
+def test_payload_parser_accepts_upload_record_binding() -> None:
+    # Given
+    from app.jobs.request_payload import parse_translation_request
+
+    request = _creation().request.to_json()
+    request["upload_record_id"] = 401
+
+    # When
+    parsed = parse_translation_request(request)
+
+    # Then
+    assert parsed["upload_record_id"] == 401
+
+
+def test_payload_parser_keeps_pre_binding_jobs_backward_compatible() -> None:
+    # Given
+    from app.jobs.request_payload import parse_translation_request
+
+    request = _creation().request.to_json()
+    request.pop("upload_record_id")
+
+    # When
+    parsed = parse_translation_request(request)
+
+    # Then
+    assert parsed["upload_record_id"] is None
+
+
+@pytest.mark.parametrize("invalid_record_id", [True, "401", 0, -1])
+def test_payload_parser_rejects_invalid_upload_record_bindings(invalid_record_id) -> None:
+    # Given
+    from app.jobs.request_payload import MalformedTranslationRequest, parse_translation_request
+
+    request = _creation().request.to_json()
+    request["upload_record_id"] = invalid_record_id
+
+    # When / Then
+    with pytest.raises(MalformedTranslationRequest) as exc_info:
+        parse_translation_request(request)
+
+    assert exc_info.value.field == "upload_record_id"
+
+
 @pytest.mark.parametrize(
     "payload_patch",
     [
@@ -193,6 +236,8 @@ def test_payload_parser_rejects_malformed_nested_keys() -> None:
         {"annotations": [{"page": 0, "coords": {"left": 0, "top": 0, "width": 1, "height": 1}}]},
         {"annotations": [{"page": 1, "coords": {"left": 0, "top": 0, "width": 0, "height": 1}}]},
         {"annotations": [{"page": 1, "coords": {"left": 0, "top": 0, "width": 1, "height": 1, "extra": 2}}]},
+        {"selected_pages": [0]},
+        {"selected_pages": [-1]},
         {"model": "gpt4o", "annotations": [VALID_ANNOTATION]},
     ],
 )

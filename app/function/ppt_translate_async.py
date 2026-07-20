@@ -825,13 +825,15 @@ async def process_presentation_async(presentation_path: str,
         else:
             logger.info(f"检测到ocr参数:{enable_text_splitting}，开始使用ocr接口功能")
             try:
-                from.image_ocr.ocr_controller import ocr_controller
+                from .image_ocr.ocr_controller import InvalidSelectedPages, ocr_controller
                 ocr_ppt_path= ocr_controller(uno_pptx_path,
                                             selected_pages=select_page,
                                             output_path=None,
                                             source_language=source_language,
                                             target_language=target_language,
                                             enable_text_splitting=enable_text_splitting)
+            except InvalidSelectedPages:
+                raise
             except Exception as e:
                 logger.error(f"使用ocr接口功能时出错: {str(e)}")
                 ocr_ppt_path = uno_pptx_path

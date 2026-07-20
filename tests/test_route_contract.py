@@ -150,6 +150,37 @@ def test_authenticated_ppt_upload_rejects_invalid_translation_mode_before_creati
     assert task_calls == []
 
 
+@pytest.mark.parametrize("selected_pages", ["35,", "last", "0", "-1"])
+def test_authenticated_ppt_upload_rejects_invalid_page_selection_instead_of_translating_all(
+    isolated_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
+    selected_pages: str,
+) -> None:
+    # Given
+    import app.views.main as main_views
+
+    task_calls: list[dict] = []
+    isolated_app.config.update(LOGIN_DISABLED=True, TRANSLATION_ARCH_MODE="legacy")
+    monkeypatch.delenv("TRANSLATION_ARCH_MODE", raising=False)
+    monkeypatch.setattr(main_views, "current_user", SimpleNamespace(id=42, username="tester", is_authenticated=True))
+    monkeypatch.setattr(main_views.translation_queue, "add_task", lambda **kwargs: task_calls.append(kwargs))
+    client = isolated_app.test_client()
+
+    # When
+    response = client.post(
+        "/upload",
+        data={
+            "file": (BytesIO(b"pptx"), "demo.pptx"),
+            "select_page": selected_pages,
+        },
+    )
+
+    # Then
+    assert response.status_code == 400
+    assert response.get_json()["code"] == 400
+    assert task_calls == []
+
+
 def test_auth_login_public_status_and_failed_post_match_contract(isolated_app: Flask) -> None:
     # Given
     contract = behavior_contract()["auth"]["login"]
@@ -292,8 +323,22 @@ def test_authenticated_ppt_upload_v2_response_echoes_accepted_translation_mode(
         remove=lambda: None,
     )
 
-    def create_ledger_job(*args):
-        captured["bilingual_translation"] = args[6]
+    def create_ledger_job(
+        user_id,
+        file_path,
+        source_language,
+        target_language,
+        model,
+        selected_pages,
+        bilingual_translation,
+        enable_text_splitting,
+        enable_uno_conversion,
+        custom_translations,
+        original_filename,
+        upload_record_id,
+    ):
+        captured["bilingual_translation"] = bilingual_translation
+        captured["upload_record_id"] = upload_record_id
         return SimpleNamespace(public_id="ppt-task-123")
 
     isolated_app.config.update(LOGIN_DISABLED=True, TRANSLATION_ARCH_MODE="v2")
@@ -324,6 +369,7 @@ def test_authenticated_ppt_upload_v2_response_echoes_accepted_translation_mode(
     assert response.get_json()["task_id"] == "ppt-task-123"
     assert response.get_json()["bilingual_translation"] == "paragraph_up"
     assert captured["bilingual_translation"] == "paragraph_up"
+    assert captured["upload_record_id"] == 321
 
 
 def test_pdf_routes_pin_status_models_ocr_task_ids_docx_download(

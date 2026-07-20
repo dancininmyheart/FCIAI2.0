@@ -404,6 +404,13 @@ textarea {
     font-size: 22px;
 }
 
+.translation-result-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
 .upload-progress-bar,
 .progress-bar-container {
     overflow: hidden;

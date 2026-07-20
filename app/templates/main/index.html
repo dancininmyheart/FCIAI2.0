@@ -979,7 +979,13 @@
 
             <div id="pptResultContainer" class="translation-result" role="status" aria-live="polite" hidden>
                 <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
-                <span>{% if session.get('language') == 'en' %}Translation completed. Download the result from the history below.{% else %}翻译已完成，请在下方历史记录中下载结果。{% endif %}</span>
+                <div class="translation-result-content">
+                    <span>{% if session.get('language') == 'en' %}This translation is complete.{% else %}本次翻译已完成。{% endif %}</span>
+                    <a id="pptCurrentDownload" class="btn btn-primary" hidden>
+                        <i class="bi bi-download" aria-hidden="true"></i>
+                        {% if session.get('language') == 'en' %}Download this result{% else %}下载本次结果{% endif %}
+                    </a>
+                </div>
             </div>
         </div>
 
@@ -1053,6 +1059,8 @@
     let enable_uno_conversion = true;
     let currentTaskKey = 'GLOBAL';
     let currentTaskId = null;
+    let currentRecordId = null;
+    let currentTaskEpoch = 0;
     let isTranslationLaunching = false;
     const MAX_PPT_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -1085,7 +1093,7 @@
             deleteConfirm: '确定要删除这个文件吗？',
             deleteSuccess: '文件删除成功',
             deleteFailed: '删除失败: ',
-            completionPopup: '翻译任务已完成，可在下方历史记录中下载结果。',
+            completionPopup: '本次翻译已完成，请点击“下载本次结果”。',
             notConfigured: '未配置',
             configured: '已配置'
         },
@@ -1113,7 +1121,7 @@
             deleteConfirm: 'Are you sure you want to delete this file?',
             deleteSuccess: 'File deleted successfully',
             deleteFailed: 'Delete failed: ',
-            completionPopup: 'Translation completed. Download the result from the history below.',
+            completionPopup: 'This translation is complete. Select “Download this result”.',
             notConfigured: 'Not Configured',
             configured: 'Configured'
         }
@@ -1167,6 +1175,30 @@
         return translations[currentLanguage] && translations[currentLanguage][key] 
             ? translations[currentLanguage][key] 
             : translations.zh[key];
+    }
+
+    function resetCurrentPptDownload() {
+        const download = document.getElementById('pptCurrentDownload');
+        if (!download) return;
+        download.hidden = true;
+        download.removeAttribute('href');
+    }
+
+    function bindCurrentPptDownload() {
+        const download = document.getElementById('pptCurrentDownload');
+        if (!download) return false;
+        const taskDownloadUrl = currentTaskId
+            ? `/download/${encodeURIComponent(currentTaskId)}`
+            : currentRecordId
+                ? `/download/${encodeURIComponent(currentRecordId)}`
+                : null;
+        if (!taskDownloadUrl) {
+            resetCurrentPptDownload();
+            return false;
+        }
+        download.href = taskDownloadUrl;
+        download.hidden = false;
+        return true;
     }
 
     // 事件监听器设置函数
@@ -1355,8 +1387,20 @@ async function startTranslation() {
         showToast(getText('selectPagesError'), 'error');
         return;
     }
+
     if (isTranslationLaunching) return;
     const bilingualTranslation = document.getElementById('bilingual_translation').value;
+    const launchEpoch = ++currentTaskEpoch;
+
+    if (window.statusCheckInterval) {
+        clearInterval(window.statusCheckInterval);
+        window.statusCheckInterval = null;
+    }
+    window.isTranslationActive = false;
+    window.waitingCount = 0;
+    resetCurrentPptDownload();
+    currentTaskId = null;
+    currentRecordId = null;
 
     console.log('Start translation with settings:', {
         sourceLanguage,
@@ -1444,10 +1488,21 @@ async function startTranslation() {
             throw new Error(getText('translationModeMismatch'));
         }
 
-        currentTaskId = result.task_id || null;
+        const parsedRecordId = Number(result.record_id);
+        if (!Number.isInteger(parsedRecordId) || parsedRecordId <= 0) {
+            throw new Error(getText('translationLaunchFailed'));
+        }
+        currentTaskId = typeof result.task_id === 'string' && result.task_id.trim()
+            ? result.task_id.trim()
+            : null;
+        currentRecordId = parsedRecordId;
         markUploadCompleted();
 
-        const newTaskKey = result.record_id ? `record_${result.record_id}` : 'GLOBAL';
+        const newTaskKey = currentTaskId
+            ? `task_${currentTaskId}`
+            : currentRecordId
+                ? `record_${currentRecordId}`
+                : 'GLOBAL';
         currentTaskKey = newTaskKey;
 
         if (typeof resetCompletionPopupState === 'function') {
@@ -1486,10 +1541,10 @@ async function startTranslation() {
         if (window.statusCheckInterval) {
             clearInterval(window.statusCheckInterval);
         }
-        window.statusCheckInterval = setInterval(checkTaskStatus, 2000);
+        window.statusCheckInterval = setInterval(() => checkTaskStatus(launchEpoch), 2000);
 
         setTimeout(() => {
-            checkTaskStatus();
+            checkTaskStatus(launchEpoch);
         }, 1000);
 
         showToast(getText('translationStarted'), 'success');
@@ -1508,13 +1563,25 @@ async function startTranslation() {
 
     // 检查任务状态
 
-    function checkTaskStatus() {
-        const statusUrl = currentTaskId
-            ? `/task_status/${encodeURIComponent(currentTaskId)}`
+    function checkTaskStatus(taskEpoch = currentTaskEpoch) {
+        const taskIdAtRequest = currentTaskId;
+        const recordIdAtRequest = currentRecordId;
+        if (!recordIdAtRequest) return;
+        const statusUrl = taskIdAtRequest
+            ? `/task_status/${encodeURIComponent(taskIdAtRequest)}`
             : '/task_status';
         fetch(statusUrl)
             .then(response => response.json())
             .then(data => {
+                if (taskEpoch !== currentTaskEpoch
+                    || taskIdAtRequest !== currentTaskId
+                    || recordIdAtRequest !== currentRecordId
+                    || !window.isTranslationActive) {
+                    return;
+                }
+                if (taskIdAtRequest && data.task_id !== taskIdAtRequest) {
+                    return;
+                }
                 const statusDiv = document.getElementById('queue-status');
                 const messageSpan = document.getElementById('queue-message');
                 const progressContainer = document.getElementById('progressContainer');
@@ -1576,13 +1643,11 @@ async function startTranslation() {
                     if (translationProgressbar) translationProgressbar.setAttribute('aria-valuenow', String(progress));
                 }
                 else if (data.status === 'completed') {
+                    if (!bindCurrentPptDownload()) {
+                        return;
+                    }
                     window.isTranslationActive = false;
                     window.waitingCount = 0;
-
-                    if (data.task_id) {
-                        const incomingKey = `task_${data.task_id}`;
-                        currentTaskKey = incomingKey;
-                    }
 
                     const effectiveKey = currentTaskKey || 'GLOBAL';
                     const popupKey = `completionPopupAlreadyShown:${effectiveKey}`;
@@ -1785,7 +1850,6 @@ async function startTranslation() {
         console.log('DOM加载完成，开始初始化...');
         setupEventListeners();  // 设置事件监听器
         loadHistory();
-        checkTaskStatus();
         console.log('初始化完成，当前设置:', {
             sourceLanguage,
             targetLanguage,
@@ -1820,7 +1884,7 @@ async function startTranslation() {
         });
         
         // 为历史记录刷新按钮添加事件监听器
-        const refreshHistoryBtn = document.getElementById('refreshHistory');
+        const refreshHistoryBtn = document.getElementById('refreshHistoryBtn');
         if (refreshHistoryBtn) {
             refreshHistoryBtn.addEventListener('click', function() {
                 // 添加旋转动画类

@@ -87,6 +87,25 @@ def test_build_translation_job_request_preserves_selected_model_and_request_fiel
     assert request.to_json()["vocabulary_ids"] == [4, 5]
 
 
+def test_build_translation_job_request_preserves_upload_record_binding():
+    # Given
+    from app.services.translation_jobs import TranslationJobSpec, build_translation_job_request
+
+    spec = TranslationJobSpec(
+        file_type="pptx",
+        source_language="english",
+        target_language="chinese",
+        model="qwen",
+        upload_record_id=401,
+    )
+
+    # When
+    request = build_translation_job_request(spec)
+
+    # Then
+    assert request.to_json()["upload_record_id"] == 401
+
+
 def test_build_translation_job_request_rejects_dormant_gpt_aliases():
     # Given
     import pytest

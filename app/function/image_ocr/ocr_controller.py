@@ -1086,6 +1086,10 @@ class PPTImageReplacer:
                 logger.error(f"❌ 备用方案也失败: {str(backup_error)}")
 
 
+class InvalidSelectedPages(ValueError):
+    pass
+
+
 def ocr_controller(presentation_path: str, 
                   selected_pages: Optional[List[int]] = None, 
                   output_path: str = None,
@@ -1118,11 +1122,15 @@ def ocr_controller(presentation_path: str,
         # 修正selected_pages为0-based索引
         prs = Presentation(presentation_path)
         total_slides = len(prs.slides)
-        if selected_pages is not None:
-            selected_pages = [p-1 for p in selected_pages if 1 <= p <= total_slides]
-            if not selected_pages:
-                logger.warning("selected_pages参数无有效页码，将处理全部页面")
-                selected_pages = None
+        if selected_pages:
+            invalid_pages = [page for page in selected_pages if not 1 <= page <= total_slides]
+            if invalid_pages:
+                raise InvalidSelectedPages(
+                    f"selected_pages contains pages outside 1-{total_slides}: {invalid_pages}"
+                )
+            selected_pages = [page - 1 for page in selected_pages]
+        else:
+            selected_pages = None
 
         # 1. 提取图片
         logger.info("=" * 50)
@@ -1250,6 +1258,8 @@ def ocr_controller(presentation_path: str,
         logger.info("=" * 50)
         return output_path or presentation_path
         
+    except InvalidSelectedPages:
+        raise
     except Exception as e:
         error_msg = f"OCR控制器处理失败: {str(e)}"
         logger.error(f"❌ {error_msg}")

@@ -15,7 +15,7 @@ class MalformedTranslationRequest(Exception):
         return f"malformed translation request {self.field}: {self.value}"
 
 
-_ALLOWED_KEYS: Final = frozenset(
+_REQUIRED_KEYS: Final = frozenset(
     {
         "schema_version",
         "access",
@@ -37,6 +37,8 @@ _ALLOWED_KEYS: Final = frozenset(
         "output_path",
     },
 )
+_OPTIONAL_KEYS: Final = frozenset({"upload_record_id"})
+_ALLOWED_KEYS: Final = _REQUIRED_KEYS | _OPTIONAL_KEYS
 _SUPPORTED_FILE_TYPES: Final = frozenset({"pptx", "pdf", "pdf_annotation"})
 _SUPPORTED_MODELS: Final = frozenset({"qwen", "deepseek"})
 _ANNOTATION_KEYS: Final = frozenset({"page", "coords", "text", "ocrResult", "translation"})
@@ -48,7 +50,7 @@ def parse_translation_request(raw: Mapping[str, JsonValue]) -> TranslationReques
     unknown = set(raw) - _ALLOWED_KEYS
     if unknown:
         raise MalformedTranslationRequest(field="unknown", value=",".join(sorted(unknown)))
-    missing = _ALLOWED_KEYS - set(raw)
+    missing = _REQUIRED_KEYS - set(raw)
     if missing:
         raise MalformedTranslationRequest(field="missing", value=",".join(sorted(missing)))
     schema_version = _required_int(raw, "schema_version")
@@ -70,7 +72,7 @@ def parse_translation_request(raw: Mapping[str, JsonValue]) -> TranslationReques
         source_language=_required_str(raw, "source_language"),
         target_language=_required_str(raw, "target_language"),
         model=model,
-        selected_pages=_required_int_list(raw, "selected_pages"),
+        selected_pages=_required_positive_int_list(raw, "selected_pages"),
         bilingual_translation=_required_str(raw, "bilingual_translation"),
         enable_image_ocr=_required_bool(raw, "enable_image_ocr"),
         enable_text_splitting=_required_str(raw, "enable_text_splitting"),
@@ -82,6 +84,7 @@ def parse_translation_request(raw: Mapping[str, JsonValue]) -> TranslationReques
         annotation_filename=_required_str(raw, "annotation_filename"),
         annotations=_required_annotation_list(raw, "annotations"),
         output_path=_required_str(raw, "output_path"),
+        upload_record_id=_optional_positive_int(raw, "upload_record_id"),
     )
 
 
@@ -110,6 +113,15 @@ def _required_int(raw: Mapping[str, JsonValue], field: str) -> int:
     return value
 
 
+def _optional_positive_int(raw: Mapping[str, JsonValue], field: str) -> int | None:
+    value = raw.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise MalformedTranslationRequest(field=field, value=str(value))
+    return value
+
+
 def _required_int_list(raw: Mapping[str, JsonValue], field: str) -> list[int]:
     value = raw[field]
     if not isinstance(value, list):
@@ -119,6 +131,14 @@ def _required_int_list(raw: Mapping[str, JsonValue], field: str) -> list[int]:
         if isinstance(item, bool) or not isinstance(item, int):
             raise MalformedTranslationRequest(field=field, value=str(item))
         parsed.append(item)
+    return parsed
+
+
+def _required_positive_int_list(raw: Mapping[str, JsonValue], field: str) -> list[int]:
+    parsed = _required_int_list(raw, field)
+    for item in parsed:
+        if item <= 0:
+            raise MalformedTranslationRequest(field=field, value=str(item))
     return parsed
 
 

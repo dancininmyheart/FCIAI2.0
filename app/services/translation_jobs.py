@@ -65,6 +65,7 @@ class TranslationJobSpec:
     annotation_filename: str = ""
     annotations: tuple[dict[str, JsonValue], ...] = ()
     output_path: str = ""
+    upload_record_id: int | None = None
 
 
 def build_translation_job_request(spec: TranslationJobSpec) -> TranslationJobRequest:
@@ -90,6 +91,7 @@ def build_translation_job_request(spec: TranslationJobSpec) -> TranslationJobReq
         annotation_filename=spec.annotation_filename,
         annotations=spec.annotations,
         output_path=spec.output_path,
+        upload_record_id=spec.upload_record_id,
     )
 
 
@@ -102,12 +104,32 @@ def validate_bilingual_translation_mode(value: str) -> BilingualTranslationMode:
 def parse_vocabulary_ids(raw_ids: str | None) -> list[int]:
     if not raw_ids:
         return []
-
     tokens = [token.strip() for token in raw_ids.split(",") if token.strip()]
     try:
         return [int(token) for token in tokens]
     except ValueError:
         return []
+
+
+def parse_selected_pages(raw_values: Iterable[str]) -> list[int]:
+    values = list(raw_values)
+    if not values or all(not value.strip() for value in values):
+        return []
+    parsed: list[int] = []
+    for value in values:
+        tokens = value.split(",")
+        if any(not token.strip() for token in tokens):
+            raise InvalidTranslationJobSpec(field="select_page", value=value)
+        for token in tokens:
+            try:
+                page = int(token.strip())
+            except ValueError as exc:
+                raise InvalidTranslationJobSpec(field="select_page", value=value) from exc
+            if page <= 0:
+                raise InvalidTranslationJobSpec(field="select_page", value=value)
+            if page not in parsed:
+                parsed.append(page)
+    return parsed
 
 
 def build_custom_translation_map(

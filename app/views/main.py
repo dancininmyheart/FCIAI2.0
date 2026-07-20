@@ -24,6 +24,7 @@ from ..services.translation_jobs import (
     build_custom_translation_map,
     build_translation_job_request,
     get_upload_size_limit,
+    parse_selected_pages,
     parse_vocabulary_ids,
     validate_bilingual_translation_mode,
 )
@@ -112,6 +113,7 @@ def _create_ppt_ledger_job(
     enable_uno_conversion=True,
     custom_translations=None,
     original_filename="",
+    upload_record_id=None,
 ):
     request_model = build_translation_job_request(
         TranslationJobSpec(
@@ -128,6 +130,7 @@ def _create_ppt_ledger_job(
             original_filename=original_filename or os.path.basename(file_path),
             unique_filename=os.path.basename(file_path),
             output_path=file_path,
+            upload_record_id=upload_record_id,
         ),
     )
     snapshot = _job_store().create(
@@ -368,17 +371,16 @@ def upload_file():
         logger.info(f"  - 选择页面: {select_page}")
         logger.info(f"  - 词汇表数量: {len(vocabulary_ids)}")
 
-        # 转换select_page为整数列表
-        if select_page and select_page[0]:
-            try:
-                select_page = [int(x) for x in select_page[0].split(',')]
-                logger.info(f"  用户选择的页面: {select_page}")
-            except Exception as e:
-                logger.error(f"  页面选择参数解析失败: {select_page}, 错误: {str(e)}")
-                select_page = []
+        # 转换select_page为整数列表；无效值必须显式失败，不能回退为翻译全部页面。
+        try:
+            select_page = parse_selected_pages(select_page)
+        except InvalidTranslationJobSpec:
+            logger.error("  页面选择参数无效: %s", select_page)
+            return jsonify({'code': 400, 'msg': '页面选择参数无效'}), 400
+        if select_page:
+            logger.info(f"  用户选择的页面: {select_page}")
         else:
-            logger.info(f"  没有选择页面，将翻译所有页面")
-            select_page = []
+            logger.info("  没有选择页面，将翻译所有页面")
 
         # 构建自定义翻译词典
         custom_translations = {}
@@ -508,6 +510,7 @@ def upload_file():
                     enable_uno_conversion,
                     custom_translations,
                     original_filename,
+                    record.id,
                 )
                 return jsonify({
                     'code': 200,

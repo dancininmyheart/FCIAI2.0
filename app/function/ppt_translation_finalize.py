@@ -46,7 +46,7 @@ def _apply_ocr_if_enabled(request: FinalizePresentationRequest) -> Path:
 
     logger.info("OCR enabled by enable_text_splitting=%s", request.enable_text_splitting)
     try:
-        from .image_ocr.ocr_controller import ocr_controller
+        from .image_ocr.ocr_controller import InvalidSelectedPages, ocr_controller
     except ImportError as error:
         logger.error("OCR module unavailable: %s", error)
         return request.translated_path
@@ -60,6 +60,8 @@ def _apply_ocr_if_enabled(request: FinalizePresentationRequest) -> Path:
             target_language=request.target_language,
             enable_text_splitting=request.enable_text_splitting,
         )
+    except InvalidSelectedPages:
+        raise
     except (OSError, RuntimeError, ValueError) as error:
         logger.error("OCR processing failed: %s", error)
         return request.translated_path

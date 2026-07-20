@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
 from docx import Document
+from pptx import Presentation
 
-from app.function.image_ocr.ocr_controller import _translate_text
+from app.function.image_ocr import ocr_controller as ocr_module
+from app.function.image_ocr.ocr_controller import _translate_text, ocr_controller
 from app.translation.types import ProviderError, ProviderName, ProviderRequest, ProviderResult
 from app.utils.document_generator import translate_markdown_to_bilingual_doc
 
@@ -81,3 +84,24 @@ def test_ocr_text_uses_injected_selected_provider() -> None:
     assert translated == "OCR:Milk"
     assert provider.calls[0].field == "image OCR"
     assert provider.calls[0].output_format == "plain"
+
+
+def test_ocr_rejects_out_of_range_selected_pages_without_falling_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    source = tmp_path / "one-slide.pptx"
+    presentation = Presentation()
+    presentation.slides.add_slide(presentation.slide_layouts[6])
+    presentation.save(source)
+
+    class NeverExtractImages:
+        def extract_images_from_slides(self, *_args, **_kwargs):
+            raise AssertionError("invalid selection must fail before OCR starts")
+
+    monkeypatch.setattr(ocr_module, "PPTImageExtractor", NeverExtractImages)
+
+    # When / Then
+    with pytest.raises(ValueError, match="selected_pages"):
+        ocr_controller(str(source), selected_pages=[2])

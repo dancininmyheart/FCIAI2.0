@@ -61,7 +61,7 @@ def test_translation_feedback_does_not_use_blocking_alerts() -> None:
 def test_ppt_translation_switches_from_page_selection_to_upload_feedback_immediately() -> None:
     template = _read(PPT_TEMPLATE)
     start = template.index("async function startTranslation()")
-    end = template.index("function checkTaskStatus()", start)
+    end = template.index("function checkTaskStatus", start)
     launch_flow = template[start:end]
 
     hide_selector = launch_flow.index("pageSelector.style.display = 'none';")
@@ -80,7 +80,7 @@ def test_ppt_translation_switches_from_page_selection_to_upload_feedback_immedia
 def test_ppt_translation_submits_current_language_display_selection() -> None:
     template = _read(PPT_TEMPLATE)
     start = template.index("async function startTranslation()")
-    end = template.index("function checkTaskStatus()", start)
+    end = template.index("function checkTaskStatus", start)
     launch_flow = template[start:end]
 
     assert "const bilingualTranslation = document.getElementById('bilingual_translation').value;" in launch_flow
@@ -101,7 +101,7 @@ def test_ppt_translation_defaults_to_source_first_bilingual_display() -> None:
 def test_ppt_translation_rejects_a_server_display_mode_mismatch() -> None:
     template = _read(PPT_TEMPLATE)
     start = template.index("async function startTranslation()")
-    end = template.index("function checkTaskStatus()", start)
+    end = template.index("function checkTaskStatus", start)
     launch_flow = template[start:end]
 
     upload_response = launch_flow.index("const result = await new Promise")
@@ -118,18 +118,76 @@ def test_ppt_translation_rejects_a_server_display_mode_mismatch() -> None:
 def test_ppt_translation_polls_the_uploaded_task_without_losing_legacy_status() -> None:
     template = _read(PPT_TEMPLATE)
     start = template.index("async function startTranslation()")
-    status_start = template.index("function checkTaskStatus()", start)
+    status_start = template.index("function checkTaskStatus", start)
     launch_flow = template[start:status_start]
     status_flow = template[status_start:]
 
     assert "let currentTaskId = null;" in template[:start]
-    assert "currentTaskId = result.task_id || null;" in launch_flow
+    assert "currentTaskId = typeof result.task_id === 'string' && result.task_id.trim()" in launch_flow
     assert (
-        "const statusUrl = currentTaskId\n"
-        "            ? `/task_status/${encodeURIComponent(currentTaskId)}`\n"
+        "const statusUrl = taskIdAtRequest\n"
+        "            ? `/task_status/${encodeURIComponent(taskIdAtRequest)}`\n"
         "            : '/task_status';"
     ) in status_flow
     assert "fetch(statusUrl)" in status_flow
+
+
+def test_ppt_completion_download_is_bound_to_the_uploaded_task_not_history() -> None:
+    template = _read(PPT_TEMPLATE)
+    start = template.index("async function startTranslation()")
+    helper = template.index("function bindCurrentPptDownload()")
+    status_start = template.index("function checkTaskStatus", start)
+    launch_flow = template[start:status_start]
+    status_flow = template[status_start:]
+
+    assert 'id="pptCurrentDownload"' in template
+    assert helper < start
+    assert 'id="pptCurrentDownload"' in template and "hidden" in template[
+        template.index('id="pptCurrentDownload"') : template.index('id="pptCurrentDownload"') + 240
+    ]
+    assert "let currentRecordId = null;" in template[:start]
+    assert "const parsedRecordId = Number(result.record_id);" in launch_flow
+    assert "Number.isInteger(parsedRecordId)" in launch_flow
+    assert "currentRecordId = parsedRecordId;" in launch_flow
+    assert "resetCurrentPptDownload();" in launch_flow
+    assert "const taskDownloadUrl = currentTaskId" in template
+    assert "`/download/${encodeURIComponent(currentTaskId)}`" in template
+    assert "`/download/${encodeURIComponent(currentRecordId)}`" in template
+
+    completed = status_flow.index("else if (data.status === 'completed')")
+    failed = status_flow.index("else if (data.status === 'failed')", completed)
+    completed_flow = status_flow[completed:failed]
+    assert "if (!bindCurrentPptDownload())" in completed_flow
+    assert completed_flow.index("if (!bindCurrentPptDownload())") < completed_flow.index("loadHistory();")
+    assert "currentTaskKey = incomingKey" not in completed_flow
+
+
+def test_ppt_status_ignores_a_stale_task_response_before_showing_completion() -> None:
+    template = _read(PPT_TEMPLATE)
+    start = template.index("async function startTranslation()")
+    status_start = template.index("function checkTaskStatus")
+    launch_flow = template[start:status_start]
+    status_flow = template[status_start:]
+    dom_start = template.index("document.addEventListener('DOMContentLoaded'")
+    dom_initialization = template[dom_start : template.index("window.debugSettings", dom_start)]
+
+    assert "let currentTaskEpoch = 0;" in template[:start]
+    assert "const launchEpoch = ++currentTaskEpoch;" in launch_flow
+    assert "clearInterval(window.statusCheckInterval);" in launch_flow[
+        : launch_flow.index("const formData = new FormData();")
+    ]
+    assert "setInterval(() => checkTaskStatus(launchEpoch), 2000)" in launch_flow
+    assert "checkTaskStatus(launchEpoch);" in launch_flow
+    assert "function checkTaskStatus(taskEpoch = currentTaskEpoch)" in status_flow
+    assert "const taskIdAtRequest = currentTaskId;" in status_flow
+    assert "const recordIdAtRequest = currentRecordId;" in status_flow
+    assert "if (!recordIdAtRequest) return;" in status_flow
+    guard = status_flow.index("if (taskEpoch !== currentTaskEpoch")
+    completed = status_flow.index("else if (data.status === 'completed')")
+
+    assert guard < completed
+    assert "return;" in status_flow[guard:completed]
+    assert "checkTaskStatus();" not in dom_initialization
 
 
 def test_experience_styles_define_responsive_drawer_and_readable_type() -> None:
@@ -156,6 +214,7 @@ def test_ppt_history_keeps_download_actions_visible() -> None:
     assert "position: sticky" in css
     assert "right: 0" in css
     assert ".history-mobile-meta" in css
+    assert "const refreshHistoryBtn = document.getElementById('refreshHistoryBtn');" in template
 
 
 def test_translation_templates_render_with_the_application_routes(isolated_app: Flask) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum, unique
-from typing import Literal, NewType, TypeAlias, TypedDict, assert_never
+from typing import Literal, NewType, NotRequired, TypeAlias, TypedDict, assert_never
 
 TaskId = NewType("TaskId", str)
 WorkerId = NewType("WorkerId", str)
@@ -30,6 +30,7 @@ class TranslationRequestJson(TypedDict):
     annotation_filename: str
     annotations: list[dict[str, JsonValue]]
     output_path: str
+    upload_record_id: NotRequired[int | None]
 
 
 class LegacyStatusJson(TypedDict, total=False):
@@ -114,6 +115,7 @@ class TranslationJobRequest:
     annotation_filename: str = ""
     annotations: tuple[dict[str, JsonValue], ...] = ()
     output_path: str = ""
+    upload_record_id: int | None = None
 
     def to_json(self) -> TranslationRequestJson:
         return {
@@ -135,6 +137,7 @@ class TranslationJobRequest:
             "annotation_filename": self.annotation_filename,
             "annotations": [dict(annotation) for annotation in self.annotations],
             "output_path": self.output_path,
+            "upload_record_id": self.upload_record_id,
         }
 
 

@@ -1048,7 +1048,6 @@
     let totalPageCount = 0;
     let sourceLanguage = 'English';
     let targetLanguage = 'Chinese';
-    let bilingual_translation = "translation_only";
     let model = 'qwen';
     let enable_text_splitting = "False";
     let enable_uno_conversion = true;
@@ -1181,8 +1180,7 @@
         });
 
         document.getElementById('bilingual_translation').addEventListener('change', function(e) {
-            bilingual_translation = e.target.value;
-            console.log('双语翻译模式已更改为:', bilingual_translation);
+            console.log('双语翻译模式已更改为:', e.target.value);
         });
 
         document.getElementById('model').addEventListener('change', function(e) {
@@ -1355,11 +1353,12 @@ async function startTranslation() {
         return;
     }
     if (isTranslationLaunching) return;
+    const bilingualTranslation = document.getElementById('bilingual_translation').value;
 
     console.log('Start translation with settings:', {
         sourceLanguage,
         targetLanguage,
-        bilingual_translation,
+        bilingual_translation: bilingualTranslation,
         model,
         enable_text_splitting,
         enable_uno_conversion,
@@ -1379,7 +1378,7 @@ async function startTranslation() {
         formData.append('file', uploadedFile);
         formData.append('source_language', sourceLanguage);
         formData.append('target_language', targetLanguage);
-        formData.append('bilingual_translation', bilingual_translation);
+        formData.append('bilingual_translation', bilingualTranslation);
         formData.append('model', model);
         formData.append('enable_text_splitting', enable_text_splitting);
         formData.append('enable_uno_conversion', enable_uno_conversion);
@@ -1779,7 +1778,7 @@ async function startTranslation() {
         console.log('初始化完成，当前设置:', {
             sourceLanguage,
             targetLanguage,
-            bilingual_translation,
+            bilingual_translation: document.getElementById('bilingual_translation').value,
             model,
             enable_text_splitting,
             enable_uno_conversion
@@ -1790,7 +1789,7 @@ async function startTranslation() {
             console.log('当前翻译设置:', {
                 sourceLanguage,
                 targetLanguage,
-                bilingual_translation,
+                bilingual_translation: document.getElementById('bilingual_translation').value,
                 model,
                 enable_text_splitting,
                 enable_uno_conversion,

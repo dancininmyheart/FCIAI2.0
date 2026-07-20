@@ -77,6 +77,16 @@ def test_ppt_translation_switches_from_page_selection_to_upload_feedback_immedia
     assert "updateStartButton();" in launch_flow[error_handler:]
 
 
+def test_ppt_translation_submits_current_language_display_selection() -> None:
+    template = _read(PPT_TEMPLATE)
+    start = template.index("async function startTranslation()")
+    end = template.index("function checkTaskStatus()", start)
+    launch_flow = template[start:end]
+
+    assert "const bilingualTranslation = document.getElementById('bilingual_translation').value;" in launch_flow
+    assert "formData.append('bilingual_translation', bilingualTranslation);" in launch_flow
+
+
 def test_experience_styles_define_responsive_drawer_and_readable_type() -> None:
     css = _read(EXPERIENCE_CSS)
 

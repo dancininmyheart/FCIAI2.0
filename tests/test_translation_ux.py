@@ -113,28 +113,29 @@ def test_translation_templates_render_with_the_application_routes(isolated_app: 
     assert 'id="pdfUploadZone"' in pdf
 
 
-def test_login_template_exposes_only_sso(isolated_app: Flask) -> None:
+def test_login_template_exposes_local_credentials_and_keeps_sso(isolated_app: Flask) -> None:
     # Given
     with isolated_app.test_request_context("/auth/login"):
         # When
         login = render_template("auth/login.html", sso_enabled=True, sso_provider="oauth2")
 
     # Then
+    assert '<form class="login-form" method="post" action="/auth/login">' in login
+    assert 'name="username"' in login
+    assert 'autocomplete="username"' in login
+    assert 'name="password"' in login
+    assert 'autocomplete="current-password"' in login
+    assert "账号密码登录" in login
     assert 'href="/auth/sso/login"' in login
-    assert '<form class="login-form"' not in login
-    assert 'name="username"' not in login
-    assert 'name="password"' not in login
-    assert "账号密码登录" not in login
-    assert "或本地账号" not in login
     assert 'rel="icon" href="/static/images/logo.svg"' in login
 
 
-def test_login_template_never_falls_back_to_local_credentials(isolated_app: Flask) -> None:
+def test_login_template_uses_local_credentials_when_sso_is_unavailable(isolated_app: Flask) -> None:
     with isolated_app.test_request_context("/auth/login"):
         login = render_template("auth/login.html", sso_enabled=False, sso_provider="oauth2")
 
     assert 'href="/auth/sso/login"' not in login
-    assert 'class="sso-unavailable"' in login
-    assert '<form class="login-form"' not in login
-    assert 'name="username"' not in login
-    assert 'name="password"' not in login
+    assert '<form class="login-form" method="post" action="/auth/login">' in login
+    assert 'name="username"' in login
+    assert 'name="password"' in login
+    assert "账号密码登录" in login

@@ -862,7 +862,7 @@ def download_file(record_id):
         record = UploadRecord.query.get_or_404(record_id)
 
         # 验证用户权限
-        if record.user_id != current_user.id:
+        if record.user_id != current_user.id and not current_user.is_administrator():
             return jsonify({'error': '无权访问此文件'}), 403
 
         # 检查文件是否存在

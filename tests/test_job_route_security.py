@@ -113,6 +113,61 @@ def test_v2_download_requires_owner_or_admin_for_private_jobs(
     assert client.get(f"/download/{private_job.public_id}").status_code == 200
 
 
+def test_legacy_upload_download_requires_owner_or_admin(
+    isolated_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    import app.views.main as main_views
+
+    isolated_app.config["LOGIN_DISABLED"] = True
+    upload_root = Path(isolated_app.config["UPLOAD_FOLDER"])
+    stored_file = upload_root / "user_10" / "translated.pptx"
+    stored_file.parent.mkdir(parents=True, exist_ok=True)
+    stored_file.write_bytes(b"translated")
+    record = SimpleNamespace(
+        id=401,
+        user_id=10,
+        file_path=str(stored_file.parent),
+        stored_filename=stored_file.name,
+        filename="presentation.pptx",
+    )
+
+    class FakeUploadRecord:
+        query = SimpleNamespace(get_or_404=lambda record_id: record)
+
+    monkeypatch.setattr(main_views, "UploadRecord", FakeUploadRecord)
+    client = isolated_app.test_client()
+
+    # When / Then: unrelated users remain forbidden.
+    monkeypatch.setattr(
+        main_views,
+        "current_user",
+        SimpleNamespace(id=11, is_authenticated=True, is_administrator=lambda: False),
+    )
+    assert client.get("/download/401").status_code == 403
+
+    # When / Then: the owner can download.
+    monkeypatch.setattr(
+        main_views,
+        "current_user",
+        SimpleNamespace(id=10, is_authenticated=True, is_administrator=lambda: False),
+    )
+    owner_response = client.get("/download/401")
+    assert owner_response.status_code == 200
+    assert owner_response.data == b"translated"
+
+    # When / Then: an administrator can download another user's file.
+    monkeypatch.setattr(
+        main_views,
+        "current_user",
+        SimpleNamespace(id=99, is_authenticated=True, is_administrator=lambda: True),
+    )
+    admin_response = client.get("/download/401")
+    assert admin_response.status_code == 200
+    assert admin_response.data == b"translated"
+
+
 @pytest.mark.parametrize("escape_kind", ["outside", "symlink"])
 def test_v2_public_ppt_download_rejects_containment_escape_before_public_access(
     isolated_app: Flask,

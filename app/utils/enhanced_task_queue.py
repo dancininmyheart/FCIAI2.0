@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uuid
 import traceback
 import weakref
+from contextlib import contextmanager
 
 from .thread_pool_executor import thread_pool, TaskType, TaskStatus, Task
 from app.utils.timezone_helper import now_with_timezone
@@ -147,6 +148,7 @@ class EnhancedTranslationQueue:
         self.task_available = threading.Event()
         self.recycle_stop_event = threading.Event()
         self.recycle_thread = None
+        self.app = None
         
         # 线程池健康状态
         self.last_pool_check = time.time()
@@ -158,7 +160,8 @@ class EnhancedTranslationQueue:
 
     def configure(self, max_concurrent_tasks: Optional[int] = None,
                 task_timeout: Optional[int] = None,
-                retry_times: Optional[int] = None) -> None:
+                retry_times: Optional[int] = None,
+                app=None) -> None:
         """
         配置任务队列参数
 
@@ -175,8 +178,28 @@ class EnhancedTranslationQueue:
                 self.task_timeout = task_timeout
             if retry_times is not None:
                 self.retry_times = retry_times
+            if app is not None:
+                self.app = app
 
             self.initialized = True
+
+    @contextmanager
+    def _application_context(self):
+        """Run worker-owned work in the configured Flask application context."""
+        from flask import has_app_context
+
+        if has_app_context():
+            yield
+            return
+
+        app = self.app
+        if app is None:
+            from app import create_app
+
+            app = create_app()
+
+        with app.app_context():
+            yield
 
     def add_task(self, user_id: int, user_name: str, file_path: str,model:str,
                 task_type: str = 'ppt_translate', source_language: str = 'en',
@@ -568,12 +591,18 @@ class EnhancedTranslationQueue:
                 Args:
                     thread_task: 线程任务对象
                 """
+                application_context = None
+                context_entered = False
                 try:
                     # 获取实际的队列实例（使用弱引用避免循环引用）
                     queue_instance = weak_self()
                     if queue_instance is None:
                         # 队列实例已被垃圾回收，无法继续处理
                         return
+
+                    application_context = queue_instance._application_context()
+                    application_context.__enter__()
+                    context_entered = True
                     
                     # 记录当前线程ID，用于调试和安全检查
                     callback_thread_id = threading.get_ident()
@@ -593,33 +622,45 @@ class EnhancedTranslationQueue:
                     # 线程池的 COMPLETED 仅表示函数正常返回；业务任务还必须显式返回 True。
                     outcome = _thread_task_outcome(thread_task)
                     if outcome == "completed":
-                        task.status = "completed"
-                        task.completed_at = now_with_timezone()
-                        task.event.set()
                         queue_instance.logger.info(f"任务完成: {task.task_id}")
-                        # 更新数据库记录状态
-                        queue_instance._schedule_database_update(task)
                     elif outcome == "failed":
-                        task.status = "failed"
                         task.error = str(
                             getattr(thread_task, "error", None)
                             or task.error
                             or "translation processor returned an unsuccessful result"
                         )
-                        task.completed_at = now_with_timezone()
-                        task.event.set()
                         queue_instance.logger.error(f"任务失败: {task.task_id}, 错误: {task.error}")
-                        # 更新数据库记录状态
-                        queue_instance._schedule_database_update(task)
                     elif outcome == "canceled":
-                        task.status = "canceled"
-                        task.completed_at = now_with_timezone()
-                        task.event.set()
                         queue_instance.logger.info(f"任务已取消: {task.task_id}")
-                        # 更新数据库记录状态
-                        queue_instance._schedule_database_update(task)
+
+                    task.completed_at = now_with_timezone()
+                    # Persist the history projection before exposing a terminal task status.
+                    history_persisted = queue_instance._schedule_database_update(task, status=outcome)
+                    legacy_ppt_history_failed = (
+                        outcome == "completed"
+                        and task.task_type == "ppt_translate"
+                        and task.ledger_completion_callback is None
+                        and not history_persisted
+                    )
+                    if legacy_ppt_history_failed:
+                        task.status = "failed"
+                        task.error = "翻译已完成，但历史记录保存失败，请重试或联系管理员"
+                        queue_instance.logger.error(
+                            f"任务历史记录保存失败，拒绝发布完成状态: {task.task_id}"
+                        )
+                    else:
+                        task.status = outcome
                     if task.ledger_completion_callback:
-                        task.ledger_completion_callback(task)
+                        try:
+                            task.ledger_completion_callback(task)
+                        except Exception as completion_error:
+                            task.status = "failed"
+                            task.error = f"任务完成持久化失败: {completion_error}"
+                            task.event.set()
+                            # The normal asynchronous cleanup is below this callback and would be skipped.
+                            queue_instance._cleanup_task_resources(task)
+                            raise
+                    task.event.set()
 
                     # 确保全局清理线程池存在
                     if not hasattr(queue_instance, 'cleanup_executor') or queue_instance.cleanup_executor is None:
@@ -745,7 +786,14 @@ class EnhancedTranslationQueue:
                             queue_instance.task_available.set()
                     except Exception as e2:
                         logger.error(f"最终清理失败: {str(e2)}")
-            
+                finally:
+                    if context_entered and application_context is not None:
+                        try:
+                            application_context.__exit__(None, None, None)
+                        except Exception as e:
+                            logger = logging.getLogger(f"{__name__}.callback")
+                            logger.error(f"释放任务回调应用上下文失败: {str(e)}")
+
             # 提交任务到线程池，始终使用异步回调避免线程安全问题
             thread_task = thread_pool.submit(
                 func=self._execute_task,
@@ -805,8 +853,8 @@ class EnhancedTranslationQueue:
         # 记录当前线程ID，用于线程安全检查
         current_thread_id = threading.get_ident()
         
-        # 标记应用上下文状态
-        app_context_created = False
+        application_context = None
+        context_entered = False
         
         try:
             # 设置任务开始时间
@@ -831,25 +879,16 @@ class EnhancedTranslationQueue:
                 task.status = "canceled"
                 return False
 
-            # 导入Flask应用并创建应用上下文
+            # Worker threads do not inherit the request/dispatcher context.
             try:
-                from flask import current_app
-                # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
-                _ = current_app.name
-                app_context_created = False
-                self.logger.debug(f"任务 {task.task_id} 已在应用上下文中")
-            except RuntimeError:
-                # 如果不在应用上下文中，创建一个新的
-                try:
-                    from app import create_app
-                    app = create_app()
-                    app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                    app_context_created = True
-                    self.logger.debug(f"任务 {task.task_id} 创建了新的应用上下文")
-                except Exception as e:
-                    self.logger.error(f"创建应用上下文失败: {str(e)}")
-                    task.error = f"创建应用上下文失败: {str(e)}"
-                    return False
+                application_context = self._application_context()
+                application_context.__enter__()
+                context_entered = True
+                self.logger.debug(f"任务 {task.task_id} 已进入应用上下文")
+            except Exception as e:
+                self.logger.error(f"创建应用上下文失败: {str(e)}")
+                task.error = f"创建应用上下文失败: {str(e)}"
+                return False
 
             try:
                 # 记录数据库连接使用情况
@@ -955,7 +994,13 @@ class EnhancedTranslationQueue:
             })
 
             return False
-        
+        finally:
+            if context_entered and application_context is not None:
+                try:
+                    application_context.__exit__(None, None, None)
+                except Exception as e:
+                    self.logger.error(f"释放应用上下文失败: {str(e)}")
+
     def _get_db_connection_info(self):
         """获取数据库连接信息"""
         try:
@@ -1015,7 +1060,7 @@ class EnhancedTranslationQueue:
         except Exception as e:
             self.logger.error(f"执行PDF注释任务时出错: {str(e)}")
             return False
-    def _schedule_database_update(self, task: TranslationTask) -> None:
+    def _schedule_database_update(self, task: TranslationTask, status: Optional[str] = None) -> bool:
         """
         调度数据库更新任务
 
@@ -1025,82 +1070,58 @@ class EnhancedTranslationQueue:
         # 记录基本信息（不需要应用上下文）
         self.logger.info(f"任务完成 - ID: {task.task_id}, 用户: {task.user_name}, 文件: {os.path.basename(task.file_path)}")
         
-        # 检查是否已经在应用上下文中
-        app_context_created = False
         try:
-            from flask import current_app
-            # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
-            _ = current_app.name
-            self.logger.info(f"数据库更新 {task.task_id} 已在应用上下文中")
-        except RuntimeError:
-            # 如果不在应用上下文中，创建一个新的
-            try:
-                from app import create_app
-                app = create_app()
-                app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                app_context_created = True
-                self.logger.info(f"数据库更新 {task.task_id} 创建了新的应用上下文")
-            except Exception as e:
-                self.logger.error(f"创建应用上下文失败: {str(e)}")
-                return
-        
-        try:
-            # 更新UploadRecord状态
-            from app.models import UploadRecord
-            from app import db
-            
-            # 从文件路径中获取存储的文件名和目录
-            file_path = task.file_path
-            stored_filename = os.path.basename(file_path)
-            file_directory = os.path.dirname(file_path)
-            
-            # 查询对应的记录
-            record = UploadRecord.query.filter_by(
-                user_id=task.user_id,
-                file_path=file_directory,
-                stored_filename=stored_filename
-            ).first()
-            
-            if record:
-                # 根据任务状态更新记录状态
-                if task.status == "completed":
-                    record.status = 'completed'
-                    self.logger.info(f"更新记录状态为completed: {record.id}, 文件: {record.filename}")
-                elif task.status == "failed":
-                    record.status = 'failed'
-                    # 如果有错误信息，也更新到记录中
-                    if task.error:
-                        record.error_message = task.error[:255]  # 限制错误信息长度
-                    self.logger.info(f"更新记录状态为failed: {record.id}, 文件: {record.filename}")
-                
-                # 提交数据库更改
-                db.session.commit()
-                self.logger.info(f"成功更新数据库记录状态: {record.id}")
-            else:
-                self.logger.warning(
-                    f"未找到对应的上传记录 - 用户ID: {task.user_id}, "
-                    f"文件路径: {file_directory}, "
-                    f"存储文件名: {stored_filename}"
-                )
-            
-        except Exception as e:
-            self.logger.error(f"更新数据库记录状态失败: {str(e)}")
-            try:
-                # 尝试回滚事务
+            with self._application_context():
                 from app import db
-                db.session.rollback()
-            except Exception as rollback_error:
-                self.logger.error(f"回滚事务失败: {str(rollback_error)}")
-        
-        finally:
-            # 如果我们创建了应用上下文，需要弹出它
-            if app_context_created:
+                from app.models import UploadRecord
+
                 try:
-                    from flask import current_app
-                    current_app.app_context().pop()
-                    self.logger.info(f"数据库更新 {task.task_id} 弹出了应用上下文")
+                    file_path = task.file_path
+                    stored_filename = os.path.basename(file_path)
+                    file_directory = os.path.dirname(file_path)
+
+                    record = UploadRecord.query.filter_by(
+                        user_id=task.user_id,
+                        file_path=file_directory,
+                        stored_filename=stored_filename,
+                    ).first()
+
+                    if record:
+                        record_status = status or task.status
+                        if record_status == "completed":
+                            record.status = "completed"
+                            self.logger.info(f"更新记录状态为completed: {record.id}, 文件: {record.filename}")
+                        elif record_status == "failed":
+                            record.status = "failed"
+                            if task.error:
+                                record.error_message = task.error[:255]
+                            self.logger.info(f"更新记录状态为failed: {record.id}, 文件: {record.filename}")
+
+                        db.session.commit()
+                        self.logger.info(f"成功更新数据库记录状态: {record.id}")
+                        return True
+                    else:
+                        # End the read transaction so a reused callback thread sees later uploads.
+                        db.session.rollback()
+                        self.logger.warning(
+                            f"未找到对应的上传记录 - 用户ID: {task.user_id}, "
+                            f"文件路径: {file_directory}, "
+                            f"存储文件名: {stored_filename}"
+                        )
+                        return False
                 except Exception as e:
-                    self.logger.error(f"弹出应用上下文失败: {str(e)}")
+                    self.logger.error(f"更新数据库记录状态失败: {str(e)}")
+                    try:
+                        db.session.rollback()
+                    except Exception as rollback_error:
+                        self.logger.error(f"回滚事务失败: {str(rollback_error)}")
+                    return False
+                finally:
+                    # A callback thread must never retain a scoped session between tasks.
+                    db.session.remove()
+        except Exception as e:
+            self.logger.error(f"创建应用上下文失败: {str(e)}")
+            return False
 
     def _handle_task_error(self, task: TranslationTask, error: str) -> None:
         """
@@ -1116,26 +1137,16 @@ class EnhancedTranslationQueue:
         # 更新任务错误信息
         task.error = error
         
-        # 检查是否已经在应用上下文中
-        app_context_created = False
+        application_context = None
+        context_entered = False
         try:
-            from flask import current_app
-            # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
-            _ = current_app.name
-            self.logger.info(f"任务错误处理 {task.task_id} 已在应用上下文中")
-        except RuntimeError:
-            # 如果不在应用上下文中，创建一个新的
-            try:
-                from app import create_app
-                app = create_app()
-                app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                app_context_created = True
-                self.logger.info(f"任务错误处理 {task.task_id} 创建了新的应用上下文")
-            except Exception as e:
-                self.logger.error(f"创建应用上下文失败: {str(e)}")
-                # 如果创建应用上下文失败，执行基本操作并返回
-                self._handle_task_error_without_context(task, error)
-                return
+            application_context = self._application_context()
+            application_context.__enter__()
+            context_entered = True
+        except Exception as e:
+            self.logger.error(f"创建应用上下文失败: {str(e)}")
+            self._handle_task_error_without_context(task, error)
+            return
         
         try:
             # 检查是否可以重试
@@ -1203,14 +1214,17 @@ class EnhancedTranslationQueue:
             self._handle_task_error_without_context(task, error)
         
         finally:
-            # 如果我们创建了应用上下文，需要弹出它
-            if app_context_created:
+            if context_entered and application_context is not None:
                 try:
-                    from flask import current_app
-                    current_app.app_context().pop()
-                    self.logger.info(f"任务错误处理 {task.task_id} 弹出了应用上下文")
+                    from app import db
+
+                    db.session.remove()
                 except Exception as e:
-                    self.logger.error(f"弹出应用上下文失败: {str(e)}")
+                    self.logger.warning(f"清理数据库会话失败: {str(e)}")
+                try:
+                    application_context.__exit__(None, None, None)
+                except Exception as e:
+                    self.logger.error(f"释放任务错误处理应用上下文失败: {str(e)}")
     
     def _handle_task_error_without_context(self, task: TranslationTask, error: str) -> None:
         """
@@ -1407,32 +1421,23 @@ class EnhancedTranslationQueue:
         Returns:
             回收结果的状态信息
         """
-        # 检查是否已经在应用上下文中
-        app_context_created = False
+        application_context = None
+        context_entered = False
         try:
-            from flask import current_app
-            # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
-            _ = current_app.name
-            self.logger.info("回收连接已在应用上下文中")
-        except RuntimeError:
-            # 如果不在应用上下文中，创建一个新的
-            try:
-                from app import create_app
-                app = create_app()
-                app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                app_context_created = True
-                self.logger.info("回收连接创建了新的应用上下文")
-            except Exception as e:
-                self.logger.error(f"创建应用上下文失败: {str(e)}")
-                return {
-                    'success': False,
-                    'message': f'创建应用上下文失败: {str(e)}',
-                    'error': str(e)
-                }
+            application_context = self._application_context()
+            application_context.__enter__()
+            context_entered = True
+        except Exception as e:
+            self.logger.error(f"创建应用上下文失败: {str(e)}")
+            return {
+                'success': False,
+                'message': f'创建应用上下文失败: {str(e)}',
+                'error': str(e)
+            }
         
         try:
             from flask import current_app
-            from sqlalchemy import create_engine, text
+            from sqlalchemy import text
             import time
             
             # 获取当前数据库引擎
@@ -1484,14 +1489,11 @@ class EnhancedTranslationQueue:
             }
         
         finally:
-            # 如果我们创建了应用上下文，需要弹出它
-            if app_context_created:
+            if context_entered and application_context is not None:
                 try:
-                    from flask import current_app
-                    current_app.app_context().pop()
-                    self.logger.info("回收连接弹出了应用上下文")
+                    application_context.__exit__(None, None, None)
                 except Exception as e:
-                    self.logger.error(f"弹出应用上下文失败: {str(e)}")
+                    self.logger.error(f"释放连接回收应用上下文失败: {str(e)}")
 
     def _cleanup_task_resources(self, task: TranslationTask) -> None:
         """
@@ -1502,52 +1504,22 @@ class EnhancedTranslationQueue:
         Args:
             task: 要清理资源的任务
         """
+        application_context = None
+        context_entered = False
         try:
             # 记录开始清理
             self.logger.info(f"清理任务资源: {task.task_id}, 用户: {task.user_id}")
             
-            # 检查是否已经在应用上下文中
-            app_context_created = False
-            try:
-                from flask import current_app
-                # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
-                _ = current_app.name
-                self.logger.info(f"资源清理 {task.task_id} 已在应用上下文中")
-                
-                # 在应用上下文中执行数据库相关操作
-                db = current_app.extensions['sqlalchemy'].db
-                
-                # 如果任务有自己的会话，关闭它
-                if hasattr(task, 'db_session') and task.db_session:
-                    try:
-                        task.db_session.close()
-                        self.logger.info(f"已关闭任务专用数据库会话: {task.task_id}")
-                    except Exception as e:
-                        self.logger.warning(f"关闭任务数据库会话失败: {str(e)}")
-                
-            except RuntimeError:
-                # 如果不在应用上下文中，创建一个新的
+            application_context = self._application_context()
+            application_context.__enter__()
+            context_entered = True
+
+            if hasattr(task, 'db_session') and task.db_session:
                 try:
-                    from app import create_app
-                    app = create_app()
-                    app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                    app_context_created = True
-                    self.logger.info(f"资源清理 {task.task_id} 创建了新的应用上下文")
-                    
-                    # 在应用上下文中执行数据库相关操作
-                    from flask import current_app
-                    db = current_app.extensions['sqlalchemy'].db
-                    
-                    # 如果任务有自己的会话，关闭它
-                    if hasattr(task, 'db_session') and task.db_session:
-                        try:
-                            task.db_session.close()
-                            self.logger.info(f"已关闭任务专用数据库会话: {task.task_id}")
-                        except Exception as e:
-                            self.logger.warning(f"关闭任务数据库会话失败: {str(e)}")
-                
+                    task.db_session.close()
+                    self.logger.info(f"已关闭任务专用数据库会话: {task.task_id}")
                 except Exception as e:
-                    self.logger.warning(f"创建应用上下文失败，跳过数据库清理: {str(e)}")
+                    self.logger.warning(f"关闭任务数据库会话失败: {str(e)}")
             
             # 以下操作不需要应用上下文
             # 强制垃圾回收大型对象
@@ -1567,17 +1539,20 @@ class EnhancedTranslationQueue:
                     
             self.logger.info(f"任务资源清理完成: {task.task_id}")
             
-            # 如果我们创建了应用上下文，需要弹出它
-            if app_context_created:
-                try:
-                    from flask import current_app
-                    current_app.app_context().pop()
-                    self.logger.info(f"资源清理 {task.task_id} 弹出了应用上下文")
-                except Exception as e:
-                    self.logger.error(f"弹出应用上下文失败: {str(e)}")
-            
         except Exception as e:
             self.logger.error(f"清理任务资源时出错: {str(e)}")
+        finally:
+            if context_entered and application_context is not None:
+                try:
+                    from app import db
+
+                    db.session.remove()
+                except Exception as e:
+                    self.logger.warning(f"清理数据库会话失败: {str(e)}")
+                try:
+                    application_context.__exit__(None, None, None)
+                except Exception as e:
+                    self.logger.error(f"释放资源清理应用上下文失败: {str(e)}")
 
     def schedule_db_connection_recycling(self, interval=None):
         """

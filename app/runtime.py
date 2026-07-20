@@ -149,12 +149,18 @@ def default_runtime_resources(app: Flask) -> tuple[RuntimeResource, ...]:
 
     return (
         RuntimeResource("http_client", all_roles, _configure_http_client, _noop, http_client.close),
-        RuntimeResource("translation_queue_config", web_roles, _configure_translation_queue, _noop, _noop),
+        RuntimeResource(
+            "translation_queue_config",
+            web_roles,
+            lambda: _configure_translation_queue(app),
+            _noop,
+            _noop,
+        ),
         RuntimeResource("thread_pool", worker_roles, _configure_thread_pool, _noop, _stop_thread_pool),
         RuntimeResource(
             "translation_queue",
             worker_roles,
-            _configure_translation_queue,
+            lambda: _configure_translation_queue(app),
             translation_queue.start_processor,
             translation_queue.stop_processor,
         ),
@@ -189,13 +195,14 @@ def _stop_thread_pool() -> None:
     thread_pool.safe_shutdown(wait=True, timeout=5.0)
 
 
-def _configure_translation_queue() -> None:
+def _configure_translation_queue(app: Flask | None = None) -> None:
     from app.utils.enhanced_task_queue import translation_queue
 
     translation_queue.configure(
         max_concurrent_tasks=_env_int("TASK_QUEUE_MAX_CONCURRENT", 10),
         task_timeout=_env_int("TASK_QUEUE_TIMEOUT", 3600),
         retry_times=_env_int("TASK_QUEUE_RETRY_TIMES", 3),
+        app=app,
     )
 
 

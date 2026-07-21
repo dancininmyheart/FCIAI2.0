@@ -78,6 +78,7 @@ class ProviderRequest:
     source_language: str
     target_language: str
     field: str = ""
+    domain: str = ""
     stop_words: tuple[str, ...] = ()
     custom_translations: tuple[tuple[str, str], ...] = ()
     timeout_seconds: float = 120.0
@@ -90,6 +91,7 @@ class ProviderRequest:
         source_language: str,
         target_language: str,
         field: str = "",
+        domain: str = "",
         stop_words: tuple[str, ...] = (),
         custom_translations: dict[str, str] | None = None,
         timeout_seconds: float = 120.0,
@@ -100,6 +102,7 @@ class ProviderRequest:
             source_language=source_language,
             target_language=target_language,
             field=field,
+            domain=domain,
             stop_words=stop_words,
             custom_translations=tuple(sorted((custom_translations or {}).items())),
             timeout_seconds=timeout_seconds,

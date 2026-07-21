@@ -27,19 +27,26 @@ PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION: Final = 2
 PPTX_DOCUMENT_KIND: Final = "pptx_xml"
 PPTX_PROVIDER_FIELD: Final = "pptx_structured_v2"
 PPTX_PROVIDER_REPAIR_FIELD: Final = "pptx_structured_v2_repair"
+PPTX_DOMAIN_DETECTION_FIELD: Final = "pptx_domain_detection"
 
 _ROOT_FIELDS: Final = frozenset(
     {"provider_contract_schema_version", "document_kind", "translations"},
 )
 _TRANSLATION_FIELDS: Final = frozenset({"unit_id", "target_text", "segments"})
 _SEGMENT_FIELDS: Final = frozenset({"segment_id", "target_text"})
-def serialize_pptx_request(units: tuple[PptxRequestUnit, ...]) -> str:
+def serialize_pptx_request(
+    units: tuple[PptxRequestUnit, ...],
+    *,
+    domain: str = "",
+) -> str:
     validate_request_units(units)
-    payload = {
+    payload: dict[str, JsonValue] = {
         "provider_contract_schema_version": PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION,
         "document_kind": PPTX_DOCUMENT_KIND,
-        "units": [_serialize_unit(unit) for unit in units],
     }
+    if domain:
+        payload["document_domain"] = domain
+    payload["units"] = [_serialize_unit(unit) for unit in units]
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -205,6 +212,7 @@ def _strip_json_fence(raw: str) -> str:
 
 __all__ = [
     "PPTX_DOCUMENT_KIND",
+    "PPTX_DOMAIN_DETECTION_FIELD",
     "PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION",
     "PPTX_PROVIDER_FIELD",
     "PptxContractError",

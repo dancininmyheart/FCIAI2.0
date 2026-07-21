@@ -17,6 +17,7 @@ from app.translation.pptx_contract import (
     serialize_pptx_request,
 )
 from app.translation.pptx_contract_types import PptxRequestUnit, PptxUnitTranslation
+from app.translation.domain import build_presentation_domain_sample, detect_presentation_domain
 from app.translation.providers import ProviderRegistry, default_provider_registry
 from app.translation.metrics import current_correlation
 from app.translation.types import ProviderError, ProviderRequest
@@ -125,9 +126,14 @@ def _translate_pptx_structured(
         return str(request.output_path)
 
     batches = _slide_batches(units)
+    domain_sample = build_presentation_domain_sample(
+        "\n".join(unit.source_text for unit in batch)
+        for batch in batches
+    )
+    domain = detect_presentation_domain(registry, domain_sample, request.source_language)
     translations: list[PptxUnitTranslation] = []
     for current, batch in enumerate(batches, 1):
-        translations.extend(_translate_structured_batch(request, registry, batch))
+        translations.extend(_translate_structured_batch(request, registry, batch, domain))
         if request.progress_callback is not None:
             request.progress_callback(current, len(batches))
     return write_structured_translated_pptx(
@@ -142,12 +148,14 @@ def _translate_structured_batch(
     request: XmlTranslationRequest,
     registry: ProviderRegistry,
     units: tuple[PptxRequestUnit, ...],
+    domain: str,
 ) -> tuple[PptxUnitTranslation, ...]:
     provider_request = ProviderRequest.create(
-        text=serialize_pptx_request(units),
+        text=serialize_pptx_request(units, domain=domain),
         source_language=request.source_language,
         target_language=request.target_language,
         field=PPTX_PROVIDER_FIELD,
+        domain=domain,
         stop_words=tuple(request.stop_words),
         custom_translations=dict(request.custom_translations),
         output_format="structured",
@@ -184,8 +192,8 @@ def _translate_structured_batch(
                     error.code,
                 )
                 return (
-                    _translate_structured_batch(request, registry, units[:midpoint])
-                    + _translate_structured_batch(request, registry, units[midpoint:])
+                    _translate_structured_batch(request, registry, units[:midpoint], domain)
+                    + _translate_structured_batch(request, registry, units[midpoint:], domain)
                 )
             if attempt == 0:
                 provider_request = _repair_provider_request(
@@ -193,6 +201,7 @@ def _translate_structured_batch(
                     provider_request.text,
                     response.text,
                     error,
+                    domain,
                 )
                 continue
             raise
@@ -206,6 +215,7 @@ def _repair_provider_request(
     source_contract: str,
     candidate_response: str,
     error: PptxContractError,
+    domain: str,
 ) -> ProviderRequest:
     try:
         candidate: object = json.loads(candidate_response)
@@ -225,6 +235,7 @@ def _repair_provider_request(
         source_language=request.source_language,
         target_language=request.target_language,
         field=PPTX_PROVIDER_REPAIR_FIELD,
+        domain=domain,
         stop_words=tuple(request.stop_words),
         custom_translations=dict(request.custom_translations),
         output_format="structured",

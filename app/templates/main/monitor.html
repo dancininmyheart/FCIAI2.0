@@ -20,7 +20,7 @@
     background: rgba(0, 0, 0, 0.2);
     border-radius: 10px;
     padding: 20px;
-    border: 1px solid rgba(0, 168, 255, 0.2);
+    border: 1px solid rgba(0, 148, 217, 0.2);
 }
 
 .metric-title {
@@ -46,7 +46,7 @@
     border-radius: 10px;
     padding: 20px;
     text-align: center;
-    border: 1px solid rgba(0, 168, 255, 0.2);
+    border: 1px solid rgba(0, 148, 217, 0.2);
     min-width: 200px;
 }
 
@@ -140,7 +140,7 @@ function initChart(elementId, title) {
             data: [],
             axisLine: {
                 lineStyle: {
-                    color: '#666'
+                    color: '#6e6f72'
                 }
             }
         },
@@ -150,7 +150,7 @@ function initChart(elementId, title) {
             max: 100,
             axisLine: {
                 lineStyle: {
-                    color: '#666'
+                    color: '#6e6f72'
                 }
             }
         },
@@ -224,4 +224,4 @@ window.addEventListener('resize', () => {
     [cpuChart, memoryChart, gpuChart].forEach(chart => chart.resize());
 });
 </script>
-{% endblock %} 
+{% endblock %}

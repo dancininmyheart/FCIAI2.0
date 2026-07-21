@@ -153,7 +153,7 @@
 
     .form-text {
         font-size: 0.8rem;
-        color: #6c757d;
+        color: var(--brand-cool-gray);
         margin-top: 0.25rem;
         line-height: 1.2;
     }
@@ -220,7 +220,7 @@
     }
 
     .upload-btn:hover {
-        background: rgb(0,130,190);
+        background: var(--brand-sky-blue);
         transform: translateY(-1px);
     }
 
@@ -401,7 +401,7 @@
     }
 
     .action-btn.download:hover {
-        background: rgb(0,130,190);
+        background: var(--brand-sky-blue);
         transform: scale(1.05);
     }
 
@@ -542,6 +542,7 @@
 
     .page-item {
         background: #f8f9fa;
+        color: var(--brand-readable-gray);
         border: 2px solid transparent;
         border-radius: 8px;
         padding: 12px 8px;
@@ -554,11 +555,11 @@
 
     .page-item.selected {
         background: rgb(0,148,217);
-        color: white;
-        border-color: rgb(0,130,190);
+        color: var(--brand-milk-white);
+        border-color: var(--brand-sky-blue);
     }
 
-    .page-item:hover {
+    .page-item:hover:not(.selected) {
         background: rgba(0,148,217,0.1);
     }
 
@@ -583,7 +584,7 @@
     }
 
     .start-translate-btn:disabled {
-        background: #6c757d;
+        background: var(--brand-cool-gray);
         cursor: not-allowed;
     }
 
@@ -701,7 +702,7 @@
     }
 
     .log-timestamp {
-        color: #6c757d;
+        color: var(--brand-cool-gray);
         margin-right: 8px;
         font-size: 12px;
     }
@@ -890,7 +891,7 @@
                 <option value="True">{% if session.get('language') == 'en' %}Enable (Recommended){% else %}启用（推荐）{% endif %}</option>
                 <option value="False">{% if session.get('language') == 'en' %}Disable{% else %}关闭{% endif %}</option>
             </select>
-            <small class="form-text text-muted" style="font-size: 0.8rem; color: #6c757d; margin-top: 0.25rem;">
+            <small class="form-text text-muted" style="font-size: 0.8rem; color: var(--brand-cool-gray); margin-top: 0.25rem;">
                 {% if session.get('language') == 'en' %}
                 When enabled, LibreOffice will be used for PPTX→ODP→PPTX conversion. This may cause format changes in the PPT. If excessive format changes occur, please disable this option.
                 {% else %}
@@ -1925,10 +1926,10 @@ async function startTranslation() {
         // 添加窗口内容
         modal.innerHTML = `
             <div style="padding: 20px; flex: 1; overflow-y: auto;">
-                <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; color: #333;">${currentLanguage === 'en' ? 'Vocabulary Configuration' : '词汇表配置'}</h4>
+                <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Vocabulary Configuration' : '词汇表配置'}</h4>
                 <div style="margin-bottom: 15px; display: flex; gap: 10px;">
                     <input type="text" id="vocabularySearch" placeholder="${currentLanguage === 'en' ? 'Search vocabulary...' : '搜索词汇...'}" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                    <button id="searchBtn" style="padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">${currentLanguage === 'en' ? 'Search' : '搜索'}</button>
+                    <button id="searchBtn" style="padding: 8px 15px; background: var(--brand-sky-blue); color: var(--brand-milk-white); border: none; border-radius: 4px; cursor: pointer;">${currentLanguage === 'en' ? 'Search' : '搜索'}</button>
                 </div>
                 <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
                     <select id="categoryFilter" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
@@ -1941,7 +1942,7 @@ async function startTranslation() {
                 </div>
                 <div style="margin-bottom: 15px; display: flex; align-items: center;">
                     <input type="checkbox" id="selectAllCheckbox" style="margin-right: 10px;">
-                    <label for="selectAllCheckbox" style="color: #333 !important; font-weight: 500;">${currentLanguage === 'en' ? 'Select All' : '全选'}</label>
+                    <label for="selectAllCheckbox" style="color: var(--brand-readable-gray) !important; font-weight: 500;">${currentLanguage === 'en' ? 'Select All' : '全选'}</label>
                 </div>
                 <div id="vocabularyList" style="min-height: 300px; border: 1px solid #ddd; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto;">
                     <p>${currentLanguage === 'en' ? 'Loading...' : '加载中...'}</p>
@@ -2139,7 +2140,7 @@ async function startTranslation() {
         let html = '';
         selectedCategories.forEach(category => {
             html += `
-                <span style="display: inline-flex; align-items: center; background: #007bff; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                <span style="display: inline-flex; align-items: center; background: var(--brand-sky-blue); color: var(--brand-milk-white); padding: 4px 8px; border-radius: 4px; font-size: 12px;">
                     ${category}
                     <button type="button" onclick="removeCategoryFilter('${category}')" style="margin-left: 5px; background: none; border: none; color: white; cursor: pointer; font-weight: bold;">×</button>
                 </span>
@@ -2147,7 +2148,7 @@ async function startTranslation() {
         });
         
         // 添加清除按钮
-        html += `<button type="button" onclick="clearCategoryFilters()" style="background: #6c757d; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer;">${currentLanguage === 'en' ? 'Clear Filters' : '清除筛选'}</button>`;
+        html += `<button type="button" onclick="clearCategoryFilters()" style="background: var(--brand-cool-gray); color: var(--brand-milk-white); border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer;">${currentLanguage === 'en' ? 'Clear Filters' : '清除筛选'}</button>`;
         
         tagsContainer.innerHTML = html;
     }
@@ -2195,16 +2196,16 @@ async function startTranslation() {
         
         // 添加表头（不包含全选复选框）
         let html = `
-            <div style="display: flex; align-items: center; padding: 8px 0; border-bottom: 2px solid #333; font-weight: bold; background-color: #f8f9fa;">
+            <div style="display: flex; align-items: center; padding: 8px 0; border-bottom: 2px solid var(--brand-readable-gray); font-weight: bold; background-color: rgba(110, 111, 114, 0.08);">
                 <div style="width: 30px; padding-left: 10px;">
                     <!-- 移除了表头的全选复选框 -->
                 </div>
                 <div style="flex: 1; display: flex;">
-                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'English' : '英文'}</div>
-                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'Chinese' : '中文'}</div>
-                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'Dutch' : '荷兰语'}</div>
-                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'Category' : '分类'}</div>
-                    <div style="flex: 1; padding: 0 5px; color: #333;">${currentLanguage === 'en' ? 'Type' : '类型'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'English' : '英文'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Chinese' : '中文'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Dutch' : '荷兰语'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Category' : '分类'}</div>
+                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Type' : '类型'}</div>
                 </div>
             </div>
         `;
@@ -2215,12 +2216,12 @@ async function startTranslation() {
                 <div style="width: 30px; padding-left: 10px;">
                     <input type="checkbox" id="vocab_${item.id}" value="${item.id}" style="margin-right: 10px;" ${window.selectedVocabulary && window.selectedVocabulary.includes(String(item.id)) ? 'checked' : ''}>
                 </div>
-                <div style="flex: 1; display: flex; font-size: 14px; color: #333;">
+                <div style="flex: 1; display: flex; font-size: 14px; color: var(--brand-readable-gray);">
                     <div style="flex: 1; padding: 0 5px;">${item.english}</div>
                     <div style="flex: 1; padding: 0 5px;">${item.chinese}</div>
                     <div style="flex: 1; padding: 0 5px;">${item.dutch || ''}</div>
                     <div style="flex: 1; padding: 0 5px;">${item.category || ''}</div>
-                    <div style="flex: 1; padding: 0 5px;">${item.is_public ? `<span style="color: #007bff;">${currentLanguage === 'en' ? 'Public' : '公共'}</span>` : (currentLanguage === 'en' ? 'Private' : '私人')}</div>
+                    <div style="flex: 1; padding: 0 5px;">${item.is_public ? `<span style="color: var(--brand-sky-blue);">${currentLanguage === 'en' ? 'Public' : '公共'}</span>` : (currentLanguage === 'en' ? 'Private' : '私人')}</div>
                 </div>
             </div>
         `).join('');

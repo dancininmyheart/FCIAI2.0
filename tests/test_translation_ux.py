@@ -6,9 +6,14 @@ from flask import Flask, render_template
 
 
 ROOT = Path(__file__).resolve().parents[1]
+AUTH_BASE_TEMPLATE = ROOT / "app" / "templates" / "base.html"
 BASE_TEMPLATE = ROOT / "app" / "templates" / "main" / "base_layout.html"
 PPT_TEMPLATE = ROOT / "app" / "templates" / "main" / "index.html"
 PDF_TEMPLATE = ROOT / "app" / "templates" / "main" / "pdf_translate.html"
+DICTIONARY_TEMPLATE = ROOT / "app" / "templates" / "main" / "dictionary.html"
+BRAND_CSS = ROOT / "app" / "static" / "css" / "brand.css"
+AUTH_CSS = ROOT / "app" / "static" / "css" / "style.css"
+BASE_STYLES_CSS = ROOT / "app" / "static" / "css" / "styles.css"
 EXPERIENCE_CSS = ROOT / "app" / "static" / "css" / "experience.css"
 MAIN_JS = ROOT / "app" / "static" / "js" / "main.js"
 
@@ -30,6 +35,57 @@ def test_application_shell_is_zoomable_and_keyboard_navigable() -> None:
     assert 'aria-live="polite"' in template
     assert "css/experience.css" in template
     assert "url_for('main.user_management')" in template
+
+
+def test_frontend_theme_uses_the_approved_brand_palette() -> None:
+    brand = _read(BRAND_CSS)
+    auth = _read(AUTH_CSS)
+    base = _read(BASE_STYLES_CSS)
+    experience = _read(EXPERIENCE_CSS)
+
+    assert "--brand-sky-blue: #0094d9;" in brand
+    assert "--brand-cool-gray: #6e6f72;" in brand
+    assert "--brand-milk-white: #ffffff;" in brand
+    assert "--brand-readable-gray: #3f4043;" in brand
+
+    assert "--primary-color: var(--brand-sky-blue);" in auth
+    assert "--background-color: var(--brand-milk-white);" in auth
+    assert "--text-color: var(--brand-readable-gray);" in auth
+    assert "--muted-text-color: var(--brand-cool-gray);" in auth
+
+    assert "--primary-color: var(--brand-sky-blue);" in base
+    assert "--brand-color: var(--brand-sky-blue);" in base
+    assert "--text-color: var(--brand-readable-gray);" in base
+    assert "--bg-color: var(--brand-milk-white);" in base
+
+    assert "--ux-page: var(--brand-milk-white);" in experience
+    assert "--ux-panel: var(--brand-milk-white);" in experience
+    assert "--ux-text: var(--brand-readable-gray);" in experience
+    assert "--ux-muted: var(--brand-cool-gray);" in experience
+    assert "--ux-primary: var(--brand-sky-blue);" in experience
+    assert "--ux-brand: var(--brand-sky-blue);" in experience
+
+
+def test_brand_stylesheets_have_a_deterministic_cascade_order() -> None:
+    auth_template = _read(AUTH_BASE_TEMPLATE)
+    main_template = _read(BASE_TEMPLATE)
+
+    assert auth_template.index("css/brand.css") < auth_template.index("css/style.css")
+
+    brand = main_template.index("css/brand.css")
+    base = main_template.index("css/styles.css")
+    navigation = main_template.index("css/nav.css")
+    toast = main_template.index("css/toast.css")
+    user_info = main_template.index("css/user-info.css")
+    page_styles = main_template.index("{% block styles %}")
+    experience = main_template.index("css/experience.css")
+
+    assert brand < base < navigation < toast < user_info < page_styles < experience
+
+
+def test_translation_vocabulary_dialogs_do_not_use_legacy_bootstrap_blue() -> None:
+    for template in (PPT_TEMPLATE, PDF_TEMPLATE, DICTIONARY_TEMPLATE):
+        assert "#007bff" not in _read(template).lower()
 
 
 def test_translation_uploads_and_history_expose_accessible_states() -> None:
@@ -96,6 +152,21 @@ def test_ppt_translation_defaults_to_source_first_bilingual_display() -> None:
     assert 'name="bilingual_translation"' in language_display
     assert '<option value="paragraph_up" selected>' in language_display
     assert '<option value="translation_only" selected>' not in language_display
+
+
+def test_clearing_page_selection_keeps_unselected_page_numbers_readable() -> None:
+    template = _read(PPT_TEMPLATE)
+    page_item_start = template.index(".page-item {")
+    page_item_end = template.index("}", page_item_start)
+    unselected_page_style = template[page_item_start:page_item_end]
+
+    assert "color: var(--brand-readable-gray);" in unselected_page_style
+
+
+def test_hovering_a_selected_page_keeps_its_selected_contrast() -> None:
+    template = _read(PPT_TEMPLATE)
+
+    assert ".page-item:hover:not(.selected)" in template
 
 
 def test_ppt_translation_rejects_a_server_display_mode_mismatch() -> None:

@@ -4,7 +4,7 @@
     bottom: 20px;
     right: 20px;
     width: 320px;
-    background: #ffffff;
+    background: var(--brand-milk-white);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     border: 1px solid #e1e5e9;
@@ -22,8 +22,8 @@
     display: flex;
     align-items: center;
     padding: 12px 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: var(--brand-sky-blue);
+    color: var(--brand-milk-white);
     cursor: pointer;
     min-height: 36px;
 }
@@ -62,7 +62,7 @@
 .user-info-toggle {
     background: none;
     border: none;
-    color: white;
+    color: var(--brand-milk-white);
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -85,7 +85,7 @@
 
 .user-info-body {
     padding: 16px;
-    background: white;
+    background: var(--brand-milk-white);
     max-height: 300px;
     overflow-y: auto;
 }
@@ -95,7 +95,7 @@
     align-items: center;
     margin-bottom: 12px;
     font-size: 13px;
-    color: #495057;
+    color: var(--brand-readable-gray);
 }
 
 .user-info-item:last-child {
@@ -105,7 +105,7 @@
 .user-info-item i {
     width: 16px;
     margin-right: 10px;
-    color: #6c757d;
+    color: var(--brand-cool-gray);
     flex-shrink: 0;
 }
 
@@ -133,14 +133,14 @@
     font-weight: 500;
     transition: all 0.2s ease;
     border: 1px solid #dee2e6;
-    color: #495057;
+    color: var(--brand-readable-gray);
     background: #f8f9fa;
 }
 
 .user-action-btn:hover {
     background: #e9ecef;
     text-decoration: none;
-    color: #495057;
+    color: var(--brand-readable-gray);
     transform: translateY(-1px);
 }
 
@@ -197,36 +197,36 @@
 /* 暗色主题支持 */
 @media (prefers-color-scheme: dark) {
     .user-info-card {
-        background: #2d3748;
-        border-color: #4a5568;
+        background: var(--brand-milk-white);
+        border-color: rgba(110, 111, 114, 0.28);
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     }
     
     .user-info-body {
-        background: #2d3748;
+        background: var(--brand-milk-white);
     }
     
     .user-info-item {
-        color: #e2e8f0;
+        color: var(--brand-readable-gray);
     }
     
     .user-info-item i {
-        color: #a0aec0;
+        color: var(--brand-cool-gray);
     }
     
     .user-action-btn {
-        background: #4a5568;
-        color: #e2e8f0;
-        border-color: #4a5568;
+        background: rgba(110, 111, 114, 0.08);
+        color: var(--brand-readable-gray);
+        border-color: rgba(110, 111, 114, 0.28);
     }
     
     .user-action-btn:hover {
-        background: #2d3748;
-        color: #e2e8f0;
+        background: rgba(0, 148, 217, 0.08);
+        color: var(--brand-readable-gray);
     }
     
     .user-info-actions {
-        border-top-color: #4a5568;
+        border-top-color: rgba(110, 111, 114, 0.28);
     }
 }
 
@@ -310,6 +310,6 @@
 }
 
 .user-type-badge.regular {
-    background: #6c757d;
-    color: white;
+    background: var(--brand-cool-gray);
+    color: var(--brand-milk-white);
 }

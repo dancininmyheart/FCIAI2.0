@@ -1,13 +1,15 @@
 :root {
-    --primary-color: #00a8ff;
-    --secondary-color: #0097e6;
-    --text-color: #f5f6fa;
-    --bg-color: #2f3640;
-    --nav-bg-color: #353b48;
-    --brand-color: #00a8ff;
-    --hover-color: rgba(0, 168, 255, 0.1);
-    --active-color: rgba(0, 168, 255, 0.2);
-    --active-text-color: #00a8ff;
+    --primary-color: var(--brand-sky-blue);
+    --primary-color-dark: var(--brand-sky-blue);
+    --secondary-color: var(--brand-sky-blue);
+    --text-color: var(--brand-readable-gray);
+    --text-muted: var(--brand-cool-gray);
+    --bg-color: var(--brand-milk-white);
+    --nav-bg-color: var(--brand-milk-white);
+    --brand-color: var(--brand-sky-blue);
+    --hover-color: rgba(0, 148, 217, 0.08);
+    --active-color: rgba(0, 148, 217, 0.12);
+    --active-text-color: var(--brand-sky-blue);
     --error-color: #e84118;
     --success-color: #4cd137;
 }
@@ -40,7 +42,7 @@ h1 {
 
 button {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--brand-milk-white);
     border: none;
     padding: 0.8rem 1.5rem;
     border-radius: 5px;
@@ -65,9 +67,9 @@ input[type="text"],
 input[type="file"] {
     width: 100%;
     padding: 0.8rem;
-    border: 1px solid rgba(0, 168, 255, 0.3);
+    border: 1px solid rgba(110, 111, 114, 0.3);
     border-radius: 5px;
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--brand-milk-white);
     color: var(--text-color);
     font-size: 1rem;
 }
@@ -128,7 +130,7 @@ input[type="text"]:focus {
 .btn-outline-light.btn-loading::after,
 .btn-outline-dark.btn-loading::after {
     border: 2px solid rgba(0, 0, 0, 0.2);
-    border-top-color: #333;
+    border-top-color: var(--brand-readable-gray);
 }
 
 /* 适配小按钮的加载效果 */
@@ -217,12 +219,12 @@ input[type="text"]:focus {
 
 .stat-label {
     font-weight: 500;
-    color: #495057;
+    color: var(--brand-readable-gray);
 }
 
 .stat-value {
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    color: #212529;
+    color: var(--brand-readable-gray);
 }
 
 /* 状态指示器 */
@@ -258,10 +260,10 @@ input[type="text"]:focus {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    color: #fff;
+    color: var(--brand-milk-white);
     text-align: center;
     white-space: nowrap;
-    background-color: #007bff;
+    background-color: var(--brand-sky-blue);
     transition: width 0.6s ease;
 }
 
@@ -278,40 +280,40 @@ input[type="text"]:focus {
     font-size: 1rem;
     font-weight: 500;
     margin-bottom: 1rem;
-    color: #495057;
+    color: var(--brand-readable-gray);
 }
 
 /* 适配深色模式 */
 @media (prefers-color-scheme: dark) {
     .system-stat-card {
-        background-color: #343a40;
-        border-color: #495057;
+        background-color: var(--brand-milk-white);
+        border-color: rgba(110, 111, 114, 0.24);
     }
     
     .stat-card-header {
-        background-color: #343a40;
-        border-color: #495057;
-        color: #f8f9fa;
+        background-color: rgba(110, 111, 114, 0.08);
+        border-color: rgba(110, 111, 114, 0.24);
+        color: var(--brand-readable-gray);
     }
     
     .stat-label {
-        color: #adb5bd;
+        color: var(--brand-cool-gray);
     }
     
     .stat-value {
-        color: #f8f9fa;
+        color: var(--brand-readable-gray);
     }
     
     .stat-item {
-        border-color: #495057;
+        border-color: rgba(110, 111, 114, 0.24);
     }
     
     .action-panel {
-        background-color: #343a40;
-        border-color: #495057;
+        background-color: rgba(110, 111, 114, 0.08);
+        border-color: rgba(110, 111, 114, 0.24);
     }
     
     .action-panel-title {
-        color: #adb5bd;
+        color: var(--brand-cool-gray);
     }
-} 
+}

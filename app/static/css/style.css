@@ -1,13 +1,13 @@
 :root {
-    --primary-color: #0094d9;
-    --primary-hover-color: #007bb6;
-    --accent-color: #005f99;
-    --background-color: #f3f7fb;
-    --card-background: #ffffff;
-    --text-color: #1f2a37;
-    --muted-text-color: #6b7280;
-    --border-color: #dbe7f5;
-    --shadow-color: rgba(15, 23, 42, 0.08);
+    --primary-color: var(--brand-sky-blue);
+    --primary-hover-color: var(--brand-sky-blue);
+    --accent-color: var(--brand-sky-blue);
+    --background-color: var(--brand-milk-white);
+    --card-background: var(--brand-milk-white);
+    --text-color: var(--brand-readable-gray);
+    --muted-text-color: var(--brand-cool-gray);
+    --border-color: rgba(110, 111, 114, 0.28);
+    --shadow-color: rgba(63, 64, 67, 0.12);
     --success-color: #28a745;
     --error-color: #d90429;
 }
@@ -131,7 +131,7 @@ body {
     padding: 12px 14px;
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    background: #f8fbff;
+    background: var(--brand-milk-white);
     color: var(--text-color);
     font-size: 1rem;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -165,15 +165,15 @@ body {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
-    color: #ffffff;
+    background: var(--primary-color);
+    color: var(--brand-milk-white);
     box-shadow: 0 12px 24px rgba(0, 148, 217, 0.18);
 }
 
 .btn-primary:hover {
     transform: translateY(-1px);
     box-shadow: 0 16px 32px rgba(0, 148, 217, 0.25);
-    background: linear-gradient(135deg, var(--primary-hover-color), var(--accent-color));
+    background: var(--primary-hover-color);
 }
 
 .btn-primary:active {
@@ -333,7 +333,7 @@ body {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.55);
+    background: rgba(63, 64, 67, 0.55);
     backdrop-filter: blur(4px);
     z-index: 1000;
     align-items: center;
@@ -348,7 +348,7 @@ body {
     border: 1px solid var(--border-color);
     padding: 32px 28px;
     width: min(420px, 100%);
-    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+    box-shadow: 0 24px 48px rgba(63, 64, 67, 0.18);
     text-align: center;
     color: var(--text-color);
     transition: opacity 0.25s ease;

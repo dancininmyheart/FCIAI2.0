@@ -6,11 +6,11 @@
     <title>{% block title %}{% endblock %} - {% if session.get('language') == 'en' %}Translation Management System{% else %}翻译管理系统{% endif %}</title>
     <link rel="icon" href="{{ url_for('static', filename='images/logo.svg') }}" type="image/svg+xml">
     <!-- 基础样式 -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/brand.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/toast.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/user-info.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/brand.css') }}">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
     
@@ -31,7 +31,7 @@
             margin: 0;
             padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #f8f9fa;
+            background-color: var(--brand-milk-white);
             display: flex;
             min-height: 100vh;
             overflow-x: hidden;
@@ -43,7 +43,7 @@
             width: 17vw; /* 使用视口宽度的17% */
             min-width: 200px; /* 最小宽度保证可读性 */
             max-width: 280px; /* 最大宽度避免过宽 */
-            background: white;
+            background: var(--brand-milk-white);
             box-shadow: 2px 0 8px rgba(0,0,0,0.1);
             height: 100vh;
             position: fixed;
@@ -66,7 +66,7 @@
             align-items: center;
             padding: 1vw 1.4vw; /* 减少上下padding */
             text-decoration: none;
-            color: rgb(0,148,217);
+            color: var(--brand-sky-blue);
             font-size: 1.2rem;
             font-weight: 600;
             border-bottom: 1px solid #f1f3f4;
@@ -88,7 +88,7 @@
         }
 
         .nav-brand:hover {
-            color: rgb(0,130,190);
+            color: var(--brand-sky-blue);
             text-decoration: none;
         }
 
@@ -106,7 +106,7 @@
             align-items: center;
             padding: 0.8vw 1.4vw;
             text-decoration: none;
-            color: rgb(110,111,114);
+            color: var(--brand-cool-gray);
             font-size: 1rem;
             font-weight: 500;
             transition: all 0.2s ease;
@@ -122,15 +122,15 @@
 
         .nav-link:hover {
             background: rgba(0,148,217,0.08);
-            color: rgb(0,148,217);
+            color: var(--brand-sky-blue);
             text-decoration: none;
             border-left-color: rgba(0,148,217,0.3);
         }
 
         .nav-link.active {
             background: rgba(0,148,217,0.12);
-            color: rgb(0,148,217);
-            border-left-color: rgb(0,148,217);
+            color: var(--brand-sky-blue);
+            border-left-color: var(--brand-sky-blue);
             font-weight: 600;
         }
 
@@ -147,7 +147,7 @@
             background: rgba(0,148,217,0.1);
             border: 1px solid rgba(0,148,217,0.2);
             border-radius: 20px;
-            color: rgb(0,148,217);
+            color: var(--brand-sky-blue);
             font-size: 0.9rem;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -157,7 +157,7 @@
         .floating-language-btn:hover {
             background: rgba(0,148,217,0.15);
             border-color: rgba(0,148,217,0.3);
-            color: rgb(0,130,190);
+            color: var(--brand-sky-blue);
         }
 
         .floating-language-btn i {
@@ -168,7 +168,7 @@
         .container {
             margin-left: 17vw; /* 与侧边栏宽度一致 */
             width: 83vw; /* 占据剩余的83%视口宽度 */
-            background-color: #f8f9fa;
+            background-color: var(--brand-milk-white);
             min-height: 100vh;
             padding: 0;
             box-sizing: border-box;
@@ -183,7 +183,7 @@
         }
 
         .toast {
-            background: white;
+            background: var(--brand-milk-white);
             border-radius: 0.6vw;
             padding: 1vw 1.4vw;
             margin-bottom: 0.7vw;

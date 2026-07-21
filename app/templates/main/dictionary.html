@@ -108,7 +108,7 @@ h2 {
 }
 
 .stop-words-input-group button:hover {
-    background: rgb(0,120,180);
+    background: var(--brand-sky-blue);
 }
 
 .stop-words-list {
@@ -177,7 +177,7 @@ h2 {
 }
 
 .input-group button:hover {
-    background: rgb(0,120,180);
+    background: var(--brand-sky-blue);
 }
 
 /* 搜索栏 */
@@ -224,7 +224,7 @@ h2 {
 }
 
 .search-container button:hover {
-    background: rgb(0,120,180);
+    background: var(--brand-sky-blue);
 }
 
 /* 词库表格 */
@@ -289,7 +289,7 @@ th, td {
 th {
     background: #f8f9fa;
     font-weight: 600;
-    color: #495057;
+    color: var(--brand-readable-gray);
     position: sticky;
     top: 0;
 }
@@ -540,21 +540,21 @@ function getText(key, params = {}) {
             {% if session.get('language') == 'en' %}Upload{% else %}上传{% endif %}
         </button>
     </div>
-    <div id="selectedFileName" style="margin-top: 0.7vw; color: #666; font-size: 0.9rem;"></div>
+    <div id="selectedFileName" style="margin-top: 0.7vw; color: var(--brand-cool-gray); font-size: 0.9rem;"></div>
     <div id="uploadProgress" style="display: none; margin-top: 1vw;">
         <div style="width: 100%; height: 1.4vw; background: #e9ecef; border-radius: 0.7vw; overflow: hidden;">
             <div id="progressBar" style="height: 100%; background: rgb(0,148,217); width: 0%; transition: width 0.3s ease;"></div>
         </div>
-        <div id="progressText" style="text-align: center; margin-top: 0.4vw; font-size: 0.9rem; color: #666;"></div>
+        <div id="progressText" style="text-align: center; margin-top: 0.4vw; font-size: 0.9rem; color: var(--brand-cool-gray);"></div>
     </div>
 </section>
 <!-- 添加新翻译 -->
 <section class="add-section">
     <h2>{% if session.get('language') == 'en' %}Add New Translation{% else %}添加新翻译{% endif %}</h2>
     <div class="input-group">
-        <input type="text" id="englishInput" placeholder="{% if session.get('language') == 'en' %}English{% else %}英文{% endif %}" style="background-color: #ffffff; color: #333333; border: 1px solid #ddd; border-radius: 4px; padding: 8px 12px;">
-        <input type="text" id="chineseInput" placeholder="{% if session.get('language') == 'en' %}Chinese{% else %}中文{% endif %}" style="background-color: #ffffff; color: #333333; border: 1px solid #ddd; border-radius: 4px; padding: 8px 12px;">
-        <input type="text" id="dutchInput" placeholder="{% if session.get('language') == 'en' %}Dutch{% else %}荷兰语{% endif %}" style="background-color: #ffffff; color: #333333; border: 1px solid #ddd; border-radius: 4px; padding: 8px 12px;">
+        <input type="text" id="englishInput" placeholder="{% if session.get('language') == 'en' %}English{% else %}英文{% endif %}" style="background-color: var(--brand-milk-white); color: var(--brand-readable-gray); border: 1px solid rgba(110, 111, 114, 0.28); border-radius: 4px; padding: 8px 12px;">
+        <input type="text" id="chineseInput" placeholder="{% if session.get('language') == 'en' %}Chinese{% else %}中文{% endif %}" style="background-color: var(--brand-milk-white); color: var(--brand-readable-gray); border: 1px solid rgba(110, 111, 114, 0.28); border-radius: 4px; padding: 8px 12px;">
+        <input type="text" id="dutchInput" placeholder="{% if session.get('language') == 'en' %}Dutch{% else %}荷兰语{% endif %}" style="background-color: var(--brand-milk-white); color: var(--brand-readable-gray); border: 1px solid rgba(110, 111, 114, 0.28); border-radius: 4px; padding: 8px 12px;">
         <input type="text" id="categoryInput" placeholder="{% if session.get('language') == 'en' %}Tag (separate multiple tags with semicolon){% else %}标签（多个标签用分号分隔）{% endif %}" style="display:none;">
         <button id="pickCategoryBtn" class="action-btn">
             <i class="bi bi-tags"></i>
@@ -594,7 +594,7 @@ function getText(key, params = {}) {
     </div>
     <div style="padding:12px 16px; border-top:1px solid #eee; display:flex; gap:10px; justify-content:flex-end;">
       <button id="confirmCategoryBtn" class="action-btn"><i class="bi bi-check-lg"></i> {% if session.get('language') == 'en' %}Confirm{% else %}确定{% endif %}</button>
-      <button id="cancelCategoryBtn" class="action-btn" style="background:#6c757d; color:#fff;"><i class="bi bi-x-lg"></i> {% if session.get('language') == 'en' %}Cancel{% else %}取消{% endif %}</button>
+      <button id="cancelCategoryBtn" class="action-btn" style="background:var(--brand-cool-gray); color:var(--brand-milk-white);"><i class="bi bi-x-lg"></i> {% if session.get('language') == 'en' %}Cancel{% else %}取消{% endif %}</button>
     </div>
   </div>
 </div>
@@ -838,7 +838,7 @@ function renderCategoryChips(categories) {
         const btn = document.createElement('button');
         btn.className = 'action-btn';
         btn.style.background = isSelected ? 'rgb(0,148,217)' : '#e9ecef';
-        btn.style.color = isSelected ? '#fff' : '#333';
+        btn.style.color = isSelected ? 'var(--brand-milk-white)' : 'var(--brand-readable-gray)';
         btn.textContent = cat;
         btn.title = cat;
         btn.onclick = () => toggleCategory(cat);
@@ -971,7 +971,7 @@ async function loadTranslations(searchTerm = '', page = 1) {
                     <td>${item.dutch || ''}</td>
                     <td>${item.category || ''}</td>
                     <td>${new Date(item.created_at).toLocaleString(currentLanguage === 'en' ? 'en-US' : 'zh-CN')}</td>
-                    <td>${item.is_public ? '<span style="color: #007bff;">' + getText('publicType') + '</span>' : getText('privateType')}</td>
+                    <td>${item.is_public ? '<span style="color: var(--brand-sky-blue);">' + getText('publicType') + '</span>' : getText('privateType')}</td>
                     <td>${item.is_public && item.user ? item.user.username : (item.user_id == CURRENT_USER_ID ? getText('me') : '')}</td>
                     <td>
                         <button class="action-btn" onclick="editTranslation(${item.id})" title="${currentLanguage === 'en' ? 'Edit' : '编辑'}">

@@ -157,7 +157,7 @@ function showCompletionPopup(message, taskKey = 'GLOBAL') {
     modalContent.style.cssText =
       'background-color:white;padding:30px;border-radius:10px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.25);max-width:420px;width:90%';
     messageElement.style.cssText =
-      'margin-bottom:20px;font-size:16px;color:#343a40';
+      'margin-bottom:20px;font-size:16px;color:#3f4043';
     confirmButton.style.cssText =
       'background-color:#0094d9;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600';
 

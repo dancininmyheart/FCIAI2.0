@@ -215,7 +215,7 @@ function createPasswordModal() {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: white;
+            background: var(--brand-milk-white);
             border-radius: 8px;
             width: 400px;
             max-width: 90vw;
@@ -232,7 +232,7 @@ function createPasswordModal() {
         
         .password-modal-header h3 {
             margin: 0;
-            color: #495057;
+            color: var(--brand-readable-gray);
             font-size: 18px;
         }
         
@@ -241,7 +241,7 @@ function createPasswordModal() {
             border: none;
             font-size: 24px;
             cursor: pointer;
-            color: #6c757d;
+            color: var(--brand-cool-gray);
         }
         
         .password-modal-body {
@@ -256,7 +256,7 @@ function createPasswordModal() {
             display: block;
             margin-bottom: 4px;
             font-weight: 500;
-            color: #495057;
+            color: var(--brand-readable-gray);
         }
         
         .form-group input {
@@ -269,8 +269,8 @@ function createPasswordModal() {
         
         .form-group input:focus {
             outline: none;
-            border-color: #80bdff;
-            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+            border-color: var(--brand-sky-blue);
+            box-shadow: 0 0 0 0.2rem rgba(0, 148, 217, 0.25);
         }
         
         .password-modal-actions {
@@ -290,13 +290,13 @@ function createPasswordModal() {
         }
         
         .btn-secondary {
-            background: #6c757d;
-            color: white;
+            background: var(--brand-cool-gray);
+            color: var(--brand-milk-white);
         }
         
         .btn-primary {
-            background: #007bff;
-            color: white;
+            background: var(--brand-sky-blue);
+            color: var(--brand-milk-white);
         }
         
         .btn:hover {

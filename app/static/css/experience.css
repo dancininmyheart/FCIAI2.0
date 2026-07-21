@@ -1,22 +1,22 @@
 :root {
-    --ux-page: #f4f7f9;
-    --ux-panel: #ffffff;
-    --ux-subtle: #eef4f7;
-    --ux-border: #d8e2e8;
-    --ux-text: #26343d;
-    --ux-muted: #5d6b74;
-    --ux-primary: #007eaf;
-    --ux-primary-hover: #006b94;
-    --ux-brand: #0094d9;
+    --ux-page: var(--brand-milk-white);
+    --ux-panel: var(--brand-milk-white);
+    --ux-subtle: rgba(110, 111, 114, 0.08);
+    --ux-border: rgba(110, 111, 114, 0.24);
+    --ux-text: var(--brand-readable-gray);
+    --ux-muted: var(--brand-cool-gray);
+    --ux-primary: var(--brand-sky-blue);
+    --ux-primary-hover: var(--brand-sky-blue);
+    --ux-brand: var(--brand-sky-blue);
     --ux-success: #18794e;
     --ux-warning: #9a6700;
     --ux-danger: #b42318;
-    --ux-focus: #005fcc;
+    --ux-focus: var(--brand-sky-blue);
     --ux-sidebar-width: 240px;
     --ux-mobile-header-height: 56px;
     --ux-radius-panel: 8px;
     --ux-radius-control: 6px;
-    --ux-shadow-overlay: 0 16px 40px rgba(26, 45, 56, 0.2);
+    --ux-shadow-overlay: 0 16px 40px rgba(63, 64, 67, 0.2);
     --ux-font-ui: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
     --ux-font-mono: "Cascadia Mono", Consolas, monospace;
 }
@@ -54,7 +54,7 @@ textarea {
     left: 8px;
     z-index: 2000;
     padding: 10px 14px;
-    color: #ffffff;
+    color: var(--brand-milk-white);
     background: var(--ux-primary-hover);
     border-radius: var(--ux-radius-control);
     transform: translateY(-160%);
@@ -138,7 +138,7 @@ textarea {
 .nav-link.active,
 .nav-link[aria-current="page"] {
     color: var(--ux-primary-hover) !important;
-    background: #e2f3f9 !important;
+    background: rgba(0, 148, 217, 0.12) !important;
     box-shadow: inset 3px 0 var(--ux-primary);
 }
 
@@ -271,7 +271,7 @@ textarea {
 
 .form-control:focus {
     border-color: var(--ux-primary) !important;
-    box-shadow: 0 0 0 3px rgba(0, 126, 175, 0.15) !important;
+    box-shadow: 0 0 0 3px rgba(0, 148, 217, 0.18) !important;
 }
 
 .form-text,
@@ -297,7 +297,7 @@ textarea {
 .start-translate-btn,
 .btn-primary,
 .modal-btn-primary {
-    color: #ffffff !important;
+    color: var(--brand-milk-white) !important;
     background: var(--ux-primary) !important;
     border-color: var(--ux-primary) !important;
 }
@@ -326,9 +326,9 @@ textarea {
 }
 
 .start-translate-btn:disabled {
-    color: #7a8790 !important;
-    background: #e6ebee !important;
-    border-color: #d4dde2 !important;
+    color: var(--ux-muted) !important;
+    background: rgba(110, 111, 114, 0.14) !important;
+    border-color: var(--ux-border) !important;
     cursor: not-allowed;
 }
 
@@ -336,14 +336,14 @@ textarea {
     min-height: 220px;
     padding: 36px 24px !important;
     color: var(--ux-text);
-    background: #f9fbfc !important;
-    border: 2px dashed #b9c9d2 !important;
+    background: var(--ux-panel) !important;
+    border: 2px dashed rgba(110, 111, 114, 0.45) !important;
     border-radius: var(--ux-radius-panel) !important;
 }
 
 .upload-zone:hover,
 .upload-zone.dragover {
-    background: #edf8fc !important;
+    background: rgba(0, 148, 217, 0.06) !important;
     border-color: var(--ux-primary) !important;
 }
 
@@ -414,7 +414,7 @@ textarea {
 .upload-progress-bar,
 .progress-bar-container {
     overflow: hidden;
-    background: #dce6eb !important;
+    background: rgba(110, 111, 114, 0.18) !important;
     border-radius: 4px !important;
 }
 
@@ -431,10 +431,10 @@ textarea {
     margin: 0 0 16px !important;
     padding: 10px 14px !important;
     color: var(--ux-text) !important;
-    background: #e8f5fa !important;
-    border: 1px solid #a7d5e7 !important;
+    background: rgba(0, 148, 217, 0.08) !important;
+    border: 1px solid rgba(0, 148, 217, 0.3) !important;
     border-radius: var(--ux-radius-control) !important;
-    box-shadow: 0 4px 12px rgba(38, 52, 61, 0.08);
+    box-shadow: 0 4px 12px rgba(63, 64, 67, 0.08);
 }
 
 .queue-status.alert-danger {
@@ -514,7 +514,7 @@ textarea {
     width: 112px !important;
     min-width: 112px;
     background: var(--ux-panel) !important;
-    box-shadow: -1px 0 var(--ux-border), -10px 0 12px -12px rgba(38, 52, 61, 0.35);
+    box-shadow: -1px 0 var(--ux-border), -10px 0 12px -12px rgba(63, 64, 67, 0.35);
 }
 
 .history-table th:last-child {
@@ -523,7 +523,7 @@ textarea {
 }
 
 .history-table tr:hover td:last-child {
-    background: #f7fafb !important;
+    background: rgba(110, 111, 114, 0.05) !important;
 }
 
 .history-actions {
@@ -566,12 +566,12 @@ textarea {
 }
 
 .action-btn.download {
-    color: #ffffff !important;
+    color: var(--brand-milk-white) !important;
     background: var(--ux-primary) !important;
 }
 
 .action-btn.danger {
-    color: #ffffff !important;
+    color: var(--brand-milk-white) !important;
     background: var(--ux-danger) !important;
 }
 
@@ -617,7 +617,7 @@ textarea {
 
 .completion-modal {
     z-index: 1600 !important;
-    background: rgba(25, 42, 52, 0.5) !important;
+    background: rgba(63, 64, 67, 0.5) !important;
 }
 
 .completion-modal .modal-content {
@@ -765,7 +765,7 @@ textarea {
         z-index: 1300;
         display: block;
         visibility: hidden;
-        background: rgba(25, 42, 52, 0.45);
+        background: rgba(63, 64, 67, 0.45);
         border: 0;
         opacity: 0;
         transition: opacity 180ms ease, visibility 180ms ease;

@@ -1,3 +1,11 @@
+/* 品牌色板：与视觉规范中的 Milk white / Sky blue / Cool gray 保持一致。 */
+:root {
+    --brand-milk-white: #ffffff;
+    --brand-sky-blue: #0094d9;
+    --brand-cool-gray: #6e6f72;
+    --brand-readable-gray: #3f4043;
+}
+
 /* 品牌Logo样式 */
 .brand-logo {
     width: 150px;

@@ -1,7 +1,7 @@
 :root {
     --primary-color: var(--brand-sky-blue);
-    --primary-hover-color: var(--brand-sky-blue);
-    --accent-color: var(--brand-sky-blue);
+    --primary-hover-color: var(--brand-sky-blue-hover);
+    --accent-color: var(--brand-sky-blue-deep);
     --background-color: var(--brand-milk-white);
     --card-background: var(--brand-milk-white);
     --text-color: var(--brand-readable-gray);
@@ -165,7 +165,7 @@ body {
 }
 
 .btn-primary {
-    background: var(--primary-color);
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
     color: var(--brand-milk-white);
     box-shadow: 0 12px 24px rgba(0, 148, 217, 0.18);
 }
@@ -173,7 +173,7 @@ body {
 .btn-primary:hover {
     transform: translateY(-1px);
     box-shadow: 0 16px 32px rgba(0, 148, 217, 0.25);
-    background: var(--primary-hover-color);
+    background: linear-gradient(135deg, var(--primary-hover-color), var(--accent-color));
 }
 
 .btn-primary:active {

@@ -861,8 +861,8 @@
         <div class="form-group">
             <label for="bilingual_translation">{% if session.get('language') == 'en' %}Language display{% else %}语言展示方式{% endif %}</label>
             <select id="bilingual_translation" name="bilingual_translation" class="form-control">
-                <option value="translation_only">{% if session.get('language') == 'en' %}Keep translated content only{% else %}只保留翻译内容{% endif %}</option>
-                <option value="paragraph_up" selected>{% if session.get('language') == 'en' %}Keep both source and translated content(source on top){% else %}保留源语言和翻译内容（源语言在上）{% endif %}</option>
+                <option value="translation_only" selected>{% if session.get('language') == 'en' %}Keep translated content only{% else %}只保留翻译内容{% endif %}</option>
+                <option value="paragraph_up">{% if session.get('language') == 'en' %}Keep both source and translated content(source on top){% else %}保留源语言和翻译内容（源语言在上）{% endif %}</option>
                 <option value="paragraph_down">{% if session.get('language') == 'en' %}Keep both source and translated content(translation on top){% else %}保留源语言和翻译内容（译文在上）{% endif %}</option>
             </select>
         </div>

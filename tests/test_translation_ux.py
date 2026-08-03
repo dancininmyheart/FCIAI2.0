@@ -143,15 +143,15 @@ def test_ppt_translation_submits_current_language_display_selection() -> None:
     assert "formData.append('bilingual_translation', bilingualTranslation);" in launch_flow
 
 
-def test_ppt_translation_defaults_to_source_first_bilingual_display() -> None:
+def test_ppt_translation_defaults_to_translation_only_display() -> None:
     template = _read(PPT_TEMPLATE)
     select_start = template.index('<select id="bilingual_translation"')
     select_end = template.index("</select>", select_start)
     language_display = template[select_start:select_end]
 
     assert 'name="bilingual_translation"' in language_display
-    assert '<option value="paragraph_up" selected>' in language_display
-    assert '<option value="translation_only" selected>' not in language_display
+    assert '<option value="translation_only" selected>' in language_display
+    assert '<option value="paragraph_up" selected>' not in language_display
 
 
 def test_clearing_page_selection_keeps_unselected_page_numbers_readable() -> None:

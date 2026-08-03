@@ -67,6 +67,39 @@ def test_write_translated_pptx_xml_replaces_only_selected_slide_text(tmp_path: P
     assert _texts(slide1) == ["Bonjour le monde", ""]
     assert _texts(slide2) == ["Keep me"]
     assert slide1.find(".//a:rPr[@sz='2400']", NS) is not None
+    assert slide1.find(".//a:bodyPr/a:noAutofit", NS) is None
+    assert slide1.find(".//a:bodyPr/a:normAutofit", NS) is None
+
+
+def test_legacy_translation_only_preserves_slide_xml_for_normalized_equivalent_text(
+    tmp_path: Path,
+) -> None:
+    from pptx_xml_translate import (
+        extract_text_boxes_data_from_pptx,
+        write_translated_pptx_xml,
+    )
+
+    pptx_path = tmp_path / "source.pptx"
+    output_path = tmp_path / "translated.pptx"
+    _write_minimal_pptx(
+        pptx_path,
+        _slide_xml(
+            ["Milk 72%"],
+            body_pr_children="<a:normAutofit fontScale='60000' lnSpcReduction='0'/>",
+        ),
+    )
+    text_boxes = extract_text_boxes_data_from_pptx(pptx_path)
+
+    write_translated_pptx_xml(
+        pptx_path,
+        output_path,
+        text_boxes,
+        {0: {"translated_fragments": {"1_1": [" milk\u300072% "]}}},
+        "translation_only",
+    )
+
+    with zipfile.ZipFile(pptx_path) as source, zipfile.ZipFile(output_path) as output:
+        assert output.read("ppt/slides/slide1.xml") == source.read("ppt/slides/slide1.xml")
 
 
 def test_translate_pptx_with_xml_appends_bilingual_text_without_removing_original_runs(
@@ -107,7 +140,7 @@ def test_translate_pptx_with_xml_appends_bilingual_text_without_removing_origina
     assert slide.find(".//a:br", NS) is not None
 
 
-def test_write_translated_pptx_xml_sets_textbox_autofit_when_text_is_appended(
+def test_legacy_writer_snapshots_legacy_normal_policy_from_flask_config(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -115,6 +148,7 @@ def test_write_translated_pptx_xml_sets_textbox_autofit_when_text_is_appended(
         extract_text_boxes_data_from_pptx,
         write_translated_pptx_xml,
     )
+    from flask import Flask
 
     pptx_path = tmp_path / "source.pptx"
     output_path = tmp_path / "translated.pptx"
@@ -125,13 +159,16 @@ def test_write_translated_pptx_xml_sets_textbox_autofit_when_text_is_appended(
     text_boxes = extract_text_boxes_data_from_pptx(pptx_path, selected_page_indices=[0])
 
     # When
-    write_translated_pptx_xml(
-        pptx_path,
-        output_path,
-        text_boxes,
-        {0: {"translated_fragments": {"1_1": ["你好"]}}},
-        "paragraph_up",
-    )
+    app = Flask("pptx-autofit-policy-test")
+    app.config["PPTX_XML_AUTOFIT_POLICY"] = "legacy_norm"
+    with app.app_context():
+        write_translated_pptx_xml(
+            pptx_path,
+            output_path,
+            text_boxes,
+            {0: {"translated_fragments": {"1_1": ["你好"]}}},
+            "paragraph_up",
+        )
 
     # Then
     slide = _read_slide_xml(output_path, 1)

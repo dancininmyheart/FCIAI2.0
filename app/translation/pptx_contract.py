@@ -19,7 +19,8 @@ from app.translation.pptx_contract_validation import (
     reserved_marker_counts,
     validate_pptx_translations,
     validate_request_units,
-    validate_unit_translation,
+    validate_unit_translation_quality,
+    validate_unit_translation_structure,
 )
 
 
@@ -54,6 +55,16 @@ def parse_pptx_response(
     raw: str,
     expected_units: tuple[PptxRequestUnit, ...],
 ) -> tuple[PptxUnitTranslation, ...]:
+    translations = parse_pptx_response_structure(raw, expected_units)
+    for unit, translation in zip(expected_units, translations, strict=True):
+        validate_unit_translation_quality(unit, translation)
+    return translations
+
+
+def parse_pptx_response_structure(
+    raw: str,
+    expected_units: tuple[PptxRequestUnit, ...],
+) -> tuple[PptxUnitTranslation, ...]:
     payload = _parse_json_object(_strip_json_fence(raw))
     _require_exact_fields(payload, _ROOT_FIELDS)
     if _integer(payload["provider_contract_schema_version"]) != PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION:
@@ -80,7 +91,7 @@ def parse_pptx_response(
             reconstruct_target(unit, segments),
             segments,
         )
-        validate_unit_translation(unit, translation)
+        validate_unit_translation_structure(unit, translation)
         translations.append(translation)
     return tuple(translations)
 
@@ -219,8 +230,10 @@ __all__ = [
     "PptxSegmentTranslation",
     "PptxUnitTranslation",
     "parse_pptx_response",
+    "parse_pptx_response_structure",
     "reconstruct_target",
     "reserved_marker_counts",
     "serialize_pptx_request",
     "validate_pptx_translations",
+    "validate_unit_translation_quality",
 ]

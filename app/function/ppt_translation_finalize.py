@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import stat
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,12 +32,20 @@ def finalize_translated_presentation(request: FinalizePresentationRequest) -> bo
     if final_path.resolve() == request.original_path.resolve():
         return True
     if request.original_path.exists():
+        _make_file_replaceable(request.original_path)
         request.original_path.unlink()
     shutil.move(str(final_path), str(request.original_path))
     if request.progress_callback:
         request.progress_callback(1, 1)
     logger.info("Translated presentation moved over original file: %s", request.original_path)
     return True
+
+
+def _make_file_replaceable(path: Path) -> None:
+    mode = path.stat().st_mode
+    if mode & stat.S_IWRITE:
+        return
+    path.chmod(mode | stat.S_IWRITE)
 
 
 def _apply_ocr_if_enabled(request: FinalizePresentationRequest) -> Path:

@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import tempfile
+import unicodedata
 import zipfile
 from collections.abc import Mapping, Sequence
 from io import BytesIO
@@ -22,11 +23,19 @@ from app.translation.pptx_contract import PptxContractError, reserved_marker_cou
 from app.translation.pptx_contract_types import PptxRequestUnit, PptxUnitTranslation
 
 try:
-    from .pptx_xml_autofit import enable_textbox_autofit_for_paragraph
+    from .pptx_xml_autofit import (
+        AutofitPolicy,
+        apply_textbox_autofit,
+        resolve_autofit_policy,
+    )
     from .pptx_xml_package import serialize_slide_xml, validate_pptx_package
     from .pptx_xml_types import TextBoxData, TranslationPageResult, WriteMode, XmlParagraphTarget
 except ImportError:
-    from app.function.pynuo_fuc.pptx_xml_autofit import enable_textbox_autofit_for_paragraph
+    from app.function.pynuo_fuc.pptx_xml_autofit import (
+        AutofitPolicy,
+        apply_textbox_autofit,
+        resolve_autofit_policy,
+    )
     from app.function.pynuo_fuc.pptx_xml_package import serialize_slide_xml, validate_pptx_package
     from app.function.pynuo_fuc.pptx_xml_types import (
         TextBoxData,
@@ -89,6 +98,8 @@ def write_structured_translated_pptx(
     output_path: Path | str,
     translations: tuple[PptxUnitTranslation, ...],
     bilingual_translation: str,
+    *,
+    autofit_policy: AutofitPolicy | str | None = None,
 ) -> str:
     try:
         from .pptx_xml_structured import write_structured_translated_pptx as write
@@ -97,7 +108,13 @@ def write_structured_translated_pptx(
             write_structured_translated_pptx as write,
         )
 
-    return write(input_path, output_path, translations, bilingual_translation)
+    return write(
+        input_path,
+        output_path,
+        translations,
+        bilingual_translation,
+        autofit_policy=autofit_policy,
+    )
 
 
 def extract_text_boxes_data_from_pptx(
@@ -131,11 +148,14 @@ def write_translated_pptx_xml(
     text_boxes_data: Sequence[TextBoxData],
     translation_results: Mapping[int, TranslationPageResult],
     bilingual_translation: str,
+    *,
+    autofit_policy: AutofitPolicy | str | None = None,
 ) -> str:
     input_file = Path(input_path)
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     translation_lookup = _build_translation_lookup(text_boxes_data, translation_results)
+    resolved_autofit_policy = resolve_autofit_policy(autofit_policy)
     pages_to_modify = {page for page, _, _ in translation_lookup}
     with tempfile.NamedTemporaryFile(
         prefix=f".{output_file.stem}.",
@@ -164,6 +184,7 @@ def write_translated_pptx_xml(
                         page_index,
                         translation_lookup,
                         _resolve_write_mode(bilingual_translation),
+                        resolved_autofit_policy,
                     )
                 target.writestr(item, data)
         validate_pptx_package(temporary_path, expected_members)
@@ -206,6 +227,7 @@ def _paragraph_targets(
                         slide_path=slide_path,
                         box_index=box_index,
                         paragraph_index=paragraph_index,
+                        text_body=text_body,
                         paragraph=paragraph,
                         runs=runs,
                         text_nodes=text_nodes,
@@ -268,15 +290,24 @@ def _translated_slide_xml(
     page_index: int,
     translation_lookup: Mapping[tuple[int, int, int], Sequence[str]],
     mode: WriteMode,
+    autofit_policy: AutofitPolicy,
 ) -> bytes:
     with NAMESPACE_SERIALIZATION_LOCK:
         _register_source_namespaces(slide_data)
         root = ElementTree.fromstring(slide_data)
+        changed_text_bodies: set[ElementTree.Element] = set()
         for target in _paragraph_targets(root, page_index, slide_path):
             fragments = translation_lookup.get((page_index, target.box_index, target.paragraph_index))
-            if fragments:
-                enable_textbox_autofit_for_paragraph(root, target.paragraph)
-                _apply_translation(target, tuple(fragments), mode)
+            if fragments and _apply_translation(target, tuple(fragments), mode):
+                changed_text_bodies.add(target.text_body)
+        if not changed_text_bodies:
+            return slide_data
+        for text_body in changed_text_bodies:
+            apply_textbox_autofit(
+                root,
+                text_body,
+                policy=autofit_policy,
+            )
     return serialize_slide_xml(slide_data, root)
 
 
@@ -291,8 +322,15 @@ def _apply_translation(
     target: XmlParagraphTarget,
     translated_fragments: tuple[str, ...],
     mode: WriteMode,
-) -> None:
+) -> bool:
     original_fragments = tuple(node.text or "" for node in target.text_nodes)
+    translated_text = (
+        "".join(translated_fragments)
+        if len(translated_fragments) == len(target.text_nodes)
+        else " ".join(translated_fragments)
+    )
+    if _normalized_text(target.text) == _normalized_text(translated_text):
+        return False
     match mode:
         case WriteMode.PARAGRAPH_UP:
             _append_break_and_runs(target.paragraph, target.runs, translated_fragments)
@@ -303,6 +341,11 @@ def _apply_translation(
             _replace_text_nodes(target.text_nodes, translated_fragments)
         case unreachable:
             assert_never(unreachable)
+    return True
+
+
+def _normalized_text(text: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", text).split()).casefold()
 
 
 def _replace_text_nodes(

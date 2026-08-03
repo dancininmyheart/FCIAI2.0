@@ -67,6 +67,24 @@ class JsonModeQwenTransport:
         return '{"provider_contract_schema_version":2,"document_kind":"pptx_xml","translations":[]}'
 
 
+@dataclass(frozen=True, slots=True)
+class DeterministicQwenTransport:
+    controls: list[tuple[float, int]] = field(default_factory=list)
+
+    def complete(
+        self,
+        model: str,
+        system: str,
+        user: str,
+        timeout_seconds: float,
+        *,
+        temperature: float,
+        seed: int,
+    ) -> str:
+        self.controls.append((temperature, seed))
+        return "translated"
+
+
 def _request() -> ProviderRequest:
     return ProviderRequest.create(
         text="[block] Milk",
@@ -91,6 +109,15 @@ def test_qwen_provider_preserves_semantic_prompt_contract() -> None:
     assert "[block]" in system
     assert "box_index" in system and "paragraph_index" in system
     assert '"HMO"' in system and '"milk": "乳汁"' in system
+
+
+def test_qwen_provider_passes_deterministic_controls_only_when_transport_supports_them() -> None:
+    capable = DeterministicQwenTransport()
+
+    QwenProvider(capable).translate(_request())
+    QwenProvider(RecordingQwenTransport()).translate(_request())
+
+    assert capable.controls == [(0, 0)]
 
 
 def test_qwen_provider_uses_json_mode_for_pptx_contract() -> None:
@@ -198,6 +225,8 @@ def test_openai_qwen_transport_sends_json_object_response_format(
     assert result == '{"status":"ok"}'
     assert calls[0]["response_format"] == {"type": "json_object"}
     assert calls[0]["extra_body"] == {"enable_thinking": False}
+    assert calls[0]["temperature"] == 0
+    assert "seed" not in calls[0]
     assert "max_tokens" not in calls[0]
 
 

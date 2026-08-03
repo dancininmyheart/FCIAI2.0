@@ -64,6 +64,7 @@ class XmlParagraphTarget:
     slide_path: str
     box_index: int
     paragraph_index: int
+    text_body: ElementTree.Element
     paragraph: ElementTree.Element
     runs: tuple[ElementTree.Element, ...]
     text_nodes: tuple[ElementTree.Element, ...]

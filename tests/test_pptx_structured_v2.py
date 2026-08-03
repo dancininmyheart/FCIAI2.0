@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import zipfile
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -14,6 +15,7 @@ from types import ModuleType
 from xml.etree import ElementTree
 
 import pytest
+from flask import Flask
 
 from app.function.pynuo_fuc.pptx_xml_ops import (
     extract_structured_units_from_pptx,
@@ -83,8 +85,8 @@ class ContractProvider:
             translations = []
             for unit in payload["units"]:
                 segments = [
-                    {"segment_id": item["segment_id"], "target_text": f"T:{item['source_text']}"}
-                    for item in unit["source_stream"]
+                    {"segment_id": item["segment_id"], "target_text": f"译文{index}"}
+                    for index, item in enumerate(unit["source_stream"], 1)
                     if item["kind"] == "text"
                 ]
                 target = _reconstruct_target(unit["source_stream"], segments)
@@ -399,8 +401,14 @@ def test_structured_writer_preserves_runs_fields_breaks_and_required_prefix(
     assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == ["你好", "世界"]
     assert root.find(".//a:fld/a:t", NS).text == "1"
     assert len(root.findall(".//a:br", NS)) == 1
-    assert root.find(".//a:rPr[@sz='2400']", NS) is not None
-    assert root.find(".//a:bodyPr/a:normAutofit", NS) is not None
+    assert [node.get("sz") for node in root.findall(".//a:r/a:rPr", NS)] == [
+        "2400",
+        "1800",
+    ]
+    assert root.find(".//a:fld/a:rPr", NS).get("sz") is None
+    assert len(root.findall(".//a:r/a:rPr[@lang='en-US']", NS)) == 2
+    assert root.find(".//a:bodyPr/a:normAutofit", NS) is None
+    assert root.find(".//a:bodyPr/a:noAutofit", NS) is not None
     assert "p14" in _declared_prefixes(slide_data)
 
 
@@ -663,6 +671,88 @@ def test_bilingual_writer_does_not_append_normalized_source_equivalent_target(
     assert root.find(".//a:bodyPr/a:normAutofit", NS) is None
 
 
+def test_translation_only_preserves_slide_xml_for_normalized_source_equivalent_target(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _structured_slide_xml(required_prefix_only=True))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    normalized_equivalent = " hello\n1WORLD "
+    translation = PptxUnitTranslation(
+        unit_id=unit.unit_id,
+        target_text=normalized_equivalent,
+        segments=(
+            PptxSegmentTranslation(unit.text_items[0].segment_id, " hello"),
+            PptxSegmentTranslation(unit.text_items[1].segment_id, "WORLD "),
+        ),
+    )
+
+    write_structured_translated_pptx(
+        source,
+        output,
+        (translation,),
+        "translation_only",
+    )
+
+    with zipfile.ZipFile(source) as source_archive, zipfile.ZipFile(output) as output_archive:
+        assert output_archive.read("ppt/slides/slide1.xml") == source_archive.read(
+            "ppt/slides/slide1.xml",
+        )
+
+
+def test_structured_writer_only_changes_autofit_for_the_modified_text_body(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _two_autofit_shape_slide_xml())
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    translated = "A much longer translated first paragraph"
+    translation = PptxUnitTranslation(
+        unit_id=unit.unit_id,
+        target_text=translated,
+        segments=(
+            PptxSegmentTranslation(unit.text_items[0].segment_id, translated),
+        ),
+    )
+
+    write_structured_translated_pptx(
+        source,
+        output,
+        (translation,),
+        "translation_only",
+        autofit_policy="editable",
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    text_bodies = root.findall(".//p:txBody", NS)
+    assert len(text_bodies) == 2
+    changed_body, unchanged_body = text_bodies
+    assert changed_body.find("a:bodyPr/a:noAutofit", NS) is not None
+    assert changed_body.find("a:bodyPr/a:normAutofit", NS) is None
+    unchanged_autofit = unchanged_body.find("a:bodyPr/a:normAutofit", NS)
+    assert unchanged_autofit is not None
+    assert unchanged_autofit.attrib == {
+        "fontScale": "70000",
+        "lnSpcReduction": "5000",
+    }
+    assert unchanged_body.find(".//a:rPr", NS).attrib == {
+        "lang": "de-DE",
+        "sz": "1600",
+    }
+    assert unchanged_body.find(".//a:t", NS).text == "Second body stays unchanged"
+
+
 @pytest.mark.parametrize("mode", ("paragraph_up", "paragraph_down"))
 def test_bilingual_writer_rejects_missing_source_before_publishing(
     tmp_path: Path,
@@ -698,12 +788,14 @@ def test_bilingual_writer_rejects_missing_source_before_publishing(
         output_path: Path,
         requested: tuple[PptxUnitTranslation, ...],
         _mode: WriteMode,
+        autofit_policy: str,
     ) -> None:
         real_write_package(
             input_path,
             output_path,
             requested,
             WriteMode.TRANSLATION_ONLY,
+            autofit_policy,
         )
 
     monkeypatch.setattr(
@@ -755,6 +847,7 @@ def test_bilingual_writer_rejects_missing_translation_before_publishing(
         output_path: Path,
         _requested: tuple[PptxUnitTranslation, ...],
         _mode: WriteMode,
+        _autofit_policy: str,
     ) -> None:
         output_path.write_bytes(input_path.read_bytes())
 
@@ -924,6 +1017,334 @@ def test_structured_translation_splits_an_invalid_multi_unit_batch(tmp_path: Pat
         for item in provider.requests
     ] == ["医学与临床研究", "医学与临床研究", "医学与临床研究"]
     assert [len(json.loads(item.text)["units"]) for item in provider.requests] == [2, 1, 1]
+
+
+def test_semantic_repair_retries_only_the_offending_unit_and_freezes_accepted_units(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    slide = (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        f"<p:sld xmlns:a='{A_NS}' xmlns:p='{P_NS}'><p:cSld><p:spTree>"
+        f"{_simple_shape_xml(7, 'First accepted text')}"
+        f"{_simple_shape_xml(8, 'Can impact gut health – Proposed Mechanisms')}"
+        "</p:spTree></p:cSld></p:sld>"
+    )
+    _write_minimal_pptx(source, slide)
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )
+    accepted_target = "第一项合格"
+    rejected_target = "可能影响肠道健康 – Proposed Mechanisms"
+    repaired_target = "可能影响肠道健康——作用机制"
+    initial = json.dumps(
+        {
+            "provider_contract_schema_version": 2,
+            "document_kind": "pptx_xml",
+            "translations": [
+                {
+                    "unit_id": units[0].unit_id,
+                    "target_text": accepted_target,
+                    "segments": [
+                        {
+                            "segment_id": units[0].text_items[0].segment_id,
+                            "target_text": accepted_target,
+                        },
+                    ],
+                },
+                {
+                    "unit_id": units[1].unit_id,
+                    "target_text": rejected_target,
+                    "segments": [
+                        {
+                            "segment_id": units[1].text_items[0].segment_id,
+                            "target_text": rejected_target,
+                        },
+                    ],
+                },
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    repaired = _response_json(
+        units[1].unit_id,
+        repaired_target,
+        [(units[1].text_items[0].segment_id, repaired_target)],
+    )
+    provider = ContractProvider(responses=[initial, repaired])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.delenv("PPTX_SEMANTIC_QA_MODE", raising=False)
+
+    translate_pptx_with_xml(request, provider_registry=ProviderRegistry((provider,)))
+
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    repair_payload = json.loads(provider.requests[1].text)
+    assert [item["unit_id"] for item in repair_payload["source_contract"]["units"]] == [
+        units[1].unit_id,
+    ]
+    assert [
+        item["unit_id"]
+        for item in repair_payload["candidate_response"]["translations"]
+    ] == [units[1].unit_id]
+    assert [item.domain for item in provider.requests] == [provider.domain, provider.domain]
+    assert repair_payload["source_contract"]["document_domain"] == provider.domain
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:t", NS)] == [
+        accepted_target,
+        repaired_target,
+    ]
+
+
+def test_semantic_repair_fails_closed_with_the_quality_reason_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    source_text = "Can impact gut health – Proposed Mechanisms"
+    rejected_target = "可能影响肠道健康 – Proposed Mechanisms"
+    _write_minimal_pptx(source, _simple_slide_xml(source_text))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    rejected = _response_json(
+        unit.unit_id,
+        rejected_target,
+        [(unit.text_items[0].segment_id, rejected_target)],
+    )
+    provider = ContractProvider(responses=[rejected, rejected])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.delenv("PPTX_SEMANTIC_QA_MODE", raising=False)
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(PptxContractError) as raised:
+        translate_pptx_with_xml(request, provider_registry=ProviderRegistry((provider,)))
+
+    assert raised.value.code == "source_language_residue"
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    assert not output.exists()
+    assert f"unit_id={unit.unit_id}" in caplog.text
+    assert "first_unit=" not in caplog.text
+
+
+def test_semantic_qa_observe_records_finding_without_repairing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    source_text = "Can impact gut health – Proposed Mechanisms"
+    observed_target = "可能影响肠道健康 – Proposed Mechanisms"
+    _write_minimal_pptx(source, _simple_slide_xml(source_text))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    response = _response_json(
+        unit.unit_id,
+        observed_target,
+        [(unit.text_items[0].segment_id, observed_target)],
+    )
+    provider = ContractProvider(responses=[response])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "observe")
+    caplog.set_level(logging.WARNING)
+
+    translate_pptx_with_xml(request, provider_registry=ProviderRegistry((provider,)))
+
+    assert len(provider.requests) == 1
+    assert "pptx_quality_observed" in caplog.text
+    assert "error_code=source_language_residue" in caplog.text
+    assert source_text not in caplog.text
+    assert observed_target not in caplog.text
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:t", NS)] == [observed_target]
+
+
+def test_semantic_qa_environment_rollback_off_skips_findings_and_accepts_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    source_text = "Can impact gut health – Proposed Mechanisms"
+    candidate_target = "可能影响肠道健康 – Proposed Mechanisms"
+    _write_minimal_pptx(source, _simple_slide_xml(source_text))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    response = _response_json(
+        unit.unit_id,
+        candidate_target,
+        [(unit.text_items[0].segment_id, candidate_target)],
+    )
+    provider = ContractProvider(responses=[response])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "off")
+    caplog.set_level(logging.WARNING)
+
+    translate_pptx_with_xml(request, provider_registry=ProviderRegistry((provider,)))
+
+    assert len(provider.requests) == 1
+    assert "source_language_residue" not in caplog.text
+    assert "pptx_quality_" not in caplog.text
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:t", NS)] == [candidate_target]
+
+
+def test_semantic_qa_prefers_flask_config_over_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_app: Flask,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    source_text = "Can impact gut health – Proposed Mechanisms"
+    candidate_target = "可能影响肠道健康 – Proposed Mechanisms"
+    _write_minimal_pptx(source, _simple_slide_xml(source_text))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    response = _response_json(
+        unit.unit_id,
+        candidate_target,
+        [(unit.text_items[0].segment_id, candidate_target)],
+    )
+    provider = ContractProvider(responses=[response])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+    isolated_app.config["PPTX_SEMANTIC_QA_MODE"] = "observe"
+
+    with isolated_app.app_context():
+        translate_pptx_with_xml(request, provider_registry=ProviderRegistry((provider,)))
+
+    assert len(provider.requests) == 1
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:t", NS)] == [candidate_target]
+
+
+def test_stop_words_and_glossary_flow_from_xml_request_into_quality_allowlist(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    source_text = "Keep Alpha Beta and HMO Complex stable"
+    target_text = "保持 Alpha Beta 和 HMO Complex 稳定"
+    _write_minimal_pptx(source, _simple_slide_xml(source_text))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+        stop_words=("Alpha Beta",),
+        custom_translations={"HMO Complex": "HMO Complex"},
+    )
+    response = _response_json(
+        units[0].unit_id,
+        target_text,
+        [(units[0].text_items[0].segment_id, target_text)],
+    )
+    provider = ContractProvider(responses=[response])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=("Alpha Beta",),
+        custom_translations={"HMO Complex": "HMO Complex"},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    translate_pptx_with_xml(request, provider_registry=ProviderRegistry((provider,)))
+
+    assert len(provider.requests) == 1
+    contract = json.loads(provider.requests[0].text)
+    assert contract["units"][0]["protected_terms"] == ["Alpha Beta"]
+    assert contract["units"][0]["glossary"] == [
+        {"source": "HMO Complex", "target": "HMO Complex"},
+    ]
 
 
 def test_selected_page_translation_preserves_unselected_slide_bytes(tmp_path: Path) -> None:
@@ -1380,6 +1801,22 @@ def _two_paragraph_slide_xml() -> str:
         "<p:txBody><a:bodyPr/><a:lstStyle/>"
         "<a:p><a:pPr algn='just'/><a:r><a:t>First source paragraph</a:t></a:r></a:p>"
         "<a:p><a:pPr algn='just'/><a:r><a:t>Second source paragraph</a:t></a:r></a:p>"
+        "</p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
+    )
+
+
+def _two_autofit_shape_slide_xml() -> str:
+    return (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        f"<p:sld xmlns:a='{A_NS}' xmlns:p='{P_NS}'><p:cSld><p:spTree>"
+        "<p:sp><p:nvSpPr><p:cNvPr id='7' name='First'/></p:nvSpPr>"
+        "<p:spPr><a:xfrm><a:ext cx='2500000' cy='500000'/></a:xfrm></p:spPr>"
+        "<p:txBody><a:bodyPr><a:normAutofit fontScale='60000' lnSpcReduction='0'/></a:bodyPr>"
+        "<a:lstStyle/><a:p><a:r><a:rPr lang='en-US' sz='2000'/><a:t>First body</a:t></a:r></a:p></p:txBody></p:sp>"
+        "<p:sp><p:nvSpPr><p:cNvPr id='8' name='Second'/></p:nvSpPr>"
+        "<p:spPr><a:xfrm><a:ext cx='2500000' cy='500000'/></a:xfrm></p:spPr>"
+        "<p:txBody><a:bodyPr><a:normAutofit fontScale='70000' lnSpcReduction='5000'/></a:bodyPr>"
+        "<a:lstStyle/><a:p><a:r><a:rPr lang='de-DE' sz='1600'/><a:t>Second body stays unchanged</a:t></a:r></a:p>"
         "</p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
     )
 

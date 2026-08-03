@@ -90,6 +90,8 @@ TRANSLATION_AUTO_RECOVER=0
 QWEN_MODEL=qwen3.7-plus
 PPTX_XML_ENGINE=structured_v2
 PPTX_XML_RUNTIME_FALLBACK=0
+PPTX_SEMANTIC_QA_MODE=enforce
+PPTX_XML_AUTOFIT_POLICY=editable
 ```
 
 建议先使用观察模式上线：
@@ -102,9 +104,15 @@ TRANSLATION_AUTO_RECOVER=0
 QWEN_MODEL=qwen3.7-plus
 PPTX_XML_ENGINE=structured_v2
 PPTX_XML_RUNTIME_FALLBACK=0
+PPTX_SEMANTIC_QA_MODE=enforce
+PPTX_XML_AUTOFIT_POLICY=editable
 ```
 
 `TRANSLATION_ARCH_MODE` 控制任务编排版本，`PPTX_XML_ENGINE` 独立控制 `.pptx` 的提取和写回方式。`structured_v2` 直接处理底层 XML；`PPTX_XML_RUNTIME_FALLBACK=0` 会让 Provider 或结构化协议错误直接结束任务，不再静默进入旧版 `[block]`/UNO 翻译路径。只有在明确接受版式风险时，才可临时把运行时回退设为 `1`，该回退仅处理允许降级的 ZIP、XML、包或不支持结构错误。
+
+`PPTX_SEMANTIC_QA_MODE=enforce` 是 PPTX 的默认语义质量门：英译中时若译文仍包含源文中的高置信英文短语，或违反精确词库约束，只重试失败的翻译单元一次，已通过单元保持不变。临时回滚可设为 `observe`（记录问题但仍写入候选译文）或 `off`（跳过语义检查）；unit/segment ID、顺序、数量和保留标记等结构校验始终启用。
+
+`PPTX_XML_AUTOFIT_POLICY=editable` 是默认版式策略：被修改文本框需要缩小时，只有在所有可见 run/field 的实际字号都能安全解析时，才把字号烘焙进 run/段落属性并写入 `a:noAutofit`，从而消除该文本体的非 100% `a:normAutofit` 隐式缩放。若任一继承字号无法解析，或缺少几何时无法安全物化已有行距压缩，整个文本体保持原字号和 AutoFit XML，不做部分烘焙，并分别记录 `reason=unresolved_inherited_font_size` 或 `reason=unmaterialized_line_spacing_reduction` 的无内容警告；原有非 100% `normAutofit` 可能因此保留。原有 100% `normAutofit` 保持不变，`a:spAutoFit` 在译文已能容纳时也可以保留。若需回滚到旧版隐式缩放行为，可临时设为 `legacy_norm`。该设置只影响后续任务，不会改写历史产物。
 
 Qwen 默认使用 `qwen3.7-plus`，并在翻译时关闭思考模式。PPTX 结构化请求会额外启用 JSON Object 输出模式。修改上述开关后，必须同时重启 Web 与 Worker，确保任务进程读取到相同配置。
 
@@ -126,7 +134,7 @@ python tools/qa/benchmark_translation_architecture.py --root D:\project\FCIAI2.0
 真实 PPT 的确定性版式验收：
 
 ```powershell
-python tools/qa/run_translation_acceptance.py --root D:\project\FCIAI2.0 --provider deterministic --ppt "C:\Users\48846\Documents\FINAL_Role of HMOs in Preterm Nutrition Presentation_3.pptx" --libreoffice "C:\Program Files\LibreOffice\program\soffice.exe" --output .omo\evidence\translation-acceptance
+python tools/qa/run_translation_acceptance.py --root D:\project\FCIAI2.0 --provider deterministic --ppt "C:\Users\48846\Documents\FINAL_Role of HMOs in Preterm Nutrition Presentation_3.pptx" --libreoffice "C:\Program Files\LibreOffice\program\soffice.exe" --output .omo\evidence\translation-acceptance --semantic-qa-mode enforce --autofit-policy editable
 ```
 
-验收过程复制源文件后再处理，不修改原始演示文稿。
+验收过程复制源文件后再处理，不修改原始演示文稿。默认验收 `enforce + editable`；回滚演练可显式传入 `--semantic-qa-mode observe|off` 和 `--autofit-policy legacy_norm`。输出 JSON 会记录实际模式，并按稳定 shape ID（无 ID 时按严格顺序）核对 text-body 数量与身份。`editable` 会分别报告未解析继承字号和无法物化行距压缩的 fallback 计数；任一 fallback 都会令对应 `*_fallback_absent` 检查失败，不能静默当作“已消除全部隐式缩放”通过。无 fallback 时，修改后的文本体不得保留非 100% `normAutofit`；确需缩放的文本体必须具有烘焙字号与 `noAutofit`，无需缩放的 100% `normAutofit` 或可容纳文本的 `spAutoFit` 可以原样保留。

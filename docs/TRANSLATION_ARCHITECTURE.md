@@ -97,6 +97,8 @@ PPT 文本框和 PDF 文本块在调用模型前转换为稳定的 `TranslationU
 
 无效结果不会写入翻译记忆。PPT 观察模式保持 Provider 原始结构化响应字节不变。
 
+PPTX 结构化链路另有独立的 `PPTX_SEMANTIC_QA_MODE`。默认 `enforce`：英译中结果若仍包含源文中的高置信英文短语，或不满足精确词库映射，只重试失败单元一次，已通过的同批单元不会重译；`observe` 只记录问题并保留候选译文，`off` 跳过语义检查。三种模式都不会关闭 unit/segment ID、顺序、数量、保留标记和目标重建等结构校验。
+
 ### 4.4 翻译记忆、去重和并发
 
 翻译记忆键使用完整 SHA-256，输入覆盖源文本、语言、Provider、模型、Prompt/词库/停翻词/质量策略版本及上下文约束。相同完整键的单元在一次任务中只调用一次 Provider，再按原顺序展开。
@@ -105,7 +107,11 @@ PPT 文本框和 PDF 文本块在调用模型前转换为稳定的 `TranslationU
 
 ## 5. PPT 版式稳定性
 
-XML 写回对每个被修改文本体只保留一个 `a:normAutofit`，并移除冲突的 `a:noAutofit`/`a:spAutoFit`。这让 PowerPoint/LibreOffice 以缩小字号的方式容纳增长文本，而不是扩大文本框或覆盖相邻元素。
+XML 写回默认使用 `PPTX_XML_AUTOFIT_POLICY=editable`。被修改文本体需要缩小时，系统先原子预检全部可见 run/field；只有每个实际字号都能从本地 run、field、段落默认或 `lstStyle` 安全解析，才把计算后的字号写入相应属性，并以 `a:noAutofit` 固定当前几何。这样可安全解析的文本体不再依赖非 100% `a:normAutofit` 隐式缩放，用户在 PowerPoint 中点击“增大字号”时不会先触发自动适配反向缩小。原有 100% `a:normAutofit` 保持不变，`a:spAutoFit` 在译文已经能容纳时也会保留。
+
+若任一继承字号无法解析，整个文本体的字号与原 AutoFit XML 原样保留，不猜测 18pt，也不允许只烘焙一部分 run；日志记录不含文本的 `pptx_editable_autofit_skipped reason=unresolved_inherited_font_size`。已有行距压缩但缺少可用几何、无法安全物化时，同样原样保留并记录 `reason=unmaterialized_line_spacing_reduction`。因此 fallback 文本体可能继续包含非 100% `a:normAutofit`，这是显式安全降级而不是“全量清零”成功；验收 JSON 会报告两类 fallback，并令对应 `*_fallback_absent` 检查失败。
+
+紧急回滚可设置 `PPTX_XML_AUTOFIT_POLICY=legacy_norm`，恢复“每个被修改文本体一个无冲突 `a:normAutofit`”的旧行为。该回滚只作用于新任务，历史文件不重写。
 
 LibreOffice 转换通过 `app/translation/libreoffice.py` 隔离：每个任务使用独立用户配置目录和自有端口；超时只终止本任务创建的进程；完成后验证输出并清理进程及 profile，不再全局结束 `soffice`。
 
@@ -132,6 +138,8 @@ TRANSLATION_MEMORY_ENABLED=0
 TRANSLATION_AUTO_RECOVER=0
 TASK_QUEUE_MAX_CONCURRENT=10
 TRANSLATION_PROVIDER_MAX_CONCURRENT=10
+PPTX_SEMANTIC_QA_MODE=enforce
+PPTX_XML_AUTOFIT_POLICY=editable
 ```
 
 建议上线值：
@@ -141,11 +149,13 @@ TRANSLATION_ARCH_MODE=v2
 TRANSLATION_QUALITY_MODE=observe
 TRANSLATION_MEMORY_ENABLED=1
 TRANSLATION_AUTO_RECOVER=0
+PPTX_SEMANTIC_QA_MODE=enforce
+PPTX_XML_AUTOFIT_POLICY=editable
 ```
 
-上线顺序：先迁移任务表，再部署一个 Worker 和 Web，开启 `v2/observe`，对比失败率、质量问题和产物验收，最后再决定是否启用 `enforce` 或自动恢复。
+上线顺序：先迁移任务表，再部署一个 Worker 和 Web，开启 `v2/observe`，对比失败率、质量问题和产物验收，最后再决定是否启用全局质量 `enforce` 或自动恢复。PPTX 语义门与自动适配已分别默认 `enforce` 和 `editable`，每个任务启动时固定一次模式，任务过程中不会因环境变更而漂移。
 
-回滚时恢复四个默认开关并重启 Web/Worker。数据库表和已发布产物保留，不执行 `DROP`、`ALTER` 或历史清理。旧路径是兼容回滚路径，不再承载新能力。
+回滚时恢复四个全局默认开关并重启 Web/Worker。若只回滚本次 PPTX 行为，分别使用 `PPTX_SEMANTIC_QA_MODE=observe`（或 `off`）与 `PPTX_XML_AUTOFIT_POLICY=legacy_norm`，再重启 Worker。数据库表和已发布产物保留，不执行 `DROP`、`ALTER` 或历史清理。旧路径是兼容回滚路径，不再承载新能力。
 
 ## 8. 当前完成情况与后续边界
 
@@ -192,22 +202,27 @@ slide XML
   -> paragraph source_stream（text / line_break / protected_field）
   -> provider_contract_schema_version=2 JSON
   -> 严格校验 unit/segment ID、顺序、数量、目标重建和保留标记来源
+  -> enforce 语义门检查源语言残留和精确词库，只定向重试失败单元
   -> 精确写回原 a:r/a:t
-  -> changed text body 设置单一 a:normAutofit
+  -> editable AutoFit 原子预检；可安全解析时烘焙实际字号并设置 a:noAutofit
+  -> 无法安全物化时原样保留该 body 并记录无内容 fallback warning
   -> 临时 PPTX 静态审计
   -> os.replace 原子发布
 ```
 
-结构校验不受 `TRANSLATION_QUALITY_MODE` 影响。Provider 返回缺失字段、未知字段、
+结构校验不受 `TRANSLATION_QUALITY_MODE` 或 `PPTX_SEMANTIC_QA_MODE` 影响。Provider 返回缺失字段、未知字段、
 错序 ID、错段数、空译文，或凭空新增 `[block]` / `[块]` 及其规范化变体时，当前
 批次只重试一次；第二次仍失败则任务失败，不写出部分文件，也不会切换模型或进入
-旧提示词。
+旧提示词。结构通过后，`PPTX_SEMANTIC_QA_MODE=enforce` 才执行源语言残留与词库检查；
+`observe/off` 只改变语义门，不会放宽结构契约。
 
 运行时降级由独立开关控制：
 
 ```dotenv
 PPTX_XML_ENGINE=structured_v2
 PPTX_XML_RUNTIME_FALLBACK=0
+PPTX_SEMANTIC_QA_MODE=enforce
+PPTX_XML_AUTOFIT_POLICY=editable
 ```
 
 只有 ZIP、XML、写入、包完整性、重复 shape ID 和不支持的文本结构等类型化运行时

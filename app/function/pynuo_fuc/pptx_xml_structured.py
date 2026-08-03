@@ -15,7 +15,11 @@ from app.translation.pptx_contract import (
     validate_pptx_translations,
 )
 
-from .pptx_xml_autofit import enable_textbox_autofit_for_paragraph
+from .pptx_xml_autofit import (
+    AutofitPolicy,
+    apply_textbox_autofit,
+    resolve_autofit_policy,
+)
 from .pptx_xml_manifest import (
     BILINGUAL_TRANSLATION_EXT_URI,
     StructuredParagraphTarget,
@@ -50,6 +54,8 @@ def write_structured_translated_pptx(
     output_path: Path | str,
     translations: tuple[PptxUnitTranslation, ...],
     bilingual_translation: str,
+    *,
+    autofit_policy: AutofitPolicy | str | None = None,
 ) -> str:
     input_file = Path(input_path)
     output_file = Path(output_path)
@@ -63,6 +69,7 @@ def write_structured_translated_pptx(
     expected_subset = tuple(unit for unit in expected if unit.unit_id in requested_ids)
     validate_pptx_translations(expected_subset, translations)
     write_mode = _resolve_write_mode(bilingual_translation)
+    resolved_autofit_policy = resolve_autofit_policy(autofit_policy)
 
     with tempfile.NamedTemporaryFile(
         prefix=f".{output_file.stem}.",
@@ -77,6 +84,7 @@ def write_structured_translated_pptx(
             temporary_path,
             translations,
             write_mode,
+            resolved_autofit_policy,
         )
         with zipfile.ZipFile(input_file) as source:
             expected_members = tuple(source.namelist())
@@ -102,6 +110,7 @@ def _write_package(
     output_path: Path,
     translations: tuple[PptxUnitTranslation, ...],
     mode: WriteMode,
+    autofit_policy: AutofitPolicy,
 ) -> None:
     by_id = {translation.unit_id: translation for translation in translations}
     written_ids: set[str] = set()
@@ -122,6 +131,7 @@ def _write_package(
                     page_index,
                     by_id,
                     mode,
+                    autofit_policy,
                 )
                 written_ids.update(slide_written)
             target.writestr(item, data)
@@ -252,6 +262,7 @@ def _translated_slide(
     page_index: int,
     translations: dict[str, PptxUnitTranslation],
     mode: WriteMode,
+    autofit_policy: AutofitPolicy,
 ) -> tuple[bytes, set[str]]:
     root = ElementTree.fromstring(slide_data)
     targets = structured_slide_targets(
@@ -264,19 +275,23 @@ def _translated_slide(
         (),
     )
     written: set[str] = set()
-    autofit_targets: dict[ElementTree.Element, ElementTree.Element] = {}
+    autofit_targets: set[ElementTree.Element] = set()
     for target in targets:
         translation = translations.get(target.unit.unit_id)
         if translation is None:
             continue
         changed = _apply_translation(target, translation, mode)
         if changed:
-            _ = autofit_targets.setdefault(target.text_body, target.paragraph)
+            autofit_targets.add(target.text_body)
         written.add(target.unit.unit_id)
-    if not written:
+    if not written or not autofit_targets:
         return slide_data, written
-    for paragraph in autofit_targets.values():
-        enable_textbox_autofit_for_paragraph(root, paragraph)
+    for text_body in autofit_targets:
+        apply_textbox_autofit(
+            root,
+            text_body,
+            policy=autofit_policy,
+        )
     return serialize_slide_xml(slide_data, root), written
 
 
@@ -285,10 +300,8 @@ def _apply_translation(
     translation: PptxUnitTranslation,
     mode: WriteMode,
 ) -> bool:
-    if (
-        mode is not WriteMode.TRANSLATION_ONLY
-        and _normalized_text(target.unit.source_text)
-        == _normalized_text(translation.target_text)
+    if _normalized_text(target.unit.source_text) == _normalized_text(
+        translation.target_text,
     ):
         return False
     original_content = tuple(copy.deepcopy(node) for node in target.content_nodes)

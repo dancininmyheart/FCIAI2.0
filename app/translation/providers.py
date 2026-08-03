@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import inspect
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Final, Protocol
@@ -27,6 +29,8 @@ _QWEN_MODEL: Final = qwen_model_name()
 _QWEN_BASE_URL: Final = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 _REMOTE_BASE_URL: Final = "http://117.50.216.15/agent_server/app/run"
 _DEEPSEEK_ENDPOINT: Final = "d145ae592efa4240867c3b1f99c7a5d7"
+_QWEN_TEMPERATURE: Final = 0.0
+_QWEN_SEED: Final = 0
 
 
 class QwenTransport(Protocol):
@@ -71,6 +75,7 @@ class QwenProvider:
                 _semantic_system_prompt(request),
                 request.text,
                 request.timeout_seconds,
+                **_deterministic_completion_controls(complete),
             )
         except TimeoutError as exc:
             raise ProviderError("qwen", "provider_timeout", "provider request timed out", retryable=True) from exc
@@ -81,6 +86,32 @@ class QwenProvider:
         if not text:
             raise ProviderError("qwen", "empty_response", "provider returned no text")
         return ProviderResult(text=text, provider="qwen", model=_QWEN_MODEL)
+
+
+def _deterministic_completion_controls(
+    complete: Callable[..., str],
+) -> dict[str, float | int]:
+    try:
+        parameters = inspect.signature(complete).parameters
+    except (TypeError, ValueError):
+        return {}
+    accepts_keywords = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    controls: dict[str, float | int] = {}
+    if accepts_keywords or _accepts_keyword(parameters.get("temperature")):
+        controls["temperature"] = _QWEN_TEMPERATURE
+    if accepts_keywords or _accepts_keyword(parameters.get("seed")):
+        controls["seed"] = _QWEN_SEED
+    return controls
+
+
+def _accepts_keyword(parameter: inspect.Parameter | None) -> bool:
+    return parameter is not None and parameter.kind in (
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,11 +205,41 @@ def default_provider_registry() -> ProviderRegistry:
 
 
 class _OpenAiQwenTransport:
-    def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
-        return self._complete(model, system, user, timeout_seconds, json_mode=False)
+    def complete(
+        self,
+        model: str,
+        system: str,
+        user: str,
+        timeout_seconds: float,
+        *,
+        temperature: float = _QWEN_TEMPERATURE,
+    ) -> str:
+        return self._complete(
+            model,
+            system,
+            user,
+            timeout_seconds,
+            json_mode=False,
+            temperature=temperature,
+        )
 
-    def complete_json(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
-        return self._complete(model, system, user, timeout_seconds, json_mode=True)
+    def complete_json(
+        self,
+        model: str,
+        system: str,
+        user: str,
+        timeout_seconds: float,
+        *,
+        temperature: float = _QWEN_TEMPERATURE,
+    ) -> str:
+        return self._complete(
+            model,
+            system,
+            user,
+            timeout_seconds,
+            json_mode=True,
+            temperature=temperature,
+        )
 
     def _complete(
         self,
@@ -188,6 +249,7 @@ class _OpenAiQwenTransport:
         timeout_seconds: float,
         *,
         json_mode: bool,
+        temperature: float,
     ) -> str:
         from openai import APIConnectionError, APITimeoutError, OpenAI, OpenAIError
 
@@ -202,6 +264,7 @@ class _OpenAiQwenTransport:
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 "stream": False,
                 "extra_body": {"enable_thinking": False},
+                "temperature": temperature,
             }
             if json_mode:
                 request["response_format"] = {"type": "json_object"}

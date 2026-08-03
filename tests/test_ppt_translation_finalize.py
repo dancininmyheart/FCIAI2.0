@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -33,6 +35,40 @@ def test_finalize_translated_presentation_moves_translated_file_over_original(
     result = finalize_translated_presentation(request)
 
     # Then
+    assert result is True
+    assert original_path.read_text(encoding="utf-8") == "translated"
+    assert not translated_path.exists()
+
+
+def test_finalize_translated_presentation_replaces_a_read_only_original(
+    tmp_path: Path,
+) -> None:
+    from app.function.ppt_translation_finalize import (
+        FinalizePresentationRequest,
+        finalize_translated_presentation,
+    )
+
+    original_path = tmp_path / "read-only-deck.pptx"
+    translated_path = tmp_path / "read-only-deck_translated.pptx"
+    original_path.write_text("original", encoding="utf-8")
+    translated_path.write_text("translated", encoding="utf-8")
+    os.chmod(original_path, stat.S_IREAD)
+    request = FinalizePresentationRequest(
+        translated_path=translated_path,
+        original_path=original_path,
+        selected_pages=(),
+        source_language="English",
+        target_language="Chinese",
+        enable_text_splitting="False",
+        progress_callback=None,
+    )
+
+    try:
+        result = finalize_translated_presentation(request)
+    finally:
+        if original_path.exists():
+            os.chmod(original_path, stat.S_IREAD | stat.S_IWRITE)
+
     assert result is True
     assert original_path.read_text(encoding="utf-8") == "translated"
     assert not translated_path.exists()

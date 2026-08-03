@@ -16,6 +16,8 @@ load_dotenv()
 
 TranslationArchMode: TypeAlias = Literal["legacy", "v2"]
 TranslationQualityMode: TypeAlias = Literal["off", "observe", "enforce"]
+PptxSemanticQaMode: TypeAlias = Literal["off", "observe", "enforce"]
+PptxXmlAutofitPolicy: TypeAlias = Literal["legacy_norm", "editable"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +28,8 @@ class TranslationSettings:
     auto_recover: bool = False
     max_concurrency: int = 10
     provider_max_concurrency: int = 10
+    pptx_semantic_qa_mode: PptxSemanticQaMode = "enforce"
+    pptx_xml_autofit_policy: PptxXmlAutofitPolicy = "editable"
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> 'TranslationSettings':
@@ -33,6 +37,8 @@ class TranslationSettings:
         provider = _positive_setting(environment.get("TRANSLATION_PROVIDER_MAX_CONCURRENT"), total)
         arch = environment.get("TRANSLATION_ARCH_MODE", "legacy").strip().lower()
         quality = environment.get("TRANSLATION_QUALITY_MODE", "off").strip().lower()
+        pptx_semantic_qa = environment.get("PPTX_SEMANTIC_QA_MODE", "enforce").strip().lower()
+        pptx_autofit = environment.get("PPTX_XML_AUTOFIT_POLICY", "editable").strip().lower()
         return cls(
             arch_mode=arch if arch in ("legacy", "v2") else "legacy",
             quality_mode=quality if quality in ("off", "observe", "enforce") else "off",
@@ -40,6 +46,14 @@ class TranslationSettings:
             auto_recover=_setting_bool(environment.get("TRANSLATION_AUTO_RECOVER", "0")),
             max_concurrency=total,
             provider_max_concurrency=provider,
+            pptx_semantic_qa_mode=(
+                pptx_semantic_qa
+                if pptx_semantic_qa in ("off", "observe", "enforce")
+                else "enforce"
+            ),
+            pptx_xml_autofit_policy=(
+                pptx_autofit if pptx_autofit in ("legacy_norm", "editable") else "editable"
+            ),
         )
 
     def as_flask_config(self) -> dict[str, str | int | bool]:
@@ -51,6 +65,8 @@ class TranslationSettings:
             "TRANSLATION_AUTO_RECOVER": values["auto_recover"],
             "TASK_QUEUE_MAX_CONCURRENT": values["max_concurrency"],
             "TRANSLATION_PROVIDER_MAX_CONCURRENT": values["provider_max_concurrency"],
+            "PPTX_SEMANTIC_QA_MODE": values["pptx_semantic_qa_mode"],
+            "PPTX_XML_AUTOFIT_POLICY": values["pptx_xml_autofit_policy"],
         }
 
 
@@ -81,6 +97,8 @@ class Config:
     TRANSLATION_AUTO_RECOVER = TRANSLATION_SETTINGS.auto_recover
     TASK_QUEUE_MAX_CONCURRENT = TRANSLATION_SETTINGS.max_concurrency
     TRANSLATION_PROVIDER_MAX_CONCURRENT = TRANSLATION_SETTINGS.provider_max_concurrency
+    PPTX_SEMANTIC_QA_MODE = TRANSLATION_SETTINGS.pptx_semantic_qa_mode
+    PPTX_XML_AUTOFIT_POLICY = TRANSLATION_SETTINGS.pptx_xml_autofit_policy
     
     # 文件存储配置
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or 'uploads'

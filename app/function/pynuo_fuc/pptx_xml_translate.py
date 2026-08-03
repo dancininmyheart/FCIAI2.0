@@ -10,11 +10,15 @@ from collections.abc import Mapping, Sequence
 from xml.etree import ElementTree
 
 from app.translation.pptx_contract import (
+    PPTX_DOCUMENT_KIND,
+    PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION,
     PPTX_PROVIDER_FIELD,
     PPTX_PROVIDER_REPAIR_FIELD,
     PptxContractError,
     parse_pptx_response,
+    parse_pptx_response_structure,
     serialize_pptx_request,
+    validate_unit_translation_quality,
 )
 from app.translation.pptx_contract_types import PptxRequestUnit, PptxUnitTranslation
 from app.translation.domain import build_presentation_domain_sample, detect_presentation_domain
@@ -112,6 +116,7 @@ def _translate_pptx_structured(
     request: XmlTranslationRequest,
     registry: ProviderRegistry,
 ) -> str:
+    semantic_qa_mode = _pptx_semantic_qa_mode()
     units = extract_structured_units_from_pptx(
         request.input_path,
         request.selected_page_indices,
@@ -133,7 +138,15 @@ def _translate_pptx_structured(
     domain = detect_presentation_domain(registry, domain_sample, request.source_language)
     translations: list[PptxUnitTranslation] = []
     for current, batch in enumerate(batches, 1):
-        translations.extend(_translate_structured_batch(request, registry, batch, domain))
+        translations.extend(
+            _translate_structured_batch(
+                request,
+                registry,
+                batch,
+                domain,
+                semantic_qa_mode,
+            ),
+        )
         if request.progress_callback is not None:
             request.progress_callback(current, len(batches))
     return write_structured_translated_pptx(
@@ -149,6 +162,7 @@ def _translate_structured_batch(
     registry: ProviderRegistry,
     units: tuple[PptxRequestUnit, ...],
     domain: str,
+    semantic_qa_mode: str,
 ) -> tuple[PptxUnitTranslation, ...]:
     provider_request = ProviderRequest.create(
         text=serialize_pptx_request(units, domain=domain),
@@ -169,31 +183,35 @@ def _translate_structured_batch(
                 continue
             raise
         try:
-            return parse_pptx_response(response.text, units)
+            translations = parse_pptx_response_structure(response.text, units)
         except PptxContractError as error:
             last_contract_error = error
-            correlation = current_correlation(request.model)
-            logger.warning(
-                "pptx_contract_rejected job_id=%s contract_attempt=%d first_unit=%s error_code=%s response_chars=%d",
-                correlation.public_job_id,
-                attempt + 1,
-                units[0].unit_id,
-                error.code,
-                len(response.text),
-            )
+            _log_contract_rejection(request, error, attempt + 1, len(response.text))
             if len(units) > 1:
                 midpoint = len(units) // 2
                 logger.info(
                     "pptx_contract_split job_id=%s units=%d left=%d right=%d error_code=%s",
-                    correlation.public_job_id,
+                    current_correlation(request.model).public_job_id,
                     len(units),
                     midpoint,
                     len(units) - midpoint,
                     error.code,
                 )
                 return (
-                    _translate_structured_batch(request, registry, units[:midpoint], domain)
-                    + _translate_structured_batch(request, registry, units[midpoint:], domain)
+                    _translate_structured_batch(
+                        request,
+                        registry,
+                        units[:midpoint],
+                        domain,
+                        semantic_qa_mode,
+                    )
+                    + _translate_structured_batch(
+                        request,
+                        registry,
+                        units[midpoint:],
+                        domain,
+                        semantic_qa_mode,
+                    )
                 )
             if attempt == 0:
                 provider_request = _repair_provider_request(
@@ -205,9 +223,142 @@ def _translate_structured_batch(
                 )
                 continue
             raise
+        if semantic_qa_mode == "off":
+            return translations
+        quality_errors = _quality_errors(units, translations)
+        if not quality_errors:
+            return translations
+        if semantic_qa_mode == "observe":
+            for error in quality_errors:
+                _log_quality_observation(request, error)
+            return translations
+        for error in quality_errors:
+            _log_contract_rejection(request, error, attempt + 1, len(response.text))
+        return _repair_quality_failures(
+            request,
+            registry,
+            units,
+            translations,
+            quality_errors,
+            domain,
+        )
     if last_contract_error is not None:
         raise last_contract_error
     raise PptxContractError("provider_failure", "provider did not return a response")
+
+
+def _pptx_semantic_qa_mode() -> str:
+    configured: object | None = None
+    try:
+        from flask import current_app, has_app_context
+
+        if has_app_context():
+            configured = current_app.config.get("PPTX_SEMANTIC_QA_MODE")
+    except (ImportError, RuntimeError):
+        configured = None
+    if configured is None:
+        configured = os.getenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+    normalized = str(configured).strip().lower()
+    return normalized if normalized in ("off", "observe") else "enforce"
+
+
+def _quality_errors(
+    units: tuple[PptxRequestUnit, ...],
+    translations: tuple[PptxUnitTranslation, ...],
+) -> tuple[PptxContractError, ...]:
+    errors: list[PptxContractError] = []
+    for unit, translation in zip(units, translations, strict=True):
+        try:
+            validate_unit_translation_quality(unit, translation)
+        except PptxContractError as error:
+            errors.append(error)
+    return tuple(errors)
+
+
+def _repair_quality_failures(
+    request: XmlTranslationRequest,
+    registry: ProviderRegistry,
+    units: tuple[PptxRequestUnit, ...],
+    translations: tuple[PptxUnitTranslation, ...],
+    quality_errors: tuple[PptxContractError, ...],
+    domain: str,
+) -> tuple[PptxUnitTranslation, ...]:
+    errors_by_unit = {error.unit_id: error for error in quality_errors}
+    repaired: list[PptxUnitTranslation] = []
+    for unit, translation in zip(units, translations, strict=True):
+        error = errors_by_unit.get(unit.unit_id)
+        if error is None:
+            repaired.append(translation)
+            continue
+        source_contract = serialize_pptx_request((unit,), domain=domain)
+        repair_request = _repair_provider_request(
+            request,
+            source_contract,
+            _serialize_candidate_response(translation),
+            error,
+            domain,
+        )
+        response = registry.translate(request.model, repair_request)
+        try:
+            repaired.append(parse_pptx_response(response.text, (unit,))[0])
+        except PptxContractError as repair_error:
+            _log_contract_rejection(request, repair_error, 2, len(response.text))
+            raise
+    return tuple(repaired)
+
+
+def _serialize_candidate_response(translation: PptxUnitTranslation) -> str:
+    return json.dumps(
+        {
+            "provider_contract_schema_version": PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION,
+            "document_kind": PPTX_DOCUMENT_KIND,
+            "translations": [
+                {
+                    "unit_id": translation.unit_id,
+                    "target_text": translation.target_text,
+                    "segments": [
+                        {
+                            "segment_id": segment.segment_id,
+                            "target_text": segment.target_text,
+                        }
+                        for segment in translation.segments
+                    ],
+                },
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _log_contract_rejection(
+    request: XmlTranslationRequest,
+    error: PptxContractError,
+    attempt: int,
+    response_characters: int,
+) -> None:
+    correlation = current_correlation(request.model)
+    logger.warning(
+        "pptx_contract_rejected job_id=%s contract_attempt=%d unit_id=%s error_code=%s response_chars=%d",
+        correlation.public_job_id,
+        attempt,
+        error.unit_id,
+        error.code,
+        response_characters,
+    )
+
+
+def _log_quality_observation(
+    request: XmlTranslationRequest,
+    error: PptxContractError,
+) -> None:
+    correlation = current_correlation(request.model)
+    logger.warning(
+        "pptx_quality_observed job_id=%s unit_id=%s error_code=%s",
+        correlation.public_job_id,
+        error.unit_id,
+        error.code,
+    )
 
 
 def _repair_provider_request(

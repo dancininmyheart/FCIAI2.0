@@ -443,6 +443,125 @@ def test_paragraph_up_appends_repeated_full_sentence_translation_only_once(
     assert root.find(".//p:spPr/a:xfrm/a:ext", NS).attrib == {"cx": "3000", "cy": "4000"}
 
 
+@pytest.mark.parametrize(
+    ("mode", "expected_texts"),
+    (
+        (
+            "paragraph_up",
+            (
+                "aligning privatization plans with the macroeconomy",
+                "使私有化计划与宏观经济保持一致。",
+            ),
+        ),
+        (
+            "paragraph_down",
+            (
+                "使私有化计划与宏观经济保持一致。",
+                "aligning privatization plans with the macroeconomy",
+            ),
+        ),
+    ),
+)
+def test_bilingual_writer_puts_translation_in_a_new_paragraph_so_justified_source_does_not_stretch(
+    tmp_path: Path,
+    mode: str,
+    expected_texts: tuple[str, str],
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _justified_slide_xml())
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    translation = PptxUnitTranslation(
+        unit_id=unit.unit_id,
+        target_text="使私有化计划与宏观经济保持一致。",
+        segments=(
+            PptxSegmentTranslation(
+                unit.text_items[0].segment_id,
+                "使私有化计划与宏观经济保持一致。",
+            ),
+        ),
+    )
+
+    write_structured_translated_pptx(
+        source,
+        output,
+        (translation,),
+        mode,
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    paragraphs = root.findall(".//p:txBody/a:p", NS)
+    assert len(paragraphs) == 2
+    assert tuple(
+        "".join(node.text or "" for node in p.findall("a:r/a:t", NS))
+        for p in paragraphs
+    ) == expected_texts
+    assert [p.find("a:pPr", NS).get("algn") for p in paragraphs] == ["just", "just"]
+    translation_paragraphs = [
+        p for p in paragraphs if p.find("a:pPr/a:extLst/a:ext", NS) is not None
+    ]
+    source_paragraphs = [p for p in paragraphs if p not in translation_paragraphs]
+    assert len(translation_paragraphs) == len(source_paragraphs) == 1
+    assert source_paragraphs[0].find("a:br", NS) is None
+    assert translation_paragraphs[0].find("a:extLst", NS) is None
+
+
+def test_bilingual_translation_paragraphs_do_not_shift_later_source_unit_ids(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _two_paragraph_slide_xml())
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )
+    translations = tuple(
+        PptxUnitTranslation(
+            unit_id=unit.unit_id,
+            target_text=f"译文{index}",
+            segments=(
+                PptxSegmentTranslation(unit.text_items[0].segment_id, f"译文{index}"),
+            ),
+        )
+        for index, unit in enumerate(units, 1)
+    )
+
+    write_structured_translated_pptx(
+        source,
+        output,
+        translations,
+        "paragraph_up",
+    )
+
+    output_units = extract_structured_units_from_pptx(
+        output,
+        source_language="English",
+        target_language="Chinese",
+    )
+    assert [(unit.unit_id, unit.source_text) for unit in output_units] == [
+        (units[0].unit_id, "First source paragraph"),
+        (units[1].unit_id, "Second source paragraph"),
+    ]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [
+        "".join(node.text or "" for node in paragraph.findall("a:r/a:t", NS))
+        for paragraph in root.findall(".//p:txBody/a:p", NS)
+    ] == [
+        "First source paragraph",
+        "译文1",
+        "Second source paragraph",
+        "译文2",
+    ]
+
+
 def test_paragraph_down_writes_repeated_full_sentence_translation_only_once(
     tmp_path: Path,
 ) -> None:
@@ -1238,6 +1357,30 @@ def _three_run_slide_xml() -> str:
         "<a:br/>"
         "<a:r><a:rPr lang='en-US' sz='1600'/><a:t>Third source fragment</a:t></a:r>"
         "</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
+    )
+
+
+def _justified_slide_xml() -> str:
+    return (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        f"<p:sld xmlns:a='{A_NS}' xmlns:p='{P_NS}'>"
+        "<p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id='7' name='Text'/></p:nvSpPr>"
+        "<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr algn='just'/>"
+        "<a:r><a:rPr lang='en-US' sz='1800'/><a:t>"
+        "aligning privatization plans with the macroeconomy"
+        "</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
+    )
+
+
+def _two_paragraph_slide_xml() -> str:
+    return (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        f"<p:sld xmlns:a='{A_NS}' xmlns:p='{P_NS}'>"
+        "<p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id='7' name='Text'/></p:nvSpPr>"
+        "<p:txBody><a:bodyPr/><a:lstStyle/>"
+        "<a:p><a:pPr algn='just'/><a:r><a:t>First source paragraph</a:t></a:r></a:p>"
+        "<a:p><a:pPr algn='just'/><a:r><a:t>Second source paragraph</a:t></a:r></a:p>"
+        "</p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
     )
 
 

@@ -17,8 +17,10 @@ from app.translation.pptx_contract import (
 
 from .pptx_xml_autofit import enable_textbox_autofit_for_paragraph
 from .pptx_xml_manifest import (
+    BILINGUAL_TRANSLATION_EXT_URI,
     StructuredParagraphTarget,
     extract_structured_units_from_pptx,
+    is_bilingual_translation_paragraph,
     slide_paths,
     structured_slide_targets,
 )
@@ -32,10 +34,14 @@ from .pptx_xml_types import (
 
 A_NS: Final = "http://schemas.openxmlformats.org/drawingml/2006/main"
 XML_NS: Final = "http://www.w3.org/XML/1998/namespace"
+A_P: Final = f"{{{A_NS}}}p"
+A_P_PR: Final = f"{{{A_NS}}}pPr"
 A_R: Final = f"{{{A_NS}}}r"
 A_T: Final = f"{{{A_NS}}}t"
 A_BR: Final = f"{{{A_NS}}}br"
 A_END_PARA_RPR: Final = f"{{{A_NS}}}endParaRPr"
+A_EXT_LST: Final = f"{{{A_NS}}}extLst"
+A_EXT: Final = f"{{{A_NS}}}ext"
 XML_SPACE: Final = f"{{{XML_NS}}}space"
 
 
@@ -149,13 +155,20 @@ def _validate_bilingual_writeback(
 
         source_runs = _normalized_run_texts(source)
         translated_runs = _normalized_translated_runs(source, translation)
-        output_runs = _normalized_run_texts(output)
-        if mode is WriteMode.PARAGRAPH_UP:
-            source_present = output_runs[: len(source_runs)] == source_runs
-            translation_present = output_runs[-len(translated_runs) :] == translated_runs
+        translation_paragraph = _adjacent_translation_paragraph(output, mode)
+        if translation_paragraph is not None:
+            source_present = _normalized_run_texts(output) == source_runs
+            translation_present = (
+                _normalized_paragraph_run_texts(translation_paragraph) == translated_runs
+            )
         else:
-            source_present = output_runs[-len(source_runs) :] == source_runs
-            translation_present = output_runs[: len(translated_runs)] == translated_runs
+            output_runs = _normalized_run_texts(output)
+            if mode is WriteMode.PARAGRAPH_UP:
+                source_present = output_runs[: len(source_runs)] == source_runs
+                translation_present = output_runs[-len(translated_runs) :] == translated_runs
+            else:
+                source_present = output_runs[-len(source_runs) :] == source_runs
+                translation_present = output_runs[: len(translated_runs)] == translated_runs
 
         if not source_present:
             raise PptxContractError(
@@ -203,6 +216,34 @@ def _normalized_translated_runs(
     if repeated is not None:
         return (_normalized_text(repeated),)
     return tuple(_normalized_text(segment.target_text) for segment in translation.segments)
+
+
+def _normalized_paragraph_run_texts(
+    paragraph: ElementTree.Element,
+) -> tuple[str, ...]:
+    texts: list[str] = []
+    for child in paragraph:
+        if child.tag != A_R:
+            continue
+        text_node = child.find(A_T)
+        if text_node is not None:
+            texts.append(_normalized_text(text_node.text or ""))
+    return tuple(texts)
+
+
+def _adjacent_translation_paragraph(
+    target: StructuredParagraphTarget,
+    mode: WriteMode,
+) -> ElementTree.Element | None:
+    children = list(target.text_body)
+    source_index = children.index(target.paragraph)
+    translation_index = source_index + (1 if mode is WriteMode.PARAGRAPH_UP else -1)
+    if not 0 <= translation_index < len(children):
+        return None
+    candidate = children[translation_index]
+    if candidate.tag != A_P or not is_bilingual_translation_paragraph(candidate):
+        return None
+    return candidate
 
 
 def _translated_slide(
@@ -257,11 +298,17 @@ def _apply_translation(
             _replace_content(target.paragraph, target.content_nodes, translated_content)
         case WriteMode.PARAGRAPH_UP:
             translated_content = _translated_content(target, translation)
-            _append_content(target.paragraph, translated_content)
+            if _needs_separate_translation_paragraph(target.paragraph):
+                _insert_translation_paragraph(target, translated_content, after=True)
+            else:
+                _append_content(target.paragraph, translated_content)
         case WriteMode.PARAGRAPH_DOWN:
             translated_content = _translated_content(target, translation)
-            _replace_content(target.paragraph, target.content_nodes, translated_content)
-            _append_content(target.paragraph, original_content)
+            if _needs_separate_translation_paragraph(target.paragraph):
+                _insert_translation_paragraph(target, translated_content, after=False)
+            else:
+                _replace_content(target.paragraph, target.content_nodes, translated_content)
+                _append_content(target.paragraph, original_content)
         case _ as unreachable:
             assert_never(unreachable)
     return True
@@ -340,6 +387,14 @@ def _normalized_text(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).split()).casefold()
 
 
+def _needs_separate_translation_paragraph(paragraph: ElementTree.Element) -> bool:
+    properties = paragraph.find(A_P_PR)
+    return (
+        properties is not None
+        and properties.get("algn") in {"just", "justLow", "dist", "thaiDist"}
+    )
+
+
 def _append_content(
     paragraph: ElementTree.Element,
     content: tuple[ElementTree.Element, ...],
@@ -350,6 +405,37 @@ def _append_content(
     for child in content:
         paragraph.insert(insert_at, child)
         insert_at += 1
+
+
+def _insert_translation_paragraph(
+    target: StructuredParagraphTarget,
+    content: tuple[ElementTree.Element, ...],
+    *,
+    after: bool,
+) -> None:
+    paragraph = ElementTree.Element(A_P)
+    paragraph_properties = target.paragraph.find(A_P_PR)
+    paragraph_properties = (
+        copy.deepcopy(paragraph_properties)
+        if paragraph_properties is not None
+        else ElementTree.Element(A_P_PR)
+    )
+    extension_list = paragraph_properties.find(A_EXT_LST)
+    if extension_list is None:
+        extension_list = ElementTree.SubElement(paragraph_properties, A_EXT_LST)
+    ElementTree.SubElement(
+        extension_list,
+        A_EXT,
+        {"uri": BILINGUAL_TRANSLATION_EXT_URI},
+    )
+    paragraph.append(paragraph_properties)
+    for child in content:
+        paragraph.append(child)
+    end_properties = target.paragraph.find(A_END_PARA_RPR)
+    if end_properties is not None:
+        paragraph.append(copy.deepcopy(end_properties))
+    source_index = list(target.text_body).index(target.paragraph)
+    target.text_body.insert(source_index + (1 if after else 0), paragraph)
 
 
 def _paragraph_insert_index(paragraph: ElementTree.Element) -> int:

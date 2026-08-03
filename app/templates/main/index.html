@@ -1644,9 +1644,9 @@ async function startTranslation() {
                     if (translationProgressbar) translationProgressbar.setAttribute('aria-valuenow', String(progress));
                 }
                 else if (data.status === 'completed') {
-                    if (!bindCurrentPptDownload()) {
-                        return;
-                    }
+                    // Completion feedback must not depend on the optional direct-download UI.
+                    // If binding is unavailable, the history still exposes the finished file.
+                    bindCurrentPptDownload();
                     window.isTranslationActive = false;
                     window.waitingCount = 0;
 

@@ -44,7 +44,9 @@ A_BR: Final = f"{{{A_NS}}}br"
 A_FLD: Final = f"{{{A_NS}}}fld"
 A_P_PR: Final = f"{{{A_NS}}}pPr"
 A_END_PARA_RPR: Final = f"{{{A_NS}}}endParaRPr"
+A_EXT: Final = f"{{{A_NS}}}ext"
 SLIDE_PATH_RE: Final = re.compile(r"^ppt/slides/slide(\d+)\.xml$")
+BILINGUAL_TRANSLATION_EXT_URI: Final = "{5C1A8A2E-4C30-4D39-9E7D-FC1A1B117A1A}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +130,8 @@ def structured_slide_targets(
         for paragraph in list(text_body):
             if paragraph.tag != A_P:
                 continue
+            if is_bilingual_translation_paragraph(paragraph):
+                continue
             target = _paragraph_target(
                 paragraph,
                 text_body,
@@ -146,6 +150,13 @@ def structured_slide_targets(
                 targets.append(target)
             paragraph_index += 1
     return tuple(targets)
+
+
+def is_bilingual_translation_paragraph(paragraph: ElementTree.Element) -> bool:
+    return any(
+        node.get("uri") == BILINGUAL_TRANSLATION_EXT_URI
+        for node in paragraph.iter(A_EXT)
+    )
 
 
 def slide_paths(archive: zipfile.ZipFile) -> list[str]:

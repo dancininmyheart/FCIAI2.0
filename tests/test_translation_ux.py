@@ -228,8 +228,9 @@ def test_ppt_completion_download_is_bound_to_the_uploaded_task_not_history() -> 
     completed = status_flow.index("else if (data.status === 'completed')")
     failed = status_flow.index("else if (data.status === 'failed')", completed)
     completed_flow = status_flow[completed:failed]
-    assert "if (!bindCurrentPptDownload())" in completed_flow
-    assert completed_flow.index("if (!bindCurrentPptDownload())") < completed_flow.index("loadHistory();")
+    assert "bindCurrentPptDownload();" in completed_flow
+    assert "if (!bindCurrentPptDownload())" not in completed_flow
+    assert completed_flow.index("bindCurrentPptDownload();") < completed_flow.index("showCompletionPopup(")
     assert "currentTaskKey = incomingKey" not in completed_flow
 
 

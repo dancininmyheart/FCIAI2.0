@@ -52,6 +52,10 @@ _TITLE_CASE_TOKEN_PATTERN: Final = r"[A-Z][a-z]+(?:[-'’][A-Z][a-z]+)?"
 _TITLE_CASE_SEQUENCE_RE: Final = re.compile(
     rf"\b{_TITLE_CASE_TOKEN_PATTERN}(?:[ \t]+{_TITLE_CASE_TOKEN_PATTERN}){{1,4}}\b",
 )
+_TRADEMARKED_NAME_RE: Final = re.compile(
+    rf"\b(?:{_TITLE_CASE_TOKEN_PATTERN}[ \t]+){{0,2}}"
+    rf"{_TITLE_CASE_TOKEN_PATTERN}[ \t]*[®™℠][ \t]*{_TITLE_CASE_TOKEN_PATTERN}\b",
+)
 _PERSON_NAME_CONTEXT_RE: Final = re.compile(r"\b(?:by|from|with)\s*$", re.IGNORECASE)
 _DESCRIPTIVE_TITLE_WORDS: Final = frozenset(
     {
@@ -332,19 +336,21 @@ def _allowed_latin_spans(
 
 
 def _probable_proper_name_terms(source_text: str) -> tuple[str, ...]:
+    trademarked_names = tuple(_TRADEMARKED_NAME_RE.finditer(source_text))
     explicit_name_spans = tuple(
         match.span()
         for pattern in (_HONORIFIC_PERSON_RE, _ORGANIZATION_NAME_RE)
         for match in pattern.finditer(source_text)
     )
-    terms: list[str] = []
+    claimed_name_spans = explicit_name_spans + tuple(match.span() for match in trademarked_names)
+    terms = [match.group() for match in trademarked_names]
     for match in _TITLE_CASE_SEQUENCE_RE.finditer(source_text):
         tokens = tuple(token.group().casefold() for token in _LATIN_TOKEN_RE.finditer(match.group()))
         if all(token in _DESCRIPTIVE_TITLE_WORDS for token in tokens):
             continue
         if len(tokens) == 2 and _PERSON_NAME_CONTEXT_RE.search(source_text[: match.start()]) is None:
             continue
-        if _overlaps_allowed_span(match.span(), explicit_name_spans):
+        if _overlaps_allowed_span(match.span(), claimed_name_spans):
             continue
         terms.append(match.group())
     return tuple(terms)

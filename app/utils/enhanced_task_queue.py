@@ -1005,7 +1005,7 @@ class EnhancedTranslationQueue:
         """获取数据库连接信息"""
         try:
             from flask import current_app
-            engine = current_app.extensions['sqlalchemy'].db.engine
+            engine = current_app.extensions['sqlalchemy'].engine
             return {
                 'checkedin': engine.pool.checkedin(),
                 'checkedout': engine.pool.checkedout(),
@@ -1020,7 +1020,7 @@ class EnhancedTranslationQueue:
         try:
             from flask import current_app
             from sqlalchemy import text
-            engine = current_app.extensions['sqlalchemy'].db.engine
+            engine = current_app.extensions['sqlalchemy'].engine
             
             # 尝试执行一个简单查询来回收连接
             with engine.connect() as conn:
@@ -1441,7 +1441,7 @@ class EnhancedTranslationQueue:
             import time
             
             # 获取当前数据库引擎
-            engine = current_app.extensions['sqlalchemy'].db.engine
+            engine = current_app.extensions['sqlalchemy'].engine
             
             # 记录回收前的连接池状态
             before_status = {

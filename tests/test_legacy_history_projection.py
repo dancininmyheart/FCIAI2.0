@@ -389,18 +389,20 @@ def test_legacy_error_handler_releases_its_application_context(
     assert leaked_context is False
 
 
-def test_connection_recycling_releases_its_application_context(
+def test_connection_recycling_succeeds_and_releases_its_application_context(
     legacy_queue_app: Flask,
 ) -> None:
     queue = EnhancedTranslationQueue()
     queue.configure(app=legacy_queue_app)
 
-    queue.recycle_idle_connections()
+    result = queue.recycle_idle_connections()
 
     leaked_context = has_app_context()
     if leaked_context:
         _cv_app.get().pop()
 
+    assert result["success"] is True
+    assert result["message"] == "成功回收空闲连接"
     assert leaked_context is False
 
 

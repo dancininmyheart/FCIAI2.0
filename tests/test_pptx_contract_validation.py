@@ -100,6 +100,20 @@ def test_allows_a_multiword_brand_name_to_remain_unchanged() -> None:
     )
 
 
+def test_allows_a_trademarked_multiword_product_name_to_remain_unchanged() -> None:
+    _parse_translation(
+        "Nutri Whey™ Clear\nNPD Launch(FiE&SSG)",
+        "Nutri Whey™ Clear\nNPD 发布(FiE&SSG)",
+    )
+
+
+def test_trademarked_product_name_does_not_absorb_following_campaign_copy() -> None:
+    _parse_translation(
+        "Excellion® Caseinate Lead Gen Carry over ‘25",
+        "Excellion® Caseinate 潜在客户开发延续至‘25",
+    )
+
+
 def test_probable_proper_name_acceptance_emits_a_redacted_warning_and_metric(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

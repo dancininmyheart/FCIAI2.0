@@ -9,12 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 AUTH_BASE_TEMPLATE = ROOT / "app" / "templates" / "base.html"
 BASE_TEMPLATE = ROOT / "app" / "templates" / "main" / "base_layout.html"
 PPT_TEMPLATE = ROOT / "app" / "templates" / "main" / "index.html"
-PDF_TEMPLATE = ROOT / "app" / "templates" / "main" / "pdf_translate.html"
-DICTIONARY_TEMPLATE = ROOT / "app" / "templates" / "main" / "dictionary.html"
 BRAND_CSS = ROOT / "app" / "static" / "css" / "brand.css"
 AUTH_CSS = ROOT / "app" / "static" / "css" / "style.css"
 BASE_STYLES_CSS = ROOT / "app" / "static" / "css" / "styles.css"
 EXPERIENCE_CSS = ROOT / "app" / "static" / "css" / "experience.css"
+WORKBENCH_CSS = ROOT / "app" / "static" / "css" / "workbench-demo.css"
 MAIN_JS = ROOT / "app" / "static" / "js" / "main.js"
 
 
@@ -34,10 +33,11 @@ def test_application_shell_is_zoomable_and_keyboard_navigable() -> None:
     assert 'id="main-content"' in template
     assert 'aria-live="polite"' in template
     assert "css/experience.css" in template
-    assert "url_for('main.user_management')" in template
+    assert "url_for('main.index')" in template
+    assert "url_for('main.user_management')" not in template
 
 
-def test_frontend_theme_uses_the_approved_brand_palette() -> None:
+def test_frontend_theme_uses_the_anonymous_studio_palette() -> None:
     brand = _read(BRAND_CSS)
     auth = _read(AUTH_CSS)
     base = _read(BASE_STYLES_CSS)
@@ -47,23 +47,27 @@ def test_frontend_theme_uses_the_approved_brand_palette() -> None:
     assert "--brand-cool-gray: #6e6f72;" in brand
     assert "--brand-milk-white: #ffffff;" in brand
     assert "--brand-readable-gray: #3f4043;" in brand
+    assert "--studio-ink-900: #0b1020;" in brand
+    assert "--studio-indigo: #635bff;" in brand
+    assert "--studio-cyan: #22d3ee;" in brand
 
-    assert "--primary-color: var(--brand-sky-blue);" in auth
-    assert "--background-color: var(--brand-milk-white);" in auth
-    assert "--text-color: var(--brand-readable-gray);" in auth
-    assert "--muted-text-color: var(--brand-cool-gray);" in auth
+    assert "--primary-color: var(--studio-indigo);" in auth
+    assert "--background-color: var(--studio-canvas);" in auth
+    assert "--text-color: var(--studio-ink-900);" in auth
+    assert "--muted-text-color: var(--studio-slate-500);" in auth
 
     assert "--primary-color: var(--brand-sky-blue);" in base
     assert "--brand-color: var(--brand-sky-blue);" in base
     assert "--text-color: var(--brand-readable-gray);" in base
     assert "--bg-color: var(--brand-milk-white);" in base
 
-    assert "--ux-page: var(--brand-milk-white);" in experience
-    assert "--ux-panel: var(--brand-milk-white);" in experience
-    assert "--ux-text: var(--brand-readable-gray);" in experience
-    assert "--ux-muted: var(--brand-cool-gray);" in experience
-    assert "--ux-primary: var(--brand-sky-blue);" in experience
-    assert "--ux-brand: var(--brand-sky-blue);" in experience
+    assert "body.studio-app-shell {" in experience
+    assert "--ux-page: var(--studio-canvas);" in experience
+    assert "--ux-panel: var(--studio-surface);" in experience
+    assert "--ux-text: var(--studio-ink-900);" in experience
+    assert "--ux-muted: var(--studio-slate-500);" in experience
+    assert "--ux-primary: var(--studio-indigo);" in experience
+    assert "--ux-brand: var(--studio-cyan-deep);" in experience
 
 
 def test_brand_stylesheets_have_a_deterministic_cascade_order() -> None:
@@ -83,14 +87,24 @@ def test_brand_stylesheets_have_a_deterministic_cascade_order() -> None:
     assert brand < base < navigation < toast < user_info < page_styles < experience
 
 
-def test_translation_vocabulary_dialogs_do_not_use_legacy_bootstrap_blue() -> None:
-    for template in (PPT_TEMPLATE, PDF_TEMPLATE, DICTIONARY_TEMPLATE):
-        assert "#007bff" not in _read(template).lower()
+def test_ppt_vocabulary_dialog_does_not_use_legacy_bootstrap_blue() -> None:
+    assert "#007bff" not in _read(PPT_TEMPLATE).lower()
 
 
-def test_translation_uploads_and_history_expose_accessible_states() -> None:
+def test_ppt_workbench_styles_are_externalized() -> None:
+    template = _read(PPT_TEMPLATE)
+    workbench = _read(WORKBENCH_CSS)
+
+    assert "<style>" not in template
+    assert "css/workbench-demo.css" in template
+    assert "function openVocabularyConfig()" not in template
+    assert ".demo-shell {" in workbench
+    assert ".demo-shell > .queue-status {\n    display: none;" in workbench
+    assert ".demo-shell .page-selector {\n    position: fixed;\n    z-index: 1500;\n    display: none;" in workbench
+
+
+def test_ppt_upload_and_history_expose_accessible_states() -> None:
     ppt = _read(PPT_TEMPLATE)
-    pdf = _read(PDF_TEMPLATE)
 
     assert 'id="dropZone" role="button" tabindex="0"' in ppt
     assert 'id="pptUploadProgressbar" role="progressbar"' in ppt
@@ -98,16 +112,9 @@ def test_translation_uploads_and_history_expose_accessible_states() -> None:
     assert 'class="history-loading-state"' in ppt
     assert 'id="pptResultContainer"' in ppt
 
-    assert 'id="pdfUploadZone" role="button" tabindex="0"' in pdf
-    assert 'id="pdfUploadStatus" role="status" aria-live="polite"' in pdf
-    assert 'class="table-responsive" tabindex="0" role="region"' in pdf
-    assert 'class="history-loading-state"' in pdf
-    assert 'id="pdfResultContainer"' in pdf
-
 
 def test_translation_feedback_does_not_use_blocking_alerts() -> None:
     assert "alert(" not in _read(PPT_TEMPLATE)
-    assert "alert(" not in _read(PDF_TEMPLATE)
 
     main_js = _read(MAIN_JS)
     assert "aria-atomic" in main_js
@@ -155,18 +162,18 @@ def test_ppt_translation_defaults_to_translation_only_display() -> None:
 
 
 def test_clearing_page_selection_keeps_unselected_page_numbers_readable() -> None:
-    template = _read(PPT_TEMPLATE)
-    page_item_start = template.index(".page-item {")
-    page_item_end = template.index("}", page_item_start)
-    unselected_page_style = template[page_item_start:page_item_end]
+    workbench = _read(WORKBENCH_CSS)
+    page_item_start = workbench.index(".demo-shell .page-item {")
+    page_item_end = workbench.index("}", page_item_start)
+    unselected_page_style = workbench[page_item_start:page_item_end]
 
     assert "color: var(--brand-readable-gray);" in unselected_page_style
 
 
 def test_hovering_a_selected_page_keeps_its_selected_contrast() -> None:
-    template = _read(PPT_TEMPLATE)
+    workbench = _read(WORKBENCH_CSS)
 
-    assert ".page-item:hover:not(.selected)" in template
+    assert ".demo-shell .page-item:hover:not(.selected)" in workbench
 
 
 def test_ppt_translation_rejects_a_server_display_mode_mismatch() -> None:
@@ -264,6 +271,7 @@ def test_ppt_status_ignores_a_stale_task_response_before_showing_completion() ->
 
 def test_experience_styles_define_responsive_drawer_and_readable_type() -> None:
     css = _read(EXPERIENCE_CSS)
+    studio_mobile = css[css.rindex("@media (max-width: 900px)") :]
 
     assert "--ux-sidebar-width: 240px" in css
     assert "@media (max-width: 900px)" in css
@@ -271,6 +279,10 @@ def test_experience_styles_define_responsive_drawer_and_readable_type() -> None:
     assert "margin-left: 0 !important" in css
     assert "font-size: 15px !important" in css
     assert "@media (prefers-reduced-motion: reduce)" in css
+    assert ".studio-app-shell .app-header {\n        z-index: 1400;" in studio_mobile
+    assert ".studio-app-shell .nav-overlay {" in studio_mobile
+    assert "z-index: 1300;" in studio_mobile
+    assert "body.studio-app-shell.nav-open .mobile-menu-btn" in studio_mobile
 
 
 def test_ppt_history_keeps_download_actions_visible() -> None:
@@ -289,14 +301,12 @@ def test_ppt_history_keeps_download_actions_visible() -> None:
     assert "const refreshHistoryBtn = document.getElementById('refreshHistoryBtn');" in template
 
 
-def test_translation_templates_render_with_the_application_routes(isolated_app: Flask) -> None:
+def test_ppt_template_renders_with_the_application_routes(isolated_app: Flask) -> None:
     with isolated_app.test_request_context("/"):
         ppt = render_template("main/index.html")
-        pdf = render_template("main/pdf_translate.html")
 
     assert 'aria-current="page"' in ppt
     assert 'id="dropZone"' in ppt
-    assert 'id="pdfUploadZone"' in pdf
 
 
 def test_login_template_exposes_only_sso(isolated_app: Flask) -> None:
@@ -311,7 +321,7 @@ def test_login_template_exposes_only_sso(isolated_app: Flask) -> None:
     assert 'name="username"' not in login
     assert 'name="password"' not in login
     assert "账号密码登录" not in login
-    assert 'rel="icon" href="/static/images/logo.svg"' in login
+    assert "logo.svg" not in login
 
 
 def test_login_template_explains_when_sso_is_unavailable(isolated_app: Flask) -> None:

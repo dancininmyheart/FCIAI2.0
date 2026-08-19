@@ -10,7 +10,7 @@ from app.utils.logger import LogManager
 
 def test_application_logger_does_not_propagate_to_root(tmp_path: Path) -> None:
     manager = LogManager()
-    logger = logging.getLogger("tests.fciai.runtime")
+    logger = logging.getLogger("tests.ppt_agent.runtime")
     original_level = logger.level
     original_propagate = logger.propagate
     manager.logger = logger

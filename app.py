@@ -105,7 +105,7 @@ atexit.register(application.shutdown)
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the FCIAI legacy Flask entrypoint.")
+    parser = argparse.ArgumentParser(description="Run the PPT Agent Studio Flask entrypoint.")
     parser.add_argument("--check", action="store_true", help="Validate startup wiring without running services.")
     parser.add_argument("--config", default=os.environ.get("FLASK_CONFIG", "development"))
     return parser.parse_args(argv)

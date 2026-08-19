@@ -1,140 +1,186 @@
-# FCI AI 2.0 - 文件翻译系统
+# PPT Agent Studio
 
-FCI AI 2.0 提供 PowerPoint 与 PDF 翻译。现有 HTTP 路由、任务字段、PPT 翻译模式、选页行为和 PDF 输出 DOCX 的产品契约保持不变；翻译执行已拆分为 Web 与 Worker 两种运行角色。
+> 匿名化作品集 Demo · 仅用于展示 Agent 工程能力
 
-## 主要能力
+PPT Agent Studio 是一个面向 PowerPoint 的状态化文档翻译 Agent。它把 `.ppt` / `.pptx` 拆成带稳定标识的翻译单元，让大模型负责语义转换，再由确定性程序完成协议校验、失败单元修复、OOXML 写回和产物发布。
 
-- PPT/PPTX：按页翻译、仅译文/双语模式、词库与停翻词、图片 OCR、选页写回、文本框自动适配。
-- PDF：MinerU/本地解析、可选 OCR、Qwen/DeepSeek 模型路由、双语 DOCX 输出。
-- 任务：数据库任务账本、原子领取、重试/取消、重启后状态投影、不可变源文件和幂等产物发布。
-- 翻译：显式 Provider Adapter、稳定 Translation Unit、结构质量检查、单次定向重试、重复文本合并、受控并发和可选翻译记忆。
-- 运维：关联 ID、脱敏结构化日志、阶段/Provider/质量/缓存指标和鉴权健康接口。
+这个分支只展示 PPT 翻译主流程。PDF、成分分析、词典后台等历史功能不属于 Demo 的公开界面或演示范围。
 
-详细设计见 [翻译架构](docs/TRANSLATION_ARCHITECTURE.md)，完整功能盘点见 [项目架构与需求](docs/PROJECT_ARCHITECTURE_AND_REQUIREMENTS.md)。
+## Demo 能做什么
 
-## 环境要求
+- 上传 `.ppt` / `.pptx`，选择源语言、目标语言、模型和页码范围。
+- 生成仅译文或双语版本，并尽量保留文本框、段落和可编辑版式。
+- 可选识别图片文字，并将 OCR 结果纳入 PPT 处理流程。
+- 展示排队、处理中、成功、失败等任务状态，完成后下载译文。
+- 使用 Qwen 或 DeepSeek Provider；真实翻译需要自行配置对应服务。
 
-- Python 3.11（当前 Windows 安装脚本的目标版本）
-- MySQL 8
-- LibreOffice（PPT 渲染、旧 `.ppt` 转换和版式验收需要）
-- Redis 可选；当前应用默认使用进程内翻译记忆，持久化任务状态仍由 MySQL 提供
-- Qwen/DeepSeek、MinerU、OSS 等外部服务按实际功能配置
+Demo 模式会隐藏与面试演示无关的入口，并使用匿名化的产品名称与中性视觉。它不会把真实模型调用替换成假结果，也不会绕过数据库任务账本。
 
-安装依赖：
+## 快速启动
+
+环境要求：
+
+- Python 3.11
+- Qwen 或 DeepSeek 的有效 API 配置
+- LibreOffice（仅旧 `.ppt` 转换、渲染和版式验收需要）
+- MySQL 8（仅需要按常规部署方式演示持久化数据库时使用；`--demo` 默认使用本地 SQLite）
+
+Windows PowerShell：
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.demo.example .env
 ```
 
-新增任务表采用非破坏式迁移：
+编辑 `.env`，至少填写一个模型 Provider，然后启动：
 
 ```powershell
-python migrations/add_translation_jobs.py upgrade --database-url "mysql+pymysql://user:password@host/database"
+python run.py --demo
 ```
 
-## 启动方式
+访问 `http://127.0.0.1:5000`，点击“进入演示工作区”。`--demo` 会创建一个无共享密码的本地访客身份，同时启动 Web 和内嵌 Worker；它还会在未显式配置时启用 V2 编排、翻译记忆、结构/语义质量门和可编辑写回策略。显式环境变量仍可覆盖这些 Demo 默认值。该入口不适合作为多进程生产部署方式。
 
-开发环境使用一个命令启动 Web 和内嵌 Worker：
+Demo 的任务状态仍写入关系数据库账本，但默认数据库是系统临时目录中的 `ppt-agent-studio/demo.sqlite3`，无需先安装 MySQL。如需验证 MySQL 部署，请按下文配置后使用常规入口 `python run.py`。
 
-```powershell
-python run.py
+详细配置、演示脚本和故障排查见 [DEMO.md](DEMO.md)。
+
+## 核心工作流
+
+```text
+PPT 上传
+  → 不可变源文件与任务账本
+  → PPTX/OOXML 解析
+  → 稳定 Translation Unit
+  → Qwen / DeepSeek 结构化生成
+  → 结构契约与语义质量门
+  → 失败单元定向修复（最多一次）
+  → OOXML 精确写回与版式适配
+  → 哈希校验、原子发布、下载
 ```
 
-`run.py` 同时承载 Web 和内嵌 Worker，因此开发服务器会关闭 Flask 自动重载，避免代码重载进程重复启动 Worker。修改代码后请手动重启服务。
+这套设计的重点不是让模型自由规划，而是为不确定的模型输出建立可靠边界：
 
-生产环境必须分别启动一个 Web 入口和一个 Worker。Web 可选择 WSGI 或 ASGI 包装入口：
+- **状态可恢复**：Web 与 Worker 通过持久化任务账本协作，使用 lease、版本号和显式状态转换处理取消、重试与进程中断；Demo 使用 SQLite，常规部署使用 MySQL。
+- **输出可校验**：版本化 JSON 协议固定 unit/segment ID、顺序和数量，并校验保留标记、精确术语及明显源语言残留。
+- **修复有边界**：只把失败单元送回 Provider 修复一次；仍不合格则失败关闭，不发布半成品。
+- **副作用可控**：源文件不可变，每次执行使用独立 attempt 目录；候选产物通过哈希和包完整性检查后原子晋升。
+- **成本可解释**：重复单元合并、可选翻译记忆和双层并发限制减少重复调用，同时保留输入与输出顺序。
+- **过程可观测**：关联 ID、脱敏结构化日志，以及阶段、Provider、质量和缓存指标帮助定位失败位置。
 
-```powershell
-python app.py
-python run_worker.py
-```
+底层实现说明见 [翻译架构](docs/TRANSLATION_ARCHITECTURE.md)，界面规范见 [DESIGN.md](DESIGN.md)。
 
-或：
+## 配置概览
 
-```powershell
-python run_async.py
-python run_worker.py
-```
+不要提交 `.env`。仓库只提供不含密钥的 [.env.demo.example](.env.demo.example)。
 
-不要在多个 Web 进程中内嵌启动 Worker。`quick_install.bat` 和 `quick_install.sh` 已按一个 Web 加一个 Worker 配置。
-
-所有入口均支持无副作用装配检查：
-
-```powershell
-python run.py --check
-python app.py --check
-python run_async.py --check
-python run_worker.py --check
-```
-
-数据库 SQL 默认不输出到控制台，避免内嵌 Worker 的队列轮询持续打印 `SELECT` 和只读事务结束时的 `ROLLBACK`。仅在排查数据库问题时临时开启：
+### Qwen
 
 ```dotenv
-SQLALCHEMY_ECHO=false
-LOG_LEVEL_SQLALCHEMY=WARNING
-```
-
-将 `SQLALCHEMY_ECHO` 改为 `true` 并重启后可查看完整 SQL；排查完成后应恢复为 `false`。
-
-## 翻译开关
-
-代码默认值保持兼容模式：
-
-```dotenv
-TRANSLATION_ARCH_MODE=legacy
-TRANSLATION_QUALITY_MODE=off
-TRANSLATION_MEMORY_ENABLED=0
-TRANSLATION_AUTO_RECOVER=0
+QWEN_API_KEY=replace-with-your-key
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.7-plus
-PPTX_XML_ENGINE=structured_v2
-PPTX_XML_RUNTIME_FALLBACK=0
+```
+
+Qwen 通过 OpenAI-compatible 接口调用；PPTX 结构化请求使用 JSON Object 输出，并关闭思考模式以减少格式漂移。
+
+### DeepSeek
+
+```dotenv
+DEEPSEEK_API_KEY=replace-with-your-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+两个 Provider 都使用公开的 OpenAI-compatible 配置。API Key 只应存在于本机 `.env` 或密钥管理服务中，不应写入源码、截图或提交记录。
+
+### PPTX 质量门与可编辑写回
+
+```dotenv
 PPTX_SEMANTIC_QA_MODE=enforce
 PPTX_XML_AUTOFIT_POLICY=editable
 ```
 
-建议先使用观察模式上线：
+`enforce` 会在产物发布前拒绝术语、占位符或源文残留等可机检的语义问题；`editable` 会将必要的缩放固化到可编辑字体大小。需要回滚到旧的 PowerPoint `normAutofit` 行为时，可将后者改为 `legacy_norm`。
+
+### MySQL
+
+`python run.py --demo` 会有意忽略下面的 `DB_*` 配置并使用隔离的本地 SQLite。若要演示真实 MySQL 任务账本，配置以下变量后使用 `python run.py`（不带 `--demo`）：
 
 ```dotenv
-TRANSLATION_ARCH_MODE=v2
-TRANSLATION_QUALITY_MODE=observe
-TRANSLATION_MEMORY_ENABLED=1
-TRANSLATION_AUTO_RECOVER=0
-QWEN_MODEL=qwen3.7-plus
-PPTX_XML_ENGINE=structured_v2
-PPTX_XML_RUNTIME_FALLBACK=0
-PPTX_SEMANTIC_QA_MODE=enforce
-PPTX_XML_AUTOFIT_POLICY=editable
+DB_TYPE=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=ppt_agent_studio
+DB_USER=ppt_agent
+DB_PASSWORD=replace-with-your-password
 ```
 
-`TRANSLATION_ARCH_MODE` 控制任务编排版本，`PPTX_XML_ENGINE` 独立控制 `.pptx` 的提取和写回方式。`structured_v2` 直接处理底层 XML；`PPTX_XML_RUNTIME_FALLBACK=0` 会让 Provider 或结构化协议错误直接结束任务，不再静默进入旧版 `[block]`/UNO 翻译路径。只有在明确接受版式风险时，才可临时把运行时回退设为 `1`，该回退仅处理允许降级的 ZIP、XML、包或不支持结构错误。
+如需单独执行非破坏式任务表迁移：
 
-`PPTX_SEMANTIC_QA_MODE=enforce` 是 PPTX 的默认语义质量门：英译中时若译文仍包含源文中的高置信英文短语，或违反精确词库约束，只重试失败的翻译单元一次，已通过单元保持不变。临时回滚可设为 `observe`（记录问题但仍写入候选译文）或 `off`（跳过语义检查）；unit/segment ID、顺序、数量和保留标记等结构校验始终启用。
+```powershell
+python migrations/add_translation_jobs.py upgrade --database-url "mysql+pymysql://ppt_agent:password@127.0.0.1/ppt_agent_studio"
+```
 
-`PPTX_XML_AUTOFIT_POLICY=editable` 是默认版式策略：被修改文本框需要缩小时，只有在所有可见 run/field 的实际字号都能安全解析时，才把字号烘焙进 run/段落属性并写入 `a:noAutofit`，从而消除该文本体的非 100% `a:normAutofit` 隐式缩放。若任一继承字号无法解析，或缺少几何时无法安全物化已有行距压缩，整个文本体保持原字号和 AutoFit XML，不做部分烘焙，并分别记录 `reason=unresolved_inherited_font_size` 或 `reason=unmaterialized_line_spacing_reduction` 的无内容警告；原有非 100% `normAutofit` 可能因此保留。原有 100% `normAutofit` 保持不变，`a:spAutoFit` 在译文已能容纳时也可以保留。若需回滚到旧版隐式缩放行为，可临时设为 `legacy_norm`。该设置只影响后续任务，不会改写历史产物。
+### LibreOffice
 
-Qwen 默认使用 `qwen3.7-plus`，并在翻译时关闭思考模式。PPTX 结构化请求会额外启用 JSON Object 输出模式。修改上述开关后，必须同时重启 Web 与 Worker，确保任务进程读取到相同配置。
+Windows 可把 `LIBREOFFICE_PATH` 指向 LibreOffice 安装根目录，例如：
 
-观察指标和产物稳定后，可将 `TRANSLATION_QUALITY_MODE` 改为 `enforce`。出现回归时，恢复上面的默认值并重启 Web 与 Worker；回滚不需要删除任务表或产物。
+```dotenv
+LIBREOFFICE_PATH=C:\Program Files\LibreOffice
+```
 
-鉴权用户可访问 `GET /api/translation/health`。普通用户只看到自己的任务汇总，管理员可以看到全局汇总；接口不返回任务 ID、源文本或密钥。
+常见系统路径可自动发现；若只演示 `.pptx` 的结构化翻译，部分路径不会主动使用 LibreOffice，但旧 `.ppt` 转换和渲染验收仍依赖它。
 
-## 文件大小
+## 质量与指标边界
 
-完整应用当前 `MAX_CONTENT_LENGTH` 为 12 GiB。Nginx、网关、磁盘容量、请求超时和用户配额必须同时满足实际上传上限；生产环境应按部署容量主动下调，而不是只修改前端提示。支持 `.ppt`、`.pptx` 和 `.pdf`。
+仓库中的基准用于验证具体工程性质，不代表线上业务收益：
+
+| 证据 | 可得出的结论 | 不能宣称的结论 |
+| --- | --- | --- |
+| 确定性重复文本夹具：100 个相同单元，记忆关闭时 100 次调用，开启时 1 次；输出哈希和顺序一致 | 完全重复输入可被安全合并，夹具内调用数下降 99% | 真实业务成本固定下降 99% |
+| 本地无网络夹具：V2 p95 约 9.09 ms，旧路径约 32.75 ms | 在该机器和夹具上，编排开销更低 | 真实模型端到端延迟提升相同比例 |
+| 35 页真实场景可由 PowerPoint 打开并导出；5 个受影响页面中 4 页视觉检查通过，1 页小型组合图例存在重叠 | 包完整性、可打开性和多数目标页版式得到场景验证 | 任意 PPT 均能 100% 保持版式 |
+
+同样，结构与语义质量门能识别机器可判定的协议、术语和残留问题，但不等于消除所有幻觉，也不等于人工翻译质量评测。
 
 ## 验证
 
+启动装配检查：
+
+```powershell
+python run.py --demo --check
+```
+
+运行自动化测试：
+
 ```powershell
 python -m pytest -q
-python tools/qa/benchmark_translation_architecture.py --root D:\project\FCIAI2.0 --output .omo/evidence/benchmark.json
 ```
 
-真实 PPT 的确定性版式验收：
+运行不依赖真实 Provider 的架构基准：
 
 ```powershell
-python tools/qa/run_translation_acceptance.py --root D:\project\FCIAI2.0 --provider deterministic --ppt "C:\Users\48846\Documents\FINAL_Role of HMOs in Preterm Nutrition Presentation_3.pptx" --libreoffice "C:\Program Files\LibreOffice\program\soffice.exe" --output .omo\evidence\translation-acceptance --semantic-qa-mode enforce --autofit-policy editable
+python tools/qa/benchmark_translation_architecture.py --root . --output .omo/evidence/benchmark.json
 ```
 
-验收过程复制源文件后再处理，不修改原始演示文稿。默认验收 `enforce + editable`；回滚演练可显式传入 `--semantic-qa-mode observe|off` 和 `--autofit-policy legacy_norm`。输出 JSON 会记录实际模式，并按稳定 shape ID（无 ID 时按严格顺序）核对 text-body 数量与身份。`editable` 会分别报告未解析继承字号和无法物化行距压缩的 fallback 计数；任一 fallback 都会令对应 `*_fallback_absent` 检查失败，不能静默当作“已消除全部隐式缩放”通过。无 fallback 时，修改后的文本体不得保留非 100% `normAutofit`；确需缩放的文本体必须具有烘焙字号与 `noAutofit`，无需缩放的 100% `normAutofit` 或可容纳文本的 `spAutoFit` 可以原样保留。
+对你有权使用的样例 PPT 做确定性验收：
+
+```powershell
+python tools/qa/run_translation_acceptance.py --root . --provider deterministic --ppt ".\path\to\your-anonymized-deck.pptx" --libreoffice "C:\Program Files\LibreOffice\program\soffice.exe" --output ".\.omo\evidence\translation-acceptance" --semantic-qa-mode enforce --autofit-policy editable
+```
+
+验收工具会复制源文件后再处理，不应修改原始演示文稿。
+
+## 隐私与公开范围
+
+- 本分支的公开产品名为 **PPT Agent Studio**，与任何原公司、客户或商标无关。
+- 公开演示只使用自制、合成、开源许可或已获授权的 PPT；不要上传公司或客户机密材料。
+- 配置文件、页面截图、日志和录屏中不得出现 API Key、账号、内网地址、真实客户名或本机用户目录。
+- 调用第三方模型时，PPT 文本会发送到所配置的服务；演示者需自行确认数据处理条款。
+- 这是匿名化作品集 Demo，不代表仓库已经完成面向公开发布的法律、许可证或安全合规审计。
+
+## 非目标
+
+当前项目没有把自己描述成 ReAct、自主 Planning、多 Agent 协作、RAG、向量数据库或模型微调系统。它更准确的定位是：**固定工具链、持久化状态和有界反馈修复循环组成的文档 Agent 工作流**。

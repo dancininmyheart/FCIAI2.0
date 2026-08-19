@@ -10,8 +10,8 @@ from app.translation.providers import (
     DeepSeekProvider,
     ProviderRegistry,
     QwenProvider,
+    _OpenAiDeepSeekTransport,
     _OpenAiQwenTransport,
-    _remote_data_text,
 )
 from app.translation.types import ProviderError, ProviderRequest
 
@@ -27,12 +27,16 @@ class RecordingQwenTransport:
 
 
 @dataclass(frozen=True, slots=True)
-class RecordingRemoteTransport:
+class RecordingDeepSeekTransport:
     response: str = '[{"box_index":1}]'
-    calls: list[tuple[str, dict[str, str | bool], float]] = field(default_factory=list)
+    calls: list[tuple[str, str, str, str, float]] = field(default_factory=list)
 
-    def post(self, url: str, payload: dict[str, str | bool], timeout_seconds: float) -> str:
-        self.calls.append((url, payload, timeout_seconds))
+    def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        self.calls.append(("text", model, system, user, timeout_seconds))
+        return self.response
+
+    def complete_json(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        self.calls.append(("json", model, system, user, timeout_seconds))
         return self.response
 
 
@@ -230,6 +234,46 @@ def test_openai_qwen_transport_sends_json_object_response_format(
     assert "max_tokens" not in calls[0]
 
 
+def test_openai_deepseek_transport_uses_public_environment_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_options: list[dict[str, object]] = []
+    calls: list[dict[str, object]] = []
+
+    class FakeCompletions:
+        def create(self, **kwargs: object) -> SimpleNamespace:
+            calls.append(kwargs)
+            message = SimpleNamespace(content='{"status":"ok"}')
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            client_options.append(kwargs)
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    fake_openai = ModuleType("openai")
+    fake_openai.OpenAIError = type("OpenAIError", (Exception,), {})
+    fake_openai.APIConnectionError = type("APIConnectionError", (fake_openai.OpenAIError,), {})
+    fake_openai.APITimeoutError = type("APITimeoutError", (fake_openai.OpenAIError,), {})
+    fake_openai.OpenAI = FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "demo-key")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://deepseek.example/v1")
+
+    result = _OpenAiDeepSeekTransport().complete_json(
+        "deepseek-demo",
+        "Return JSON.",
+        "{}",
+        12,
+    )
+
+    assert result == '{"status":"ok"}'
+    assert client_options[0]["api_key"] == "demo-key"
+    assert client_options[0]["base_url"] == "https://deepseek.example/v1"
+    assert calls[0]["model"] == "deepseek-demo"
+    assert calls[0]["response_format"] == {"type": "json_object"}
+
+
 def test_openai_qwen_transport_wraps_sdk_status_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -265,28 +309,24 @@ def test_openai_qwen_transport_wraps_sdk_status_errors(
     assert "secret" not in str(raised.value)
 
 
-def test_deepseek_provider_preserves_wire_payload_contract() -> None:
-    transport = RecordingRemoteTransport()
+def test_deepseek_provider_uses_public_chat_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-demo")
+    transport = RecordingDeepSeekTransport()
     result = DeepSeekProvider(transport).translate(_request())
 
-    url, payload, timeout = transport.calls[0]
+    mode, model, system, user, timeout = transport.calls[0]
     assert result.provider == "deepseek"
-    assert url.endswith("d145ae592efa4240867c3b1f99c7a5d7")
+    assert result.model == "deepseek-demo"
+    assert mode == "text"
+    assert model == "deepseek-demo"
+    assert user == "[block] Milk"
     assert timeout == 9
-    assert payload == {
-        "_streaming": False,
-        "is_app_uid": False,
-        "field": "nutrition",
-        "text": "[block] Milk",
-        "stop_words_str": '"HMO"',
-        "custom_translations_str": '"milk": "乳汁"',
-        "source_language": "English",
-        "target_language": "Chinese",
-    }
+    assert '"HMO"' in system
+    assert '"milk": "乳汁"' in system
 
 
-def test_deepseek_structured_request_keeps_contract_route_and_sends_detected_domain() -> None:
-    transport = RecordingRemoteTransport()
+def test_deepseek_structured_request_uses_json_mode_and_sends_detected_domain() -> None:
+    transport = RecordingDeepSeekTransport()
     structured_text = (
         '{"provider_contract_schema_version":2,"document_kind":"pptx_xml",'
         '"document_domain":"医学与临床研究","units":[]}'
@@ -301,29 +341,15 @@ def test_deepseek_structured_request_keeps_contract_route_and_sends_detected_dom
 
     DeepSeekProvider(transport).translate(request)
 
-    payload = transport.calls[0][1]
-    assert payload["field"] == "pptx_structured_v2"
-    assert payload["text"] == structured_text
-    assert "domain" not in payload
-
-
-def test_deepseek_structured_dict_response_is_serialized_as_json() -> None:
-    response = {
-        "translated_json": {
-            "provider_contract_schema_version": 2,
-            "document_kind": "pptx_xml",
-            "translations": [],
-        },
-    }
-
-    assert _remote_data_text(response) == (
-        '{"provider_contract_schema_version":2,"document_kind":"pptx_xml","translations":[]}'
-    )
+    mode, _model, system, user, _timeout = transport.calls[0]
+    assert mode == "json"
+    assert user == structured_text
+    assert "document_domain" in system
 
 
 def test_registry_unknown_provider_has_no_fallback_call() -> None:
     qwen = RecordingQwenTransport()
-    deepseek = RecordingRemoteTransport()
+    deepseek = RecordingDeepSeekTransport()
     registry = ProviderRegistry((QwenProvider(qwen), DeepSeekProvider(deepseek)))
 
     with pytest.raises(ProviderError) as raised:
@@ -335,7 +361,7 @@ def test_registry_unknown_provider_has_no_fallback_call() -> None:
 
 
 def test_provider_timeout_is_typed_and_never_falls_back() -> None:
-    deepseek = RecordingRemoteTransport()
+    deepseek = RecordingDeepSeekTransport()
     registry = ProviderRegistry((QwenProvider(TimeoutQwenTransport()), DeepSeekProvider(deepseek)))
 
     with pytest.raises(ProviderError) as raised:
@@ -360,7 +386,7 @@ def test_provider_failures_are_typed_redacted_and_never_cross_fallback(
     retryable: bool,
 ) -> None:
     qwen = FailingQwenTransport(error)
-    deepseek = RecordingRemoteTransport()
+    deepseek = RecordingDeepSeekTransport()
     registry = ProviderRegistry((QwenProvider(qwen), DeepSeekProvider(deepseek)))
 
     with pytest.raises(ProviderError) as raised:

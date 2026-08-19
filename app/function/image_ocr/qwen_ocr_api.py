@@ -1,3 +1,4 @@
+import argparse
 import requests
 import json
 import base64
@@ -559,14 +560,14 @@ def process_folder_with_mapping(folder_path, json_path, api_key):
     if temp_files:
         print(f"   临时文件: {len(temp_files)} 个已清理")
 
-# 使用示例
 if __name__ == "__main__":
-    # 替换为你的实际API Key
-    API_KEY = "sk-"
-    
-    # 设置文件夹路径和JSON文件路径
-    folder_path = "/home/a937911378/AIGC/ppt_ocr_8vu7ritd"  # 替换为你的图片文件夹路径
-    json_path = "/home/a937911378/AIGC/ppt_ocr_8vu7ritd/image_mapping.json"  # 替换为你的JSON文件路径
-    
-    # 执行批量处理
-    process_folder_with_mapping(folder_path, json_path, API_KEY)
+    parser = argparse.ArgumentParser(description="Run Qwen OCR over an exported slide-image folder.")
+    parser.add_argument("folder", help="Folder containing the images to process")
+    parser.add_argument("mapping", help="Path to the image_mapping.json file")
+    args = parser.parse_args()
+
+    api_key = os.environ.get("QWEN_API_KEY")
+    if not api_key:
+        parser.error("QWEN_API_KEY must be configured in the environment")
+
+    process_folder_with_mapping(args.folder, args.mapping, api_key)

@@ -3,6 +3,7 @@ Authing身份云SSO提供者
 专门针对Authing API优化的SSO实现
 """
 import logging
+import os
 import requests
 from typing import Dict, Any, Optional
 from urllib.parse import urlencode, parse_qs, urlparse
@@ -22,13 +23,17 @@ class AuthingOAuth2Provider(BaseSSOProvider):
         super().__init__(config)
         self.app_id = config.get('client_id')
         self.app_secret = config.get('client_secret')
-        self.app_host = config.get('app_host', f"https://sso.rfc-friso.com/{self.app_id}")
+        # The identity tenant is deployment-specific. Requiring configuration
+        # keeps organisation hostnames out of the distributable demo.
+        self.app_host = (
+            config.get('app_host') or os.getenv('AUTHING_APP_HOST', '')
+        ).strip().rstrip('/')
         
         # Authing特定的端点
-        self.auth_url = config.get('authorization_url', f"{self.app_host}/oidc/auth")
-        self.token_url = config.get('token_url', f"{self.app_host}/oidc/token")
-        self.userinfo_url = config.get('userinfo_url', f"{self.app_host}/oidc/me")
-        self.logout_url = config.get('logout_url', f"{self.app_host}/oidc/session/end")
+        self.auth_url = self._configured_endpoint(config, 'authorization_url', '/oidc/auth')
+        self.token_url = self._configured_endpoint(config, 'token_url', '/oidc/token')
+        self.userinfo_url = self._configured_endpoint(config, 'userinfo_url', '/oidc/me')
+        self.logout_url = self._configured_endpoint(config, 'logout_url', '/oidc/session/end')
         
         # Authing支持的scope
         self.scope = config.get('scope', 'openid profile email phone')
@@ -36,8 +41,36 @@ class AuthingOAuth2Provider(BaseSSOProvider):
         
         logger.info(f"Authing OAuth2提供者已初始化 - App ID: {self.app_id}")
     
+    def _configured_endpoint(
+        self,
+        config: Dict[str, Any],
+        key: str,
+        path: str,
+    ) -> str:
+        """Return an explicit endpoint or derive one from the configured tenant."""
+        explicit_url = (config.get(key) or '').strip()
+        if explicit_url:
+            return explicit_url
+        if self.app_host:
+            return f"{self.app_host}{path}"
+        return ''
+
+    @staticmethod
+    def _require_endpoint(endpoint: str, setting_name: str) -> str:
+        """Fail closed before an HTTP request when SSO is not configured."""
+        if not endpoint:
+            raise SSOError(
+                f"Authing SSO is not configured: set {setting_name} "
+                "or AUTHING_APP_HOST"
+            )
+        return endpoint
+
     def get_authorization_url(self) -> str:
         """获取Authing授权URL"""
+        auth_endpoint = self._require_endpoint(
+            self.auth_url,
+            'OAUTH2_AUTHORIZATION_URL',
+        )
         try:
             # 生成state参数防止CSRF攻击
             state = secrets.token_urlsafe(32)
@@ -53,7 +86,7 @@ class AuthingOAuth2Provider(BaseSSOProvider):
                 'prompt': 'login'  # 强制用户重新认证
             }
             
-            auth_url = f"{self.auth_url}?{urlencode(params)}"
+            auth_url = f"{auth_endpoint}?{urlencode(params)}"
             logger.info(f"生成Authing授权URL: {auth_url}")
             
             return auth_url
@@ -117,6 +150,10 @@ class AuthingOAuth2Provider(BaseSSOProvider):
     
     def _exchange_code_for_token(self, auth_code: str) -> Dict[str, Any]:
         """用授权码换取访问令牌"""
+        token_endpoint = self._require_endpoint(
+            self.token_url,
+            'OAUTH2_TOKEN_URL',
+        )
         try:
             # 构建令牌请求
             token_data = {
@@ -136,7 +173,7 @@ class AuthingOAuth2Provider(BaseSSOProvider):
             
             # 发送令牌请求
             response = requests.post(
-                self.token_url,
+                token_endpoint,
                 data=token_data,
                 headers=headers,
                 timeout=30
@@ -173,6 +210,10 @@ class AuthingOAuth2Provider(BaseSSOProvider):
     
     def _get_user_info(self, access_token: str) -> Dict[str, Any]:
         """获取Authing用户信息"""
+        userinfo_endpoint = self._require_endpoint(
+            self.userinfo_url,
+            'OAUTH2_USERINFO_URL',
+        )
         try:
             headers = {
                 'Authorization': f'Bearer {access_token}',
@@ -183,7 +224,7 @@ class AuthingOAuth2Provider(BaseSSOProvider):
             
             # 发送用户信息请求
             response = requests.get(
-                self.userinfo_url,
+                userinfo_endpoint,
                 headers=headers,
                 timeout=30
             )
@@ -249,6 +290,10 @@ class AuthingOAuth2Provider(BaseSSOProvider):
     
     def refresh_token(self, refresh_token: str) -> Dict[str, Any]:
         """刷新Authing访问令牌"""
+        token_endpoint = self._require_endpoint(
+            self.token_url,
+            'OAUTH2_TOKEN_URL',
+        )
         try:
             token_data = {
                 'client_id': self.app_id,
@@ -263,7 +308,7 @@ class AuthingOAuth2Provider(BaseSSOProvider):
             }
             
             response = requests.post(
-                self.token_url,
+                token_endpoint,
                 data=token_data,
                 headers=headers,
                 timeout=30

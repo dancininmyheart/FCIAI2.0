@@ -8,4 +8,6 @@ uploads/
 .omo/
 .playwright-cli/
 output/
-.idea/.name
+.tmp/
+last/
+.idea/

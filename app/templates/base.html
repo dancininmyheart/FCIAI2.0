@@ -3,55 +3,82 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}{% endblock %}</title>
-    <link rel="icon" href="{{ url_for('static', filename='images/logo.svg') }}">
+    <meta name="theme-color" content="#080d19">
+    <meta name="description" content="PPT Agent Studio">
+    <title>{% block title %}{% endblock %} · PPT Agent Studio</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/brand.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <!-- 添加Font Awesome图标库 -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/experience.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
-<body>
-    <!-- 模态框 -->
-    <div id="messageModal" class="modal">
+<body class="auth-page">
+    <a class="skip-link" href="#auth-main">
+        {% if session.get('language') == 'en' %}Skip to main content{% else %}跳到主要内容{% endif %}
+    </a>
+
+    <header class="auth-brand-bar">
+        <a class="auth-brand-link" href="{{ url_for('main.index') }}" aria-label="PPT Agent Studio">
+            <span class="auth-brand-mark" aria-hidden="true"><i class="fas fa-file-powerpoint"></i></span>
+            <span>PPT Agent Studio</span>
+        </a>
+    </header>
+
+    <main class="auth-main" id="auth-main" tabindex="-1">
+        {% block content %}{% endblock %}
+    </main>
+
+    <div id="messageModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalMessage" aria-hidden="true">
         <div class="modal-content">
-            <span class="close-button" onclick="closeModal()"><i class="fas fa-times"></i></span>
+            <button type="button" class="close-button" onclick="closeModal()" aria-label="{% if session.get('language') == 'en' %}Close{% else %}关闭{% endif %}">
+                <i class="fas fa-times" aria-hidden="true"></i>
+            </button>
             <p id="modalMessage"></p>
-            <button class="modal-button" onclick="closeModal()">确定</button>
+            <button type="button" class="modal-button" onclick="closeModal()">
+                {% if session.get('language') == 'en' %}Got it{% else %}确定{% endif %}
+            </button>
         </div>
     </div>
-    
-    {% block content %}{% endblock %}
-    
+
     <script>
+        const messageModal = document.getElementById('messageModal');
+        const modalContent = messageModal.querySelector('.modal-content');
+        const modalButton = messageModal.querySelector('.modal-button');
+
         function showModal(message) {
             document.getElementById('modalMessage').textContent = message;
-            document.getElementById('messageModal').style.display = 'block';
-            setTimeout(() => {
-                document.querySelector('.modal-content').style.opacity = '1';
-            }, 10);
+            messageModal.style.display = 'block';
+            messageModal.setAttribute('aria-hidden', 'false');
+            requestAnimationFrame(() => {
+                modalContent.style.opacity = '1';
+                modalButton.focus();
+            });
         }
 
         function closeModal() {
-            document.querySelector('.modal-content').style.opacity = '0';
+            modalContent.style.opacity = '0';
+            messageModal.setAttribute('aria-hidden', 'true');
             setTimeout(() => {
-                document.getElementById('messageModal').style.display = 'none';
+                messageModal.style.display = 'none';
             }, 300);
         }
 
         {% with messages = get_flashed_messages() %}
             {% if messages %}
                 {% for message in messages %}
-                    showModal("{{ message }}");
+                    showModal({{ message|tojson }});
                 {% endfor %}
             {% endif %}
         {% endwith %}
 
-        window.onclick = function(event) {
-            var modal = document.getElementById('messageModal');
-            if (event.target == modal) {
+        window.addEventListener('click', (event) => {
+            if (event.target === messageModal) closeModal();
+        });
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && messageModal.getAttribute('aria-hidden') === 'false') {
                 closeModal();
             }
-        }
+        });
     </script>
 </body>
 </html>

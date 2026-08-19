@@ -155,7 +155,7 @@ def _legacy_extract_markdown(pdf_path: str, enable_image_ocr: bool, task_work_di
     result = OSSPDFProcessor().process_pdf_with_mineru(
         pdf_path,
         MinerUAPI(),
-        bucket="fciai",
+        bucket="ppt-agent-studio",
         region="cn-beijing",
         enable_ocr=enable_image_ocr,
     )

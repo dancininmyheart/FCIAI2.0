@@ -75,7 +75,7 @@ class MinerUAPI:
         # 根据官方文档设置请求头
         self.session.headers.update({
             'Authorization': f'Bearer {self.token}',
-            'User-Agent': 'FCIAI2.0/1.0',
+            'User-Agent': 'PPTAgentStudio/1.0',
             'Content-Type': 'application/json'
         })
         
@@ -537,7 +537,7 @@ class MinerUAPI:
         url = 'https://mineru.net/api/v4/extract/tasks'
         headers = {
             'Authorization': f'Bearer {self.token}',
-            'User-Agent': 'FCIAI2.0/1.0'
+            'User-Agent': 'PPTAgentStudio/1.0'
         }
         
         try:
@@ -569,7 +569,7 @@ class MinerUAPI:
         # 使用官方文档中的认证方式
         headers = {
             'Authorization': f'Bearer {self.token}',
-            'User-Agent': 'FCIAI2.0/1.0'
+            'User-Agent': 'PPTAgentStudio/1.0'
         }
         
         try:

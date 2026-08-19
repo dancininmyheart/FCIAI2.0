@@ -18,7 +18,6 @@ from app.translation.pptx_contract import (
     PPTX_PROVIDER_FIELD,
     PPTX_PROVIDER_REPAIR_FIELD,
 )
-from app.translation.pptx_contract_types import JsonValue
 from app.translation.qwen_config import qwen_model_name
 from app.translation.types import ProviderError, ProviderName, ProviderRequest, ProviderResult, TranslationProvider
 from app.translation.metrics import current_correlation, current_metrics, log_translation_event
@@ -26,9 +25,9 @@ from app.translation.metrics import current_correlation, current_metrics, log_tr
 logger = logging.getLogger(__name__)
 
 _QWEN_MODEL: Final = qwen_model_name()
-_QWEN_BASE_URL: Final = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-_REMOTE_BASE_URL: Final = "http://117.50.216.15/agent_server/app/run"
-_DEEPSEEK_ENDPOINT: Final = "d145ae592efa4240867c3b1f99c7a5d7"
+_QWEN_DEFAULT_BASE_URL: Final = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+_DEEPSEEK_DEFAULT_BASE_URL: Final = "https://api.deepseek.com"
+_DEEPSEEK_DEFAULT_MODEL: Final = "deepseek-chat"
 _QWEN_TEMPERATURE: Final = 0.0
 _QWEN_SEED: Final = 0
 
@@ -37,13 +36,8 @@ class QwenTransport(Protocol):
     def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str: ...
 
 
-class RemoteTransport(Protocol):
-    def post(self, url: str, payload: dict[str, str | bool], timeout_seconds: float) -> str: ...
-
-
-class RemoteProviderResponseError(RuntimeError):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
+class DeepSeekTransport(Protocol):
+    def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,29 +110,33 @@ def _accepts_keyword(parameter: inspect.Parameter | None) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class DeepSeekProvider:
-    transport: RemoteTransport
+    transport: DeepSeekTransport
 
     @property
     def name(self) -> ProviderName:
         return "deepseek"
 
     def translate(self, request: ProviderRequest) -> ProviderResult:
-        # Domain guidance is embedded in the structured `text` contract. Keep
-        # this outer wire payload stable for the existing remote application.
-        payload = {
-            "_streaming": False,
-            "is_app_uid": False,
-            "field": request.field,
-            "text": request.text,
-            "stop_words_str": _quoted_words(request.stop_words),
-            "custom_translations_str": _quoted_translations(request.custom_translations),
-            "source_language": request.source_language,
-            "target_language": request.target_language,
-        }
+        model = os.getenv("DEEPSEEK_MODEL", "").strip() or _DEEPSEEK_DEFAULT_MODEL
         try:
-            text = self.transport.post(
-                f"{_REMOTE_BASE_URL}/{_DEEPSEEK_ENDPOINT}",
-                payload,
+            complete = self.transport.complete
+            if request.field in (
+                PPTX_DOMAIN_DETECTION_FIELD,
+                PPTX_PROVIDER_FIELD,
+                PPTX_PROVIDER_REPAIR_FIELD,
+            ):
+                complete_json = getattr(self.transport, "complete_json", None)
+                if complete_json is None:
+                    raise ProviderError(
+                        "deepseek",
+                        "structured_output_unsupported",
+                        "provider transport does not support JSON output",
+                    )
+                complete = complete_json
+            text = complete(
+                model,
+                _semantic_system_prompt(request),
+                request.text,
                 request.timeout_seconds,
             )
         except TimeoutError as exc:
@@ -149,7 +147,7 @@ class DeepSeekProvider:
             raise ProviderError("deepseek", "invalid_response", "provider returned invalid data") from exc
         if not text:
             raise ProviderError("deepseek", "empty_response", "provider returned no text")
-        return ProviderResult(text=text, provider="deepseek", model="deepseek")
+        return ProviderResult(text=text, provider="deepseek", model=model)
 
 
 class ProviderRegistry:
@@ -199,7 +197,7 @@ def default_provider_registry() -> ProviderRegistry:
     return ProviderRegistry(
         (
             QwenProvider(_OpenAiQwenTransport()),
-            DeepSeekProvider(_RequestsRemoteTransport()),
+            DeepSeekProvider(_OpenAiDeepSeekTransport()),
         ),
     )
 
@@ -256,7 +254,7 @@ class _OpenAiQwenTransport:
         try:
             client = OpenAI(
                 api_key=os.getenv("QWEN_API_KEY"),
-                base_url=_QWEN_BASE_URL,
+                base_url=os.getenv("QWEN_BASE_URL", "").strip() or _QWEN_DEFAULT_BASE_URL,
                 timeout=timeout_seconds,
             )
             request = {
@@ -278,41 +276,50 @@ class _OpenAiQwenTransport:
         return response.choices[0].message.content or ""
 
 
-class _RequestsRemoteTransport:
-    def post(self, url: str, payload: dict[str, str | bool], timeout_seconds: float) -> str:
-        import requests
+class _OpenAiDeepSeekTransport:
+    def complete(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        return self._complete(model, system, user, timeout_seconds, json_mode=False)
 
+    def complete_json(self, model: str, system: str, user: str, timeout_seconds: float) -> str:
+        return self._complete(model, system, user, timeout_seconds, json_mode=True)
+
+    def _complete(
+        self,
+        model: str,
+        system: str,
+        user: str,
+        timeout_seconds: float,
+        *,
+        json_mode: bool,
+    ) -> str:
+        from openai import APIConnectionError, APITimeoutError, OpenAI, OpenAIError
+
+        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("DeepSeek API key is not configured")
         try:
-            response = requests.post(url, json=payload, timeout=timeout_seconds)
-            response.raise_for_status()
-            body = response.json()
-        except requests.Timeout as exc:
-            raise TimeoutError("remote provider timed out") from exc
-        except (requests.RequestException, ValueError) as exc:
-            raise RemoteProviderResponseError("remote provider returned an invalid response") from exc
-        if not isinstance(body, dict):
-            raise RemoteProviderResponseError("remote provider returned an invalid response")
-        if body.get("code") != 200:
-            raise RemoteProviderResponseError(f"remote provider status {body.get('code')}")
-        return _remote_data_text(body.get("data", ""))
-
-
-def _remote_data_text(data: JsonValue) -> str:
-    if isinstance(data, str):
-        return data
-    if isinstance(data, dict):
-        for key in ("translated_json", "result", "content", "output"):
-            candidate = data.get(key)
-            if candidate is not None and candidate != "":
-                return _remote_data_text(candidate)
-        return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-    return _json_or_text(data)
-
-
-def _json_or_text(value: JsonValue) -> str:
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    return str(value)
+            client = OpenAI(
+                api_key=api_key,
+                base_url=os.getenv("DEEPSEEK_BASE_URL", "").strip() or _DEEPSEEK_DEFAULT_BASE_URL,
+                timeout=timeout_seconds,
+            )
+            request: dict[str, object] = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "stream": False,
+                "temperature": _QWEN_TEMPERATURE,
+            }
+            if json_mode:
+                request["response_format"] = {"type": "json_object"}
+            response = client.chat.completions.create(**request)
+        except (APIConnectionError, APITimeoutError) as exc:
+            raise TimeoutError("DeepSeek request timed out or could not connect") from exc
+        except OpenAIError as exc:
+            raise RuntimeError("DeepSeek API request failed") from exc
+        return response.choices[0].message.content or ""
 
 
 def _semantic_system_prompt(request: ProviderRequest) -> str:

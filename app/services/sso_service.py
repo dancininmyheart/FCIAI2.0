@@ -249,15 +249,31 @@ class SSOService:
             return
         
         try:
-            provider_type = current_app.config.get('SSO_PROVIDER', 'oauth2')
+            provider_type = str(
+                current_app.config.get('SSO_PROVIDER', 'oauth2')
+            ).strip().lower()
 
-            if provider_type == 'oauth2':
+            if provider_type in ('oauth2', 'oidc'):
                 # 检查是否是Authing提供者
+                oauth2_vendor = str(
+                    current_app.config.get('OAUTH2_VENDOR')
+                    or os.getenv('OAUTH2_VENDOR', '')
+                ).strip().lower()
                 auth_url = current_app.config.get('OAUTH2_AUTHORIZATION_URL', '')
-                if 'sso.rfc-friso.com' in auth_url or 'authing' in auth_url.lower():
+                authing_host = (
+                    current_app.config.get('AUTHING_APP_HOST')
+                    or os.getenv('AUTHING_APP_HOST', '')
+                )
+                if (
+                    oauth2_vendor == 'authing'
+                    or bool(authing_host)
+                    or 'authing' in auth_url.lower()
+                ):
                     self._setup_authing_provider()
                 else:
                     self._setup_oauth2_provider()
+            elif provider_type == 'authing':
+                self._setup_authing_provider()
             elif provider_type == 'saml':
                 self._setup_saml_provider()
             else:
@@ -304,7 +320,10 @@ class SSOService:
             'logout_url': current_app.config.get('OAUTH2_LOGOUT_URL', ''),
             'scope': current_app.config.get('OAUTH2_SCOPE', 'openid profile email phone'),
             'redirect_uri': current_app.config.get('OAUTH2_REDIRECT_URI', ''),
-            'app_host': current_app.config.get('AUTHING_APP_HOST', '')
+            'app_host': (
+                current_app.config.get('AUTHING_APP_HOST')
+                or os.getenv('AUTHING_APP_HOST', '')
+            )
         }
 
         # 验证必需的配置

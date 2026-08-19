@@ -12,6 +12,7 @@ BRAND_CSS = ROOT / "app" / "static" / "css" / "brand.css"
 AUTH_CSS = ROOT / "app" / "static" / "css" / "style.css"
 BASE_CSS = ROOT / "app" / "static" / "css" / "styles.css"
 EXPERIENCE_CSS = ROOT / "app" / "static" / "css" / "experience.css"
+WORKBENCH_CSS = ROOT / "app" / "static" / "css" / "workbench-demo.css"
 BASE_TEMPLATE = ROOT / "app" / "templates" / "main" / "base_layout.html"
 PPT_TEMPLATE = ROOT / "app" / "templates" / "main" / "index.html"
 
@@ -22,6 +23,8 @@ def _read(path: Path) -> str:
 
 def _inline_style(path: Path) -> str:
     source = _read(path)
+    if "<style>" not in source:
+        return ""
     start = source.index("<style>") + len("<style>")
     end = source.index("</style>", start)
     return source[start:end]
@@ -33,7 +36,7 @@ def _translation_surface() -> str:
             _read(BRAND_CSS),
             _read(BASE_CSS),
             _inline_style(BASE_TEMPLATE),
-            _inline_style(PPT_TEMPLATE),
+            _read(WORKBENCH_CSS),
             _read(EXPERIENCE_CSS),
         )
     )
@@ -41,29 +44,94 @@ def _translation_surface() -> str:
         <!doctype html>
         <html>
         <head><style>{css}</style></head>
-        <body>
+        <body class="studio-app-shell">
             <header class="mobile-app-bar">
                 <button class="mobile-menu-btn" type="button">Menu</button>
-                <span class="mobile-app-title">Translation Management System</span>
+                <span class="mobile-app-title">PPT Translation</span>
             </header>
             <button class="nav-overlay" type="button">Close</button>
             <nav class="nav-menu">
                 <div class="nav-container">
-                    <a class="nav-brand"><span class="brand-logo">FC</span></a>
+                    <a class="nav-brand"><span>PPT Translation</span></a>
                     <button class="nav-close-btn" type="button">Close</button>
                     <div class="nav-links"><a class="nav-link active">PPT Translation</a></div>
                 </div>
             </nav>
-            <main class="container">
-                <section class="page-header">
-                    <span class="header-icon"></span>
-                    <h1 class="header-title">PPT File Translation Tool</h1>
-                </section>
-                <div class="main-content">
-                    <aside class="config-panel"><h3>Translation Settings</h3></aside>
-                    <div class="translation-area">
-                        <section class="upload-card"><h2>PPT Translation</h2></section>
-                        <section class="history-card"><h3>History</h3></section>
+            <main class="container app-main">
+                <div class="demo-shell">
+                    <section class="portfolio-hero">
+                        <div class="hero-copy">
+                            <h1>Turn slide translation into a verifiable Agent workflow</h1>
+                        </div>
+                        <div class="workflow-card">
+                            <ol class="workflow-list"><li><span>Parse PPTX</span></li></ol>
+                        </div>
+                    </section>
+                    <section class="workbench-section">
+                        <div class="main-content">
+                            <aside class="config-panel">
+                                <div class="panel-heading"><h3>Translation strategy</h3></div>
+                            </aside>
+                            <div class="translation-area">
+                                <section class="upload-card">
+                                    <div class="panel-heading"><h2>Upload and select pages</h2></div>
+                                </section>
+                                <section class="history-card"><h3>Task history</h3></section>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </main>
+        </body>
+        </html>
+    """
+
+
+def _translation_waiting_surface() -> str:
+    css = "\n".join(
+        (
+            _read(BRAND_CSS),
+            _read(BASE_CSS),
+            _inline_style(BASE_TEMPLATE),
+            _read(WORKBENCH_CSS),
+            _read(EXPERIENCE_CSS),
+        )
+    )
+    return f"""
+        <!doctype html>
+        <html>
+        <head><style>{css}</style></head>
+        <body class="studio-app-shell">
+            <main class="container app-main">
+                <div class="demo-shell">
+                    <div id="queue-status" class="queue-status alert-info" style="display: flex">
+                        <div class="loading-spinner" style="width: 20px; height: 20px; border-width: 2px;"></div>
+                        <span>Translation task is running...</span>
+                    </div>
+                    <div class="main-content">
+                        <aside class="config-panel"></aside>
+                        <div class="translation-area">
+                            <section class="upload-card">
+                                <div id="progressContainer" class="progress-container" style="display: block">
+                                    <div class="progress-info">
+                                        <div class="slide-info">Translating page 2 of 8</div>
+                                        <div class="progress-percentage">25%</div>
+                                    </div>
+                                    <div class="progress-bar-container">
+                                        <div class="progress-bar-fill" style="width: 25%"></div>
+                                    </div>
+                                    <div class="detailed-status">
+                                        <div class="status-header">
+                                            <h4>Translation Details</h4>
+                                            <button type="button" class="toggle-detail-btn">
+                                                <i class="bi bi-chevron-down"></i>
+                                            </button>
+                                        </div>
+                                        <div class="detail-content"></div>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -88,7 +156,7 @@ def browser() -> Iterator[Browser]:
         instance.close()
 
 
-def test_translation_surface_renders_the_legacy_desktop_hierarchy(
+def test_translation_surface_renders_the_portfolio_demo_hierarchy(
     browser: Browser,
 ) -> None:
     page = browser.new_page(viewport={"width": 1440, "height": 1000})
@@ -102,8 +170,15 @@ def test_translation_surface_renders_the_legacy_desktop_hierarchy(
             viewportWidth: window.innerWidth
         })"""
     )
+    hero = page.locator(".portfolio-hero").evaluate(
+        """element => ({
+            backgroundImage: getComputedStyle(element).backgroundImage,
+            radius: getComputedStyle(element).borderRadius,
+            shadow: getComputedStyle(element).boxShadow
+        })"""
+    )
     cards = page.locator(
-        ".page-header, .config-panel, .upload-card, .history-card"
+        ".demo-shell .config-panel, .demo-shell .upload-card, .demo-shell .history-card"
     ).evaluate_all(
         """elements => elements.map(element => ({
             background: getComputedStyle(element).backgroundColor,
@@ -112,23 +187,19 @@ def test_translation_surface_renders_the_legacy_desktop_hierarchy(
         }))"""
     )
     heading_colors = page.locator(
-        ".header-title, .config-panel h3, .upload-card h2, .history-card h3"
+        ".demo-shell .config-panel h3, .demo-shell .upload-card h2, .demo-shell .history-card h3"
     ).evaluate_all(
         "elements => elements.map(element => getComputedStyle(element).color)"
     )
 
-    assert surface == {
-        "background": "rgb(248, 249, 250)",
-        "documentWidth": 1440,
-        "viewportWidth": 1440,
-    }
-    assert all(card["background"] == "rgb(255, 255, 255)" for card in cards)
-    assert all(8 <= float(card["radius"].removesuffix("px")) <= 14 for card in cards)
-    assert all(
-        card["shadow"] == "rgba(0, 0, 0, 0.06) 0px 2px 8px 0px"
-        for card in cards
-    )
-    assert heading_colors == ["rgb(0, 148, 217)"] * 4
+    assert surface["documentWidth"] == surface["viewportWidth"] == 1440
+    assert "linear-gradient" in hero["backgroundImage"]
+    assert hero["radius"] == "28px"
+    assert hero["shadow"] != "none"
+    assert all(card["background"] == "rgba(255, 255, 255, 0.94)" for card in cards)
+    assert all(10 <= float(card["radius"].removesuffix("px")) <= 22 for card in cards)
+    assert all(card["shadow"] != "none" for card in cards)
+    assert "rgb(0, 148, 217)" not in heading_colors
 
     page.close()
 
@@ -153,8 +224,8 @@ def test_translation_surface_stays_aligned_at_tablet_and_mobile_widths(
         }"""
     )
     assert tablet == {
-        "navRight": 180,
-        "canvasLeft": 180,
+        "navRight": 1024,
+        "canvasLeft": 0,
         "documentWidth": 1024,
         "viewportWidth": 1024,
     }
@@ -196,12 +267,62 @@ def test_translation_surface_stays_aligned_at_tablet_and_mobile_widths(
         }"""
     )
     assert mobile_open["left"] == 0
-    assert mobile_open["width"] <= 320
+    assert mobile_open["width"] <= 360
 
     page.close()
 
 
-def test_auth_primary_action_renders_legacy_blue_depth(browser: Browser) -> None:
+def test_ppt_waiting_surface_uses_the_demo_progress_layout(
+    browser: Browser,
+) -> None:
+    page = browser.new_page(viewport={"width": 1440, "height": 1000})
+    page.emulate_media(reduced_motion="reduce")
+    page.set_content(_translation_waiting_surface())
+
+    waiting = page.evaluate(
+        """() => {
+            const value = selector => getComputedStyle(document.querySelector(selector));
+            const queue = value('#queue-status');
+            const progress = value('#progressContainer');
+            const header = value('.status-header');
+            const toggle = value('.toggle-detail-btn');
+            return {
+                queueBackground: queue.backgroundColor,
+                queuePadding: queue.padding,
+                progressBackground: progress.backgroundColor,
+                progressPadding: progress.padding,
+                progressRadius: progress.borderRadius,
+                detailHeaderHeight: parseFloat(header.height),
+                toggleWidth: parseFloat(toggle.width),
+                toggleHeight: parseFloat(toggle.height)
+            };
+        }"""
+    )
+
+    assert {
+        key: waiting[key]
+        for key in (
+            "queueBackground",
+            "queuePadding",
+            "progressBackground",
+            "progressPadding",
+            "progressRadius",
+        )
+    } == {
+        "queueBackground": "rgb(238, 242, 255)",
+        "queuePadding": "14px 18px",
+        "progressBackground": "rgb(248, 249, 255)",
+        "progressPadding": "18px",
+        "progressRadius": "14px",
+    }
+    assert 64 <= waiting["detailHeaderHeight"] <= 74
+    assert waiting["toggleWidth"] < 56
+    assert waiting["toggleHeight"] < 32
+
+    page.close()
+
+
+def test_auth_primary_action_renders_studio_gradient_depth(browser: Browser) -> None:
     css = "\n".join((_read(BRAND_CSS), _read(AUTH_CSS)))
     page = browser.new_page(viewport={"width": 390, "height": 844})
     page.emulate_media(reduced_motion="reduce")
@@ -233,7 +354,7 @@ def test_auth_primary_action_renders_legacy_blue_depth(browser: Browser) -> None
     primary.hover()
     page.wait_for_function(
         """getComputedStyle(document.querySelector('.btn-primary'))
-            .backgroundImage.includes('rgb(0, 123, 182)')"""
+            .backgroundImage.includes('rgb(81, 72, 229)')"""
     )
     hovered_background = primary.evaluate(
         "element => getComputedStyle(element).backgroundImage"
@@ -241,13 +362,13 @@ def test_auth_primary_action_renders_legacy_blue_depth(browser: Browser) -> None
 
     assert initial == {
         "background": (
-            "linear-gradient(135deg, rgb(0, 148, 217), rgb(0, 95, 153))"
+            "linear-gradient(135deg, rgb(99, 91, 255), rgb(8, 145, 178))"
         ),
-        "shadow": "rgba(0, 148, 217, 0.18) 0px 12px 24px 0px",
+        "shadow": "rgba(99, 91, 255, 0.22) 0px 12px 36px 0px",
         "color": "rgb(255, 255, 255)",
     }
     assert hovered_background == (
-        "linear-gradient(135deg, rgb(0, 123, 182), rgb(0, 95, 153))"
+        "linear-gradient(135deg, rgb(81, 72, 229), rgb(8, 145, 178))"
     )
     assert page.locator(".links").is_visible()
     assert page.evaluate(

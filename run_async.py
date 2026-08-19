@@ -51,7 +51,7 @@ class UvicornModule(Protocol):
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the FCIAI async web entrypoint.")
+    parser = argparse.ArgumentParser(description="Run the PPT Agent Studio async web entrypoint.")
     parser.add_argument("--check", action="store_true", help="Validate startup wiring without running services.")
     parser.add_argument("--config", default=os.environ.get("FLASK_CONFIG", "development"))
     parser.add_argument("--server", default=os.environ.get("SERVER_TYPE", DEFAULT_SERVER))

@@ -6,17 +6,30 @@
 <div class="auth-shell">
     <div class="auth-card">
         <div class="auth-card-header">
-            <span class="brand-badge">
-                <i class="fas fa-shield-check"></i>
-            </span>
             <div>
-                <h1 class="auth-card-title">欢迎登录</h1>
-                <p class="auth-card-subtitle">使用企业 SSO 进入 FrieslandCampina AI 平台</p>
+                <p class="auth-eyebrow">PPT Agent Studio</p>
+                <h1 class="auth-card-title">PPT 翻译工作台</h1>
+                <p class="auth-card-subtitle">保留版式的智能演示文稿翻译</p>
             </div>
         </div>
 
         <div class="auth-body">
-            {% if sso_enabled %}
+            {% if demo_mode %}
+            <div class="demo-entry">
+                <span class="mode-badge">面试演示模式</span>
+                <h2>准备好查看完整工作流</h2>
+                <p>无需账号或公开密码，以匿名访客身份进入。</p>
+                <form method="post" action="{{ url_for('auth.demo_login') }}">
+                    <input type="hidden" name="demo_login_nonce" value="{{ demo_login_nonce }}">
+                    <button type="submit" class="btn btn-primary demo-btn">
+                        <span class="icon" aria-hidden="true"><i class="fas fa-wand-magic-sparkles"></i></span>
+                        <span class="btn-text">进入演示工作台</span>
+                        <span class="chevron" aria-hidden="true"><i class="fas fa-arrow-right"></i></span>
+                    </button>
+                </form>
+                <p class="privacy-note"><i class="fas fa-user-shield" aria-hidden="true"></i> 页面不展示任何真实组织或账号信息</p>
+            </div>
+            {% elif sso_enabled %}
             <div class="sso-stack">
                 <a href="{{ url_for('sso.sso_login') }}" class="btn btn-primary sso-btn">
                     <span class="icon">
@@ -28,10 +41,10 @@
                             <i class="fas fa-user-lock"></i>
                         {% endif %}
                     </span>
-                    <span class="btn-text">使用 SSO 登录</span>
+                    <span class="btn-text">使用身份提供方登录</span>
                     <span class="chevron"><i class="fas fa-arrow-right"></i></span>
                 </a>
-                <p class="sso-caption">系统与企业身份平台同步，使用公司账号即可进入系统。</p>
+                <p class="sso-caption">连接已配置的身份提供方后即可进入工作台。</p>
             </div>
             {% else %}
             <div class="sso-unavailable" role="status" aria-live="polite">
@@ -43,7 +56,11 @@
         </div>
 
         <div class="links">
+            {% if demo_mode %}
+            <span>专注展示 PPT 解析、翻译、质量检查与可编辑写回。</span>
+            {% else %}
             <span>遇到问题？请联系系统管理员。</span>
+            {% endif %}
         </div>
     </div>
 </div>

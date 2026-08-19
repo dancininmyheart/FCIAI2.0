@@ -75,18 +75,25 @@ def create_app(config_name='development'):
                 logger.debug(f"重定向HTTP请求到HTTPS: {url}")
                 return redirect(url, code=301)
     
-    # 显式设置SQLAlchemy引擎选项，确保连接池大小为100
-    pool_size = int(os.environ.get('DB_POOL_SIZE', 100))
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_size': pool_size,
-        'pool_timeout': int(os.environ.get('DB_POOL_TIMEOUT', 30)),
-        'pool_recycle': int(os.environ.get('DB_POOL_RECYCLE', 3600)),
-        'max_overflow': int(os.environ.get('DB_MAX_OVERFLOW', 20)),
-        'connect_args': {
-            'connect_timeout': int(os.environ.get('DB_CONNECT_TIMEOUT', 10))
+    # SQLite does not accept the MySQL-only pool/connect arguments below. The
+    # interview demo intentionally uses a repository-local SQLite database so
+    # it can start without requiring private infrastructure.
+    database_uri = str(app.config.get('SQLALCHEMY_DATABASE_URI', ''))
+    if database_uri.startswith('sqlite:'):
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+        logger.info("Using SQLite-compatible database engine options")
+    else:
+        pool_size = int(os.environ.get('DB_POOL_SIZE', 100))
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_size': pool_size,
+            'pool_timeout': int(os.environ.get('DB_POOL_TIMEOUT', 30)),
+            'pool_recycle': int(os.environ.get('DB_POOL_RECYCLE', 3600)),
+            'max_overflow': int(os.environ.get('DB_MAX_OVERFLOW', 20)),
+            'connect_args': {
+                'connect_timeout': int(os.environ.get('DB_CONNECT_TIMEOUT', 10))
+            }
         }
-    }
-    logger.info(f"配置数据库连接池大小: {pool_size}")
+        logger.info(f"配置数据库连接池大小: {pool_size}")
 
     # 初始化扩展
     db.init_app(app)
@@ -107,26 +114,15 @@ def create_app(config_name='development'):
 
     init_runtime_lifecycle(app)
 
-    # 注册蓝图
-    from .views.main import main as main_bp
+    # 注册 PPT-only 业务蓝图及认证基础设施。
+    # 旧业务实现仍保留在各自模块中，但不再暴露 URL。
+    from .views.ppt_only import bp as main_bp
     from .views.auth import bp as auth_bp
-    from .views.upload import bp as upload_bp
     from .views.sso_auth import sso_bp
-    from .views.ingredient import ingredient as ingredient_bp
-    from .routes.log_management import router as log_management_bp
-    from .routes.stop_words import bp as stop_words_bp
-    from .routes.db_management import router as db_management_bp
-    from .views.translation_health import bp as translation_health_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(sso_bp)  # SSO路由已包含前缀
-    app.register_blueprint(upload_bp, url_prefix='/api')
-    app.register_blueprint(ingredient_bp, url_prefix='/ingredient')  # 成分搜索路由
-    app.register_blueprint(stop_words_bp)  # 停翻词路由
-    app.register_blueprint(log_management_bp)
-    app.register_blueprint(db_management_bp)  # 数据库管理路由
-    app.register_blueprint(translation_health_bp)
 
     logger.info(f"应用已初始化 - 环境: {config_name}")
     return app

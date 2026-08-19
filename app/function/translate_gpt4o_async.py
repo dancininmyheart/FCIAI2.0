@@ -1,6 +1,7 @@
 from typing import List, Dict
 import json
 import logging
+import os
 
 import requests
 
@@ -10,6 +11,17 @@ from app.utils.lazy_http_client import http_client
 
 # 配置日志记录器
 logger = logging.getLogger(__name__)
+
+
+def _configured_api_url() -> str:
+    """Resolve the optional legacy GPT-4o proxy without a private default."""
+    api_url = os.getenv('GPT4O_TRANSLATION_API_URL', '').strip()
+    if not api_url:
+        raise RuntimeError(
+            'GPT-4o translation proxy is disabled: set '
+            'GPT4O_TRANSLATION_API_URL to enable it'
+        )
+    return api_url
 
 async def Translate_texts(field, text, stop_words, custom_translations, source_language, target_language):
     """
@@ -28,7 +40,7 @@ async def Translate_texts(field, text, stop_words, custom_translations, source_l
     """
     # GPT API接口URL
     print("调用GPT接口翻译")
-    api_url = "http://117.50.216.15/agent_server/app/run/65c9b2a92645477b989328f68faff372"
+    api_url = _configured_api_url()
     
     # 准备请求数据
     stop_words_str = ", ".join(f'"{word}"' for word in stop_words)

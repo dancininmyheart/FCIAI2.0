@@ -61,7 +61,7 @@ DEFAULT_DEPS = WorkerLauncherDeps(
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the FCIAI embedded translation worker.")
+    parser = argparse.ArgumentParser(description="Run the PPT Agent Studio translation worker.")
     parser.add_argument("--check", action="store_true", help="Validate startup wiring without running services.")
     parser.add_argument("--config", default=os.environ.get("FLASK_CONFIG", "development"))
     return parser.parse_args(argv)

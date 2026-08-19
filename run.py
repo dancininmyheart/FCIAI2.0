@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Callable
 
@@ -11,6 +12,19 @@ from app import create_app, db
 from app.runtime import parse_runtime_role, start_runtime, stop_runtime
 
 RUN_ROLE = "all"
+
+DEMO_WORKFLOW_DEFAULTS = {
+    "TRANSLATION_ARCH_MODE": "v2",
+    "TRANSLATION_QUALITY_MODE": "enforce",
+    "TRANSLATION_MEMORY_ENABLED": "1",
+    "TRANSLATION_AUTO_RECOVER": "0",
+    "TASK_QUEUE_MAX_CONCURRENT": "2",
+    "TRANSLATION_PROVIDER_MAX_CONCURRENT": "2",
+    "PPTX_XML_ENGINE": "structured_v2",
+    "PPTX_XML_RUNTIME_FALLBACK": "0",
+    "PPTX_SEMANTIC_QA_MODE": "enforce",
+    "PPTX_XML_AUTOFIT_POLICY": "editable",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +55,35 @@ def _check_startup(config_name: str) -> None:
     parse_runtime_role(RUN_ROLE)
 
 
+@contextmanager
+def _demo_environment(enabled: bool):
+    """Temporarily expose CLI demo settings while the server is running."""
+    if not enabled:
+        yield
+        return
+
+    overrides = {
+        "DEMO_MODE": "true",
+        "SSO_ENABLED": "false",
+        "APP_NAME": "PPT Agent Studio",
+    }
+    for key, value in DEMO_WORKFLOW_DEFAULTS.items():
+        if not os.environ.get(key):
+            overrides[key] = value
+    if not os.environ.get("SERVER_HOST"):
+        overrides["SERVER_HOST"] = "127.0.0.1"
+    previous = {key: os.environ.get(key) for key in overrides}
+    os.environ.update(overrides)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 DEFAULT_DEPS = LauncherDeps(
     app_factory=create_app,
     create_schema=_create_schema,
@@ -52,24 +95,30 @@ DEFAULT_DEPS = LauncherDeps(
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the FCIAI Flask development server.")
+    parser = argparse.ArgumentParser(description="Run PPT Agent Studio.")
     parser.add_argument("--check", action="store_true", help="Validate startup wiring without running services.")
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Start the interview demo with local storage and one-click anonymous access.",
+    )
     parser.add_argument("--config", default=os.environ.get("FLASK_CONFIG", "development"))
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None, deps: LauncherDeps = DEFAULT_DEPS) -> int:
     args = _parse_args(argv)
-    if args.check:
-        deps.check_startup(args.config)
-        return 0
-    flask_app = deps.app_factory(args.config)
-    deps.create_schema(flask_app)
-    deps.start_runtime(flask_app, RUN_ROLE)
-    try:
-        deps.run_server(flask_app)
-    finally:
-        deps.stop_runtime(flask_app)
+    with _demo_environment(args.demo):
+        if args.check:
+            deps.check_startup(args.config)
+            return 0
+        flask_app = deps.app_factory(args.config)
+        deps.create_schema(flask_app)
+        deps.start_runtime(flask_app, RUN_ROLE)
+        try:
+            deps.run_server(flask_app)
+        finally:
+            deps.stop_runtime(flask_app)
     return 0
 
 

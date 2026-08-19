@@ -27,7 +27,7 @@ class OSSPDFProcessor:
         # 获取配置信息
         self.access_key_id = os.environ.get('OSS_ACCESS_KEY_ID')
         self.access_key_secret = os.environ.get('OSS_ACCESS_KEY_SECRET')
-        self.bucket = bucket or os.environ.get('OSS_BUCKET', 'fciai')
+        self.bucket = bucket or os.environ.get('OSS_BUCKET', 'ppt-agent-studio')
         self.region = region or os.environ.get('OSS_REGION', 'cn-beijing')
         
         # 检查必要配置
@@ -182,7 +182,7 @@ if __name__ == "__main__":
     
     try:
         # 初始化OSS PDF处理器，使用默认存储桶和区域
-        processor = OSSPDFProcessor(bucket="fciai", region="cn-beijing")
+        processor = OSSPDFProcessor(bucket="ppt-agent-studio", region="cn-beijing")
         
         # 上传PDF并获取直链
         url = processor.upload_pdf_and_get_url("test.pdf")

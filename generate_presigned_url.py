@@ -25,10 +25,10 @@ def main():
    python generate_presigned_url.py test_file.txt --expires 7200
    
 3. 指定bucket和region:
-   python generate_presigned_url.py test_file.txt --bucket fci --region cn-beijing
+   python generate_presigned_url.py test_file.txt --bucket ppt-agent-studio --region cn-beijing
    
 4. 生成强制下载链接:
-   python generate_presigned_url.py test_file.txt --download --bucket fci --region cn-beijing
+   python generate_presigned_url.py test_file.txt --download --bucket ppt-agent-studio --region cn-beijing
    
 5. 生成PUT方法的上传链接:
    python generate_presigned_url.py test_file.txt --method PUT
@@ -87,19 +87,19 @@ def example_usage():
     
     try:
         # 生成临时下载的预签名URL
-        url = generate_presigned_url('test_file.txt', 3600, bucket='fciai', region='cn-beijing')  # 1小时有效期
+        url = generate_presigned_url('test_file.txt', 3600, bucket='ppt-agent-studio', region='cn-beijing')  # 1小时有效期
         print(f"生成的预签名URL: {url}")
         
         # 生成强制下载的预签名URL
-        url = generate_presigned_url('test_file.txt', 3600, force_download=True, bucket='fciai', region='cn-beijing')
+        url = generate_presigned_url('test_file.txt', 3600, force_download=True, bucket='ppt-agent-studio', region='cn-beijing')
         print(f"生成的强制下载URL: {url}")
         
         # 生成24小时有效期的预签名URL
-        url = generate_presigned_url('test_file.txt', 86400, bucket='fciai', region='cn-beijing')  # 24小时有效期
+        url = generate_presigned_url('test_file.txt', 86400, bucket='ppt-agent-studio', region='cn-beijing')  # 24小时有效期
         print(f"生成的24小时有效期URL: {url}")
         
         # 生成上传用的预签名URL（PUT请求）
-        url = generate_presigned_url('new_upload.txt', 3600, 'PUT', bucket='fciai', region='cn-beijing')
+        url = generate_presigned_url('new_upload.txt', 3600, 'PUT', bucket='ppt-agent-studio', region='cn-beijing')
         print(f"生成的上传URL: {url}")
         
     except Exception as e:

@@ -6,8 +6,8 @@ from pathlib import Path
 from flask import Flask
 import pytest
 
-from app.jobs.types import JobQueueCounts, JobStatus
-from test_job_worker import _creation, _store
+from app.jobs.types import JobStatus
+from test_job_worker import _store
 
 
 def test_public_v2_submission_persists_ledger_and_survives_second_app(
@@ -77,63 +77,13 @@ def test_public_legacy_submission_keeps_simple_status_cache(
     assert main_views.simple_task_status[task_id]["status"] == "processing"
 
 
-def test_v2_cancel_projects_from_ledger(
-    isolated_app: Flask,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+@pytest.mark.parametrize("path", ["/cancel_task/task_missing", "/get_queue_status"])
+def test_removed_operational_routes_are_not_exposed(isolated_app: Flask, path: str) -> None:
     # Given
-    import app.views.main as main_views
-
-    monkeypatch.setenv("TRANSLATION_ARCH_MODE", "v2")
-    store = _store(tmp_path)
-    monkeypatch.setattr(main_views, "_job_store", lambda: store)
-    monkeypatch.setattr(
-        main_views,
-        "current_user",
-        type("User", (), {"id": 3, "is_authenticated": True, "is_administrator": lambda self: False})(),
-    )
-    created = store.create(_creation())
     client = isolated_app.test_client()
-    with client.session_transaction() as session:
-        session["username"] = "public-user"
 
     # When
-    cancel_response = client.get(f"/cancel_task/{created.public_id}")
-    status_response = client.get(f"/task_status/{created.public_id}")
+    response = client.get(path)
 
     # Then
-    assert cancel_response.status_code == 200
-    assert status_response.get_json()["canonical_status"] == JobStatus.CANCELED.value
-
-
-def test_v2_detailed_queue_status_projects_from_ledger(
-    isolated_app: Flask,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    import app.views.main as main_views
-
-    def fail_direct_queue_call():
-        raise AssertionError("v2 queue status must not read the direct in-memory queue")
-
-    monkeypatch.setenv("TRANSLATION_ARCH_MODE", "v2")
-    monkeypatch.setattr(main_views.translation_queue, "get_queue_status", fail_direct_queue_call, raising=False)
-    monkeypatch.setattr(
-        main_views,
-        "queue_counts",
-        lambda session: JobQueueCounts(queued=2, running=1, succeeded=3, failed=1, canceled=0, interrupted=1, total=8),
-    )
-    client = isolated_app.test_client()
-    with client.session_transaction() as session:
-        session["username"] = "public-user"
-
-    # When
-    response = client.get("/get_queue_status")
-
-    # Then
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["queue_status"]["waiting_tasks"] == 2
-    assert payload["queue_status"]["active_tasks"] == 1
-    assert payload["queue_status"]["failed_tasks"] == 2
+    assert response.status_code == 404

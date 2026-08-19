@@ -2,7 +2,7 @@
 """
 一键上传并拿到可直接下载的 URL
 用法：
-python upload_and_link.py local_file.txt  [--bucket fci] [--region cn-beijing] [--expire 3600]
+python upload_and_link.py local_file.txt  [--bucket ppt-agent-studio] [--region cn-beijing] [--expire 3600]
 """
 import argparse
 import datetime
@@ -67,11 +67,11 @@ if __name__ == "__main__":
    python upload_and_link.py test_file.txt
    
 2. 指定bucket、region和过期时间:
-   python upload_and_link.py test_file.txt --bucket fci --region cn-beijing --expire 7200
+   python upload_and_link.py test_file.txt --bucket ppt-agent-studio --region cn-beijing --expire 7200
         """
     )
     parser.add_argument("file", help="本地文件路径")
-    parser.add_argument("--bucket", default="fciai", help="目标 bucket")
+    parser.add_argument("--bucket", default="ppt-agent-studio", help="目标 bucket")
     parser.add_argument("--region", default="cn-beijing", help="地域")
     parser.add_argument("--expire", type=int, default=3600, help="链接有效期（秒）")
     args = parser.parse_args()

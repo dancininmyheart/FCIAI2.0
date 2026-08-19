@@ -3,418 +3,132 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{% endblock %} - {% if session.get('language') == 'en' %}Translation Management System{% else %}翻译管理系统{% endif %}</title>
-    <link rel="icon" href="{{ url_for('static', filename='images/logo.svg') }}" type="image/svg+xml">
-    <!-- 基础样式 -->
+    <meta name="description" content="{% if session.get('language') == 'en' %}An agent-assisted workspace for translating editable PowerPoint decks.{% else %}面向可编辑 PowerPoint 文档的智能翻译工作台。{% endif %}">
+    <meta name="theme-color" content="#0b1020">
+    <title>{% block title %}{% endblock %} · PPT Agent Studio</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/brand.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/toast.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/user-info.css') }}">
-    <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
-    
-    <!-- 重写侧边栏样式 -->
-    <style>
-        /* 重写侧边栏样式为浅色主题 */
-        /* 全局样式 - 固定比例布局 */
-        * {
-            box-sizing: border-box;
-        }
 
-        html {
-            font-size: 14px; /* 基础字体大小 */
-            overflow-x: hidden;
-        }
-
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: var(--brand-milk-white);
-            display: flex;
-            min-height: 100vh;
-            overflow-x: hidden;
-            font-size: 1rem; /* 使用相对单位 */
-        }
-
-        /* 侧边栏样式 - 使用视口单位 */
-        .nav-menu {
-            width: 17vw; /* 使用视口宽度的17% */
-            min-width: 200px; /* 最小宽度保证可读性 */
-            max-width: 280px; /* 最大宽度避免过宽 */
-            background: var(--brand-milk-white);
-            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
-            height: 100vh;
-            position: fixed;
-            left: 0;
-            top: 0;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .nav-container {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            overflow: hidden; /* 防止内容溢出 */
-        }
-
-        .nav-brand {
-            display: flex;
-            align-items: center;
-            padding: 1vw 1.4vw; /* 减少上下padding */
-            text-decoration: none;
-            color: var(--brand-sky-blue);
-            font-size: 1.2rem;
-            font-weight: 600;
-            border-bottom: 1px solid #f1f3f4;
-            flex-shrink: 0; /* 防止压缩 */
-        }
-
-        /* Logo图片样式 */
-        .brand-logo {
-            width: calc(100% - 1.6vw); /* 宽度占满容器，减去一点边距 */
-            max-width: calc(280px - 32px); /* 最大宽度对应侧边栏最大宽度减去边距 */
-            height: auto; /* 高度自适应保持比例 */
-            object-fit: contain; /* 保持图片比例，不变形 */
-            margin: 0.2vw 0.8vw; /* 上下和左右边距 */
-        }
-
-        .nav-brand i {
-            margin-right: 0.8vw;
-            font-size: 1.4rem;
-        }
-
-        .nav-brand:hover {
-            color: var(--brand-sky-blue);
-            text-decoration: none;
-        }
-
-        .nav-links {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            padding: 0.7vw 0;
-            overflow-y: auto; /* 当内容过多时显示滚动条 */
-            min-height: 0; /* 允许flex item收缩 */
-        }
-
-        .nav-link {
-            display: flex;
-            align-items: center;
-            padding: 0.8vw 1.4vw;
-            text-decoration: none;
-            color: var(--brand-cool-gray);
-            font-size: 1rem;
-            font-weight: 500;
-            transition: all 0.2s ease;
-            border-left: 3px solid transparent;
-        }
-
-        .nav-link i {
-            margin-right: 0.8vw;
-            font-size: 1.1rem;
-            width: 1.4vw;
-            text-align: center;
-        }
-
-        .nav-link:hover {
-            background: rgba(0,148,217,0.08);
-            color: var(--brand-sky-blue);
-            text-decoration: none;
-            border-left-color: rgba(0,148,217,0.3);
-        }
-
-        .nav-link.active {
-            background: rgba(0,148,217,0.12);
-            color: var(--brand-sky-blue);
-            border-left-color: var(--brand-sky-blue);
-            font-weight: 600;
-        }
-
-        /* 顶部右侧悬浮语言切换按钮样式 */
-        .floating-language-btn {
-            position: fixed;
-            top: 1.0vw;
-            right: 1.0vw;
-            z-index: 1100;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4vw;
-            padding: 0.5vw 0.8vw;
-            background: rgba(0,148,217,0.1);
-            border: 1px solid rgba(0,148,217,0.2);
-            border-radius: 20px;
-            color: var(--brand-sky-blue);
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            backdrop-filter: blur(4px);
-        }
-
-        .floating-language-btn:hover {
-            background: rgba(0,148,217,0.15);
-            border-color: rgba(0,148,217,0.3);
-            color: var(--brand-sky-blue);
-        }
-
-        .floating-language-btn i {
-            font-size: 1rem;
-        }
-
-        /* Main content area - responsive sidebar width */
-        .container {
-            margin-left: 17vw; /* 与侧边栏宽度一致 */
-            width: 83vw; /* 占据剩余的83%视口宽度 */
-            background-color: var(--brand-milk-white);
-            min-height: 100vh;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        /* Toast container - responsive position */
-        .toast-container {
-            position: fixed;
-            top: 1.4vw;
-            right: 1.4vw;
-            z-index: 1050;
-        }
-
-        .toast {
-            background: var(--brand-milk-white);
-            border-radius: 0.6vw;
-            padding: 1vw 1.4vw;
-            margin-bottom: 0.7vw;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            border-left: 4px solid;
-            display: flex;
-            align-items: center;
-            gap: 0.8vw;
-            animation: slideIn 0.3s ease;
-            font-size: 1rem;
-        }
-
-        .toast.success {
-            border-left-color: #28a745;
-            color: #155724;
-        }
-
-        .toast.error {
-            border-left-color: #dc3545;
-            color: #721c24;
-        }
-
-        .toast i {
-            font-size: 18px;
-        }
-
-        .toast.success i {
-            color: #28a745;
-        }
-
-        .toast.error i {
-            color: #dc3545;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        /* 响应式设计 - 保持比例 */
-        @media (max-width: 1400px) {
-            html {
-                font-size: 13px;
-            }
-        }
-
-        @media (max-width: 1200px) {
-            html {
-                font-size: 12px;
-            }
-            
-            .nav-menu {
-                width: 16vw;
-                min-width: 180px;
-            }
-            /* Main content area - medium screens */
-            .container {
-                margin-left: 16vw;
-                width: 84vw;
-            }
-        }
-
-        @media (max-width: 768px) {
-            html {
-                font-size: 11px;
-            }
-            
-            .nav-menu {
-                width: 15vw;
-                min-width: 160px;
-            }
-            /* Main content area - small screens */
-            .container {
-                margin-left: 15vw;
-                width: 85vw;
-            }
-
-        }
-    </style>
-    
     {% block styles %}{% endblock %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/experience.css') }}">
 </head>
-<body>
-    <a class="skip-link" href="#main-content">{% if session.get('language') == 'en' %}Skip to main content{% else %}跳到主要内容{% endif %}</a>
+<body class="studio-app-shell">
+    <a class="skip-link" href="#main-content">
+        {% if session.get('language') == 'en' %}Skip to main content{% else %}跳到主要内容{% endif %}
+    </a>
 
-    <header class="mobile-app-bar">
-        <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-controls="primaryNavigation" aria-expanded="false" aria-label="{% if session.get('language') == 'en' %}Open navigation{% else %}打开导航{% endif %}">
-            <i class="bi bi-list" aria-hidden="true"></i>
-        </button>
-        <span class="mobile-app-title">{% if session.get('language') == 'en' %}Translation Management System{% else %}翻译管理系统{% endif %}</span>
+    <header class="app-header mobile-app-bar">
+        <div class="app-header-inner">
+            <a href="{{ url_for('main.index') }}" class="nav-brand" aria-label="PPT Agent Studio">
+                <span class="brand-mark" aria-hidden="true">
+                    <i class="bi bi-file-earmark-slides"></i>
+                </span>
+                <span class="brand-copy">
+                    <span class="brand-name">PPT Agent Studio</span>
+                    <span class="brand-tagline">
+                        {% if session.get('language') == 'en' %}Agentic document translation{% else %}智能文档翻译工作台{% endif %}
+                    </span>
+                </span>
+            </a>
+
+            <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-controls="primaryNavigation" aria-expanded="false" aria-label="{% if session.get('language') == 'en' %}Open navigation{% else %}打开导航{% endif %}">
+                <i class="bi bi-list" aria-hidden="true"></i>
+            </button>
+
+            <nav class="nav-menu" id="primaryNavigation" aria-label="{% if session.get('language') == 'en' %}Primary navigation{% else %}主导航{% endif %}">
+                <div class="nav-container">
+                    <div class="mobile-menu-heading" aria-hidden="true">
+                        <span class="brand-mark brand-mark-compact"><i class="bi bi-file-earmark-slides"></i></span>
+                        <span>PPT Agent Studio</span>
+                    </div>
+
+                    <button type="button" class="nav-close-btn" id="navCloseBtn" aria-label="{% if session.get('language') == 'en' %}Close navigation{% else %}关闭导航{% endif %}">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+
+                    <div class="nav-links">
+                        <a href="{{ url_for('main.index') }}" class="nav-link {% if request.endpoint == 'main.index' %}active{% endif %}" {% if request.endpoint == 'main.index' %}aria-current="page"{% endif %}>
+                            <i class="bi bi-stars" aria-hidden="true"></i>
+                            <span>{% if session.get('language') == 'en' %}Translation workspace{% else %}翻译工作台{% endif %}</span>
+                        </a>
+
+                        {% if current_user.is_authenticated %}
+                            <a href="{{ url_for('auth.logout') }}" class="nav-link nav-link-secondary">
+                                <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                                <span>{% if session.get('language') == 'en' %}Sign out{% else %}退出{% endif %}</span>
+                            </a>
+                        {% else %}
+                            <a href="{{ url_for('auth.login') }}" class="nav-link nav-link-secondary">
+                                <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+                                <span>{% if session.get('language') == 'en' %}Sign in{% else %}登录{% endif %}</span>
+                            </a>
+                        {% endif %}
+                    </div>
+
+                    <div class="nav-utilities">
+                        <span class="demo-status" title="{% if session.get('language') == 'en' %}Interview demo environment{% else %}面试演示环境{% endif %}">
+                            <span class="demo-status-dot" aria-hidden="true"></span>
+                            <span>{% if session.get('language') == 'en' %}Demo workspace{% else %}Demo 工作区{% endif %}</span>
+                        </span>
+                        <button type="button" class="floating-language-btn" onclick="switchLanguage()" title="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}" aria-label="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}">
+                            <i class="bi bi-translate" aria-hidden="true"></i>
+                            <span>{% if session.get('language') == 'en' %}中文{% else %}EN{% endif %}</span>
+                        </button>
+                    </div>
+                </div>
+            </nav>
+        </div>
     </header>
 
     <button type="button" class="nav-overlay" id="navOverlay" tabindex="-1" aria-label="{% if session.get('language') == 'en' %}Close navigation{% else %}关闭导航{% endif %}"></button>
 
-    <nav class="nav-menu" id="primaryNavigation" aria-label="{% if session.get('language') == 'en' %}Primary navigation{% else %}主导航{% endif %}">
-        <div class="nav-container">
-            <a href="{{ url_for('main.index') }}" class="nav-brand">
-                <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="Logo" class="brand-logo">
-                <span style="display: none;">{% if session.get('language') == 'en' %}Translation Management System{% else %}翻译管理系统{% endif %}</span>
-            </a>
-            <button type="button" class="nav-close-btn" id="navCloseBtn" aria-label="{% if session.get('language') == 'en' %}Close navigation{% else %}关闭导航{% endif %}">
-                <i class="bi bi-x-lg" aria-hidden="true"></i>
-            </button>
-            <div class="nav-links">
-                <a href="{{ url_for('main.index') }}" class="nav-link {% if request.endpoint == 'main.index' %}active{% endif %}" {% if request.endpoint == 'main.index' %}aria-current="page"{% endif %}>
-                    <i class="bi bi-translate" aria-hidden="true"></i>
-                    {% if session.get('language') == 'en' %}PPT Translation{% else %}PPT翻译{% endif %}
-                </a>
-                <a href="{{ url_for('main.dictionary') }}" class="nav-link {% if request.endpoint == 'main.dictionary' %}active{% endif %}" {% if request.endpoint == 'main.dictionary' %}aria-current="page"{% endif %}>
-                    <i class="bi bi-book" aria-hidden="true"></i>
-                    {% if session.get('language') == 'en' %}Dictionary{% else %}词库管理{% endif %}
-                </a>
-                <a href="{{ url_for('main.ingredient') }}" class="nav-link {% if request.endpoint == 'main.ingredient' %}active{% endif %}" {% if request.endpoint == 'main.ingredient' %}aria-current="page"{% endif %}>
-                    <i class="bi bi-search" aria-hidden="true"></i>
-                    {% if session.get('language') == 'en' %}Ingredient Search{% else %}成分搜索{% endif %}
-                </a>
-                <a href="{{ url_for('main.pdf_translate') }}" class="nav-link {% if request.endpoint == 'main.pdf_translate' %}active{% endif %}" {% if request.endpoint == 'main.pdf_translate' %}aria-current="page"{% endif %}>
-                            <i class="bi bi-file-pdf" aria-hidden="true"></i>
-                            {% if session.get('language') == 'en' %}PDF Translation{% else %}PDF翻译{% endif %}
-                </a>
-                {% if current_user.is_authenticated %}
-                    {% if current_user.is_administrator() %}
-                        <a href="{{ url_for('main.registration_approval') }}" class="nav-link {% if request.endpoint == 'main.registration_approval' %}active{% endif %}" {% if request.endpoint == 'main.registration_approval' %}aria-current="page"{% endif %}>
-                            <i class="bi bi-person-check" aria-hidden="true"></i>
-                            {% if session.get('language') == 'en' %}Registration Approval{% else %}注册审批{% endif %}
-                        </a>
-                        <a href="{{ url_for('main.user_management') }}" class="nav-link {% if request.endpoint == 'main.user_management' %}active{% endif %}" {% if request.endpoint == 'main.user_management' %}aria-current="page"{% endif %}>
-                            <i class="bi bi-people" aria-hidden="true"></i>
-                            {% if session.get('language') == 'en' %}User Management{% else %}用户管理{% endif %}
-                        </a>
-
-                        <a href="{{ url_for('main.ingredient_upload_page') }}" class="nav-link {% if request.endpoint == 'main.ingredient_upload_page' %}active{% endif %}">
-                            <i class="bi bi-cloud-upload"></i>
-                            {% if session.get('language') == 'en' %}Ingredient Files{% else %}成分文件{% endif %}
-                        </a>
-
-                        <!-- 文件管理页面 -->
-                        <a href="{{ url_for('main.file_management') }}" class="nav-link {% if request.endpoint == 'main.file_management' %}active{% endif %}">
-                            <i class="bi bi-file-earmark-ppt"></i>
-                            {% if session.get('language') == 'en' %}File Management{% else %}文件管理{% endif %}
-                        </a>
-
-                        <!-- 系统监控页面 -->
-{#                        <a href="{{ url_for('main.system_monitoring') }}" class="nav-link {% if request.endpoint == 'main.system_monitoring' %}active{% endif %}">#}
-{#                            <i class="bi bi-speedometer2"></i>#}
-{#                            {% if session.get('language') == 'en' %}System Monitor{% else %}系统监控{% endif %}#}
-{#                        </a>#}
-{#                        <a href="{{ url_for('db_management.db_stats_page') }}" class="nav-link {% if request.endpoint == 'db_management.db_stats_page' %}active{% endif %}">#}
-{#                            <i class="bi bi-database"></i>#}
-{#                            {% if session.get('language') == 'en' %}Database Pool{% else %}数据库连接池{% endif %}#}
-{#                        </a>#}
-                        <a href="{{ url_for('main.logs') }}" class="nav-link {% if request.endpoint == 'main.logs' %}active{% endif %}">
-                            <i class="bi bi-journal-text"></i>
-                            {% if session.get('language') == 'en' %}Log Management{% else %}日志管理{% endif %}
-                        </a>
-                    {% endif %}
-                    <a href="{{ url_for('auth.logout') }}" class="nav-link">
-                        <i class="bi bi-box-arrow-right"></i>
-                        {% if session.get('language') == 'en' %}Logout{% else %}退出{% endif %}
-                    </a>
-                {% else %}
-                    <a href="{{ url_for('auth.login') }}" class="nav-link">
-                        <i class="bi bi-box-arrow-in-right"></i>
-                        {% if session.get('language') == 'en' %}Login{% else %}登录{% endif %}
-                    </a>
-                {% endif %}
-            </div>
-            
-            <!-- 移除侧边栏语言切换按钮（改为右上角悬浮按钮） -->
-        </div>
-    </nav>
-
-    <main class="container" id="main-content" tabindex="-1">
+    <main class="container app-main" id="main-content" tabindex="-1">
         {% block content %}{% endblock %}
     </main>
 
-    <!-- 右上角悬浮语言切换按钮 -->
-    <button type="button" class="floating-language-btn" onclick="switchLanguage()" title="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}" aria-label="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}">
-        <i class="bi bi-translate" aria-hidden="true"></i>
-        <span>{% if session.get('language') == 'en' %}中文{% else %}English{% endif %}</span>
-    </button>
-
     <div id="toastContainer" class="toast-container" role="region" aria-label="{% if session.get('language') == 'en' %}Notifications{% else %}通知{% endif %}" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- 基础脚本 -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
-    // 处理Flash消息
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
-                showToast('{{ message }}', '{{ category }}');
+                showToast({{ message|tojson }}, {{ category|tojson }});
             {% endfor %}
         {% endif %}
     {% endwith %}
 
-    // 语言切换功能
     function switchLanguage() {
-        const currentLang = '{{ session.get("language", "zh") }}';
+        const currentLang = {{ session.get('language', 'zh')|tojson }};
         const newLang = currentLang === 'en' ? 'zh' : 'en';
-        
-        // 发送请求到后端切换语言
+
         fetch('/switch_language', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}'
+                'X-CSRFToken': '{{ csrf_token() if csrf_token is defined else "" }}'
             },
-            body: JSON.stringify({
-                language: newLang
-            })
+            body: JSON.stringify({ language: newLang })
         })
-        .then(response => response.json())
-        .then(data => {
+        .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        })
+        .then((data) => {
             if (data.success) {
-                // 重新加载页面以应用新语言
                 window.location.reload();
-            } else {
-                showToast(data.message || '{% if session.get("language") == "en" %}Language switch failed{% else %}语言切换失败{% endif %}', 'error');
+                return;
             }
+            showToast(data.message || {% if session.get('language') == 'en' %}'Language switch failed'{% else %}'语言切换失败'{% endif %}, 'error');
         })
-        .catch(error => {
+        .catch((error) => {
             console.error('Language switch error:', error);
-            showToast('{% if session.get("language") == "en" %}Language switch failed{% else %}语言切换失败{% endif %}', 'error');
+            showToast({% if session.get('language') == 'en' %}'Language switch failed'{% else %}'语言切换失败'{% endif %}, 'error');
         });
     }
 
@@ -443,13 +157,13 @@
     function syncNavigationMode() {
         if (mobileNavigationQuery.matches) {
             setNavigationOpen(false, false);
-        } else {
-            primaryNavigation.inert = false;
-            primaryNavigation.classList.remove('is-open');
-            navOverlay.classList.remove('is-visible');
-            document.body.classList.remove('nav-open');
-            mobileMenuBtn.setAttribute('aria-expanded', 'false');
+            return;
         }
+        primaryNavigation.inert = false;
+        primaryNavigation.classList.remove('is-open');
+        navOverlay.classList.remove('is-visible');
+        document.body.classList.remove('nav-open');
+        mobileMenuBtn.setAttribute('aria-expanded', 'false');
     }
 
     mobileMenuBtn.addEventListener('click', () => setNavigationOpen(true, false));
@@ -471,9 +185,7 @@
     syncNavigationMode();
     </script>
 
-    <!-- 防抖动工具函数 -->
     <script src="{{ url_for('static', filename='js/debounce.js') }}"></script>
-    
     {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -33,7 +33,7 @@ def upload_file_and_get_url(file_path, object_key=None, bucket=None, region=None
     # 获取配置信息
     access_key_id = os.environ.get('OSS_ACCESS_KEY_ID')
     access_key_secret = os.environ.get('OSS_ACCESS_KEY_SECRET')
-    bucket = bucket or os.environ.get('OSS_BUCKET', 'fciai')
+    bucket = bucket or os.environ.get('OSS_BUCKET', 'ppt-agent-studio')
     region = region or os.environ.get('OSS_REGION', 'cn-beijing')
     
     # 检查必要配置
@@ -139,16 +139,16 @@ def main():
    python upload_file_and_get_url.py test.txt
    
 2. 上传文件到指定bucket和region:
-   python upload_file_and_get_url.py test.txt --bucket fci --region cn-beijing
+   python upload_file_and_get_url.py test.txt --bucket ppt-agent-studio --region cn-beijing
    
 3. 上传文件并返回预签名URL:
-   python upload_file_and_get_url.py test.txt --presigned --bucket fci --region cn-beijing
+   python upload_file_and_get_url.py test.txt --presigned --bucket ppt-agent-studio --region cn-beijing
    
 4. 上传文件并返回强制下载的预签名URL:
-   python upload_file_and_get_url.py test.txt --presigned --download --bucket fci --region cn-beijing
+   python upload_file_and_get_url.py test.txt --presigned --download --bucket ppt-agent-studio --region cn-beijing
    
 5. 上传文件并返回有效期为2小时的预签名URL:
-   python upload_file_and_get_url.py test.txt --presigned --expires 7200 --bucket fci --region cn-beijing
+   python upload_file_and_get_url.py test.txt --presigned --expires 7200 --bucket ppt-agent-studio --region cn-beijing
         """
     )
     

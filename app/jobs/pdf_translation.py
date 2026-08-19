@@ -154,7 +154,7 @@ def _extract_with_mineru(request: PdfTranslationRequest) -> MinerUResult | None:
         result = OSSPDFProcessor().process_pdf_with_mineru(
             request.pdf_path,
             MinerUAPI(),
-            bucket="fciai",
+            bucket="ppt-agent-studio",
             region="cn-beijing",
             enable_ocr=request.enable_image_ocr,
         )

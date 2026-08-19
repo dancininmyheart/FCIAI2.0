@@ -4,6 +4,8 @@
 # noqa: SIZE_OK - canonical compatibility config retained intact for Todo 3 startup scope.
 import os
 import json
+import secrets
+import tempfile
 from dataclasses import asdict, dataclass
 from typing import Dict, Any, Literal, Mapping, Optional, Set, TypeAlias
 from pathlib import Path
@@ -89,6 +91,9 @@ class Config:
     
     # 基本配置
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'hard to guess string'
+    DEMO_MODE = _setting_bool(os.environ.get('DEMO_MODE', 'false'))
+    DEMO_USER_USERNAME = os.environ.get('DEMO_USER_USERNAME', 'ppt_demo_guest')
+    DEMO_USER_EMAIL = os.environ.get('DEMO_USER_EMAIL', 'ppt-demo@localhost.invalid')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = False
     TRANSLATION_ARCH_MODE = TRANSLATION_SETTINGS.arch_mode
@@ -124,7 +129,7 @@ class Config:
     
     # 阿里云OSS配置
     OSS_REGION = os.environ.get('OSS_REGION', 'cn-beijing')
-    OSS_BUCKET = os.environ.get('OSS_BUCKET', 'fciai')
+    OSS_BUCKET = os.environ.get('OSS_BUCKET', 'ppt-agent-studio')
     
     @classmethod
     def get_oss_config(cls):
@@ -213,7 +218,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = f"mysql+pymysql://root:password@localhost:3306/app"
     
     # 应用程序名称
-    APP_NAME = os.environ.get('APP_NAME', '翻译系统')
+    APP_NAME = os.environ.get('APP_NAME', 'PPT Agent Studio')
     
     # 时区配置
     TIMEZONE = os.environ.get('TIMEZONE', 'Asia/Shanghai')
@@ -230,6 +235,34 @@ class Config:
         upload_path = os.path.abspath(cls.UPLOAD_FOLDER)
         os.makedirs(upload_path, exist_ok=True)
         
+        # ``run.py --demo`` sets the environment before constructing the app.
+        # Read the switch again here instead of relying on import-time class
+        # attributes so the launcher remains deterministic in long-lived test
+        # processes as well as normal CLI use.
+        demo_mode = _setting_bool(
+            os.environ.get('DEMO_MODE', 'true' if cls.DEMO_MODE else 'false')
+        )
+        app.config['DEMO_MODE'] = demo_mode
+
+        if demo_mode:
+            default_demo_database = (
+                Path(tempfile.gettempdir())
+                / 'ppt-agent-studio'
+                / 'demo.sqlite3'
+            )
+            demo_database = Path(
+                os.environ.get('DEMO_DATABASE_PATH', str(default_demo_database))
+            ).expanduser().resolve()
+            demo_database.parent.mkdir(parents=True, exist_ok=True)
+            app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{demo_database.as_posix()}"
+            app.config['SSO_ENABLED'] = False
+            app.config['APP_NAME'] = 'PPT Agent Studio'
+            app.config['DEBUG'] = False
+            app.config['SQLALCHEMY_ECHO'] = False
+            if not os.environ.get('SECRET_KEY'):
+                app.config['SECRET_KEY'] = secrets.token_hex(32)
+            return
+
         # 根据环境变量动态设置数据库URI
         db_type = os.environ.get('DB_TYPE') or cls.DB_TYPE
         db_user = os.environ.get('DB_USER') or cls.DB_USER
@@ -704,11 +737,11 @@ basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 获取�
 UPLOAD_FOLDER = os.path.join(basedir, 'uploads')  # 在项目根目录下创建uploads文件夹
 
 
-base_model_file = os.environ.get('BASE_MODEL_FILE', r'D:\project\system\model')
+base_model_file = os.environ.get('BASE_MODEL_FILE', os.path.join(basedir, 'model'))
 api_key = os.environ.get('API_KEY', '')
 data_file = os.environ.get(
     'DATA_FILE',
-    r'D:\project\system\app\pythonProjectnewman\data_3\bjsp_dict_merged.json',
+    os.path.join(basedir, 'data', 'bjsp_dict_merged.json'),
 )
 
 PROVINCE_URLS = {

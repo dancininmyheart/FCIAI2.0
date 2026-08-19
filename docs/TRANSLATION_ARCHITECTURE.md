@@ -183,7 +183,7 @@ python run.py --check
 python app.py --check
 python run_async.py --check
 python run_worker.py --check
-python tools/qa/benchmark_translation_architecture.py --root D:\project\FCIAI2.0 --output .omo\evidence\benchmark.json
+python tools/qa/benchmark_translation_architecture.py --root . --output .omo\evidence\benchmark.json
 ```
 
 真实 PPT 验收命令见项目 `README.md`。该命令使用确定性 Provider 和源文件副本，不调用真实模型，也不修改用户原文件。

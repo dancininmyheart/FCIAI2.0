@@ -71,11 +71,11 @@ def test_translation_contract_routes_and_methods_are_frozen() -> None:
     # Then
     assert routes[("/upload", ("POST",))] == "main.upload_file"
     assert routes[("/task_status", ("GET",))] == "main.get_task_status"
-    assert routes[("/api/start_pdf_translation", ("POST",))] == "main.start_pdf_translation"
-    assert routes[("/translate_pdf", ("POST",))] == "main.translate_pdf"
     assert routes[("/start_translation", ("POST",))] == "main.start_translation"
     assert routes[("/task_status/<task_id>", ("GET",))] == "main.get_simple_task_status"
     assert routes[("/download/<task_id>", ("GET",))] == "main.download_simple_translated_file"
+    assert routes[("/api/ppt_translation_history", ("GET",))] == "main.ppt_translation_history"
+    assert routes[("/api/translations", ("GET",))] == "main.get_translations"
     assert routes[("/auth/login", ("GET", "POST"))] == "auth.login"
 
 
@@ -92,9 +92,73 @@ def test_route_contract_includes_required_behavior_surfaces() -> None:
     assert behavior["ppt"]["start"]["modes"] == ["translation_only", "paragraph_up", "paragraph_down"]
     assert behavior["ppt"]["start"]["selected_pages_field"] == "select_page"
     assert behavior["ppt"]["download"]["name_prefix"] == "translated_"
-    assert behavior["pdf"]["start"]["ocr_option_field"] == "enable_image_ocr"
-    assert behavior["pdf"]["start"]["models"] == ["qwen", "deepseek"]
-    assert behavior["pdf"]["docx"]["name_template"] == "translated_{source}_{target}_{original_base}.docx"
+    assert set(behavior) == {"auth", "ppt"}
+
+
+def test_route_contract_excludes_removed_product_surfaces() -> None:
+    # Given
+    routes = {route["rule"] for route in load_contract()}
+
+    # Then
+    assert routes.isdisjoint(
+        {
+            "/pdf_translate",
+            "/api/start_pdf_translation",
+            "/translate_pdf",
+            "/ingredient",
+            "/ingredient/upload",
+            "/dictionary",
+            "/registration_approval",
+            "/user_management",
+            "/file_management",
+            "/logs",
+            "/system_monitoring",
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/pdf_translate"),
+        ("GET", "/api/pdf_task_status"),
+        ("POST", "/api/start_pdf_translation"),
+        ("POST", "/translate_pdf"),
+        ("GET", "/download_translated_pdf/missing.docx"),
+        ("GET", "/ingredient"),
+        ("GET", "/ingredient/api/ingredient/search"),
+        ("GET", "/dictionary"),
+        ("GET", "/user_management"),
+        ("GET", "/logs"),
+        ("GET", "/api/translation/health"),
+        ("GET", "/cancel_task/task_missing"),
+        ("GET", "/get_queue_status"),
+    ],
+)
+def test_removed_business_routes_return_not_found(
+    isolated_app: Flask,
+    method: str,
+    path: str,
+) -> None:
+    # Given
+    client = isolated_app.test_client()
+
+    # When
+    response = client.open(path, method=method)
+
+    # Then
+    assert response.status_code == 404
+
+
+def test_ppt_vocabulary_route_is_read_only(isolated_app: Flask) -> None:
+    # Given
+    client = isolated_app.test_client()
+
+    # When
+    response = client.post("/api/translations")
+
+    # Then
+    assert response.status_code == 405
 
 
 def test_upload_requires_authentication(isolated_app: Flask) -> None:
@@ -372,99 +436,38 @@ def test_authenticated_ppt_upload_v2_response_echoes_accepted_translation_mode(
     assert captured["upload_record_id"] == 321
 
 
-def test_pdf_routes_pin_status_models_ocr_task_ids_docx_download(
-    isolated_app: Flask,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    # Given
-    contract = behavior_contract()["pdf"]
-    import app.views.main as main_views
-    import app.utils.thread_pool_executor as executor
-
-    captures: list[tuple] = []
-
-    def submit(**kwargs):
-        captures.append(kwargs["args"])
-        return SimpleNamespace(task_id="fake")
-
-    isolated_app.config["LOGIN_DISABLED"] = True
-    monkeypatch.setattr(main_views, "current_user", SimpleNamespace(id=11, username="pdf-user", is_authenticated=True))
-    monkeypatch.setattr(executor.thread_pool, "submit", submit)
-    client = isolated_app.test_client()
-    pdf_path = tmp_path / "source.pdf"
-    pdf_path.write_bytes(b"%PDF-1.4")
-    output_dir = Path(isolated_app.config["UPLOAD_FOLDER"]) / "pdf_outputs"
-    (Path(isolated_app.config["UPLOAD_FOLDER"]) / "pdf_uploads").mkdir(parents=True)
-    output_dir.mkdir(parents=True)
-    docx_name = "translated_en_zh_source.docx"
-    (output_dir / docx_name).write_bytes(b"docx")
-
-    # When
-    empty_status = client.get(contract["status"]["rule"])
-    missing_start = client.post(contract["start"]["rule"])
-    start_response = client.post(
-        contract["start"]["rule"],
-        data={
-            "file_path": str(pdf_path),
-            "unique_filename": "unique.pdf",
-            "original_filename": "source.pdf",
-            "source_lang": "EN",
-            "target_lang": "ZH",
-            contract["start"]["model_field"]: "deepseek",
-            contract["start"]["ocr_option_field"]: contract["start"]["ocr_true_value"],
-        },
-    )
-    missing_translate = client.post(contract["translate"]["rule"])
-    translate_response = client.post(
-        contract["translate"]["rule"],
-        data={
-            "file": (BytesIO(b"%PDF-1.4"), "source.pdf"),
-            "source_lang": "EN",
-            "target_lang": "ZH",
-            contract["translate"]["model_field"]: "qwen",
-            contract["translate"]["ocr_option_field"]: "false",
-        },
-    )
-    missing_download = client.get("/download_translated_pdf/missing.docx")
-    download = client.get(f"/download_translated_pdf/{docx_name}")
-
-    # Then
-    assert empty_status.status_code == contract["status"]["empty_status"]
-    assert sorted(empty_status.get_json()) == sorted(contract["status"]["empty_fields"])
-    assert missing_start.status_code == contract["start"]["missing_fields_status"]
-    assert start_response.status_code == contract["start"]["success_status"]
-    assert sorted(start_response.get_json()) == sorted(contract["start"]["success_fields"])
-    assert start_response.get_json()[contract["start"]["task_identifier"]]
-    assert captures[0][5] in contract["start"]["models"]
-    assert captures[0][5] == "deepseek"
-    assert captures[0][6] is True
-    assert missing_translate.status_code == contract["translate"]["missing_file_status"]
-    assert translate_response.status_code == contract["translate"]["success_status"]
-    assert sorted(translate_response.get_json()) == sorted(contract["translate"]["success_fields"])
-    assert captures[1][5] in contract["translate"]["models"]
-    assert captures[1][5] == "qwen"
-    assert captures[1][6] is False
-    assert missing_download.status_code == contract["download"]["missing_status"]
-    assert download.status_code == contract["download"]["success_status"]
-    assert contract["download"]["mimetype"] in download.headers["Content-Type"]
-    assert docx_name in download.headers["Content-Disposition"]
-
-
 def test_templates_supplement_behavior_contract_with_current_model_values() -> None:
     # Given
     index_html = Path("app/templates/main/index.html").read_text(encoding="utf-8")
-    pdf_html = Path("app/templates/main/pdf_translate.html").read_text(encoding="utf-8")
     contract = behavior_contract()
 
     # When
-    ppt_models = set(re.findall(r'<option value="([^"]+)">(?:Qwen2.5|DeepSeek-Chat)', index_html))
-    pdf_models = set(re.findall(r'<option value="([^"]+)".*?>(?:Qwen|DeepSeek)</option>', pdf_html))
+    ppt_models = set(re.findall(r'<option value="([^"]+)">(?:Qwen 3.7 Plus|DeepSeek-Chat)', index_html))
 
     # Then
     assert set(contract["ppt"]["authenticated_upload"]["task_options"]["models"]) == ppt_models
-    assert set(contract["pdf"]["start"]["models"]) == pdf_models
-    assert "gpt4o" not in pdf_html
+
+
+def test_ppt_only_templates_remove_brand_logo_and_other_product_navigation() -> None:
+    # Given
+    layout = Path("app/templates/main/base_layout.html").read_text(encoding="utf-8")
+    auth_base = Path("app/templates/base.html").read_text(encoding="utf-8")
+    login = Path("app/templates/auth/login.html").read_text(encoding="utf-8")
+
+    # Then
+    assert "logo.svg" not in layout
+    assert "logo.svg" not in auth_base
+    assert "company-logo" not in login.lower()
+    for endpoint in (
+        "main.pdf_translate",
+        "main.dictionary",
+        "main.ingredient",
+        "main.registration_approval",
+        "main.user_management",
+        "main.file_management",
+        "main.logs",
+    ):
+        assert endpoint not in layout
 
 
 def test_route_contract_rejects_temp_manifest_mutation(tmp_path: Path, isolated_app: Flask) -> None:

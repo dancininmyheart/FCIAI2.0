@@ -372,28 +372,28 @@ if __name__ == "__main__":
     
     try:
         # 上传文件到指定的bucket和region
-        result = upload_file_to_oss("test_upload.txt", bucket="fciai", region="cn-beijing")
+        result = upload_file_to_oss("test_upload.txt", bucket="ppt-agent-studio", region="cn-beijing")
         print("上传结果:")
         for key, value in result.items():
             print(f"  {key}: {value}")
         
         # 生成预签名URL（临时下载链接）
-        presigned_url = generate_presigned_url(result['object_key'], 3600, bucket="fciai", region="cn-beijing")
+        presigned_url = generate_presigned_url(result['object_key'], 3600, bucket="ppt-agent-studio", region="cn-beijing")
         print(f"\n临时下载链接: {presigned_url}")
         
         # 生成强制下载链接
         download_url = generate_presigned_url(
-            result['object_key'], 3600, force_download=True, bucket="fciai", region="cn-beijing")
+            result['object_key'], 3600, force_download=True, bucket="ppt-agent-studio", region="cn-beijing")
         print(f"\n强制下载链接: {download_url}")
         
         # 上传文件并生成唯一名称
-        result2 = upload_file_with_unique_name_to_oss("test_upload.txt", bucket="fciai", region="cn-beijing")
+        result2 = upload_file_with_unique_name_to_oss("test_upload.txt", bucket="ppt-agent-studio", region="cn-beijing")
         print("\n唯一名称上传结果:")
         for key, value in result2.items():
             print(f"  {key}: {value}")
         
         # 为唯一名称文件生成预签名URL
-        presigned_url2 = generate_presigned_url(result2['object_key'], 3600, bucket="fciai", region="cn-beijing")
+        presigned_url2 = generate_presigned_url(result2['object_key'], 3600, bucket="ppt-agent-studio", region="cn-beijing")
         print(f"\n唯一文件临时下载链接: {presigned_url2}")
         
     except Exception as e:

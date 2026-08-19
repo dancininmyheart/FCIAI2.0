@@ -69,12 +69,15 @@ def English_tokenizer():
 
 
 def run_tokenizer():
-    # 构建perl命令
-    command = ['perl', r"D:\project\system\mosesdecoder\scripts\tokenizer\tokenizer.perl", '-l', 'en']
+    # The tokenizer is optional and intentionally configured outside the repo.
+    tokenizer_script = os.environ.get('MOSES_TOKENIZER_PATH')
+    if not tokenizer_script:
+        raise RuntimeError('MOSES_TOKENIZER_PATH must point to tokenizer.perl')
+    command = ['perl', tokenizer_script, '-l', 'en']
 
     # 使用 subprocess 调用 Perl 脚本
     with open('../../temp/temp.en', 'r', encoding='utf-8') as infile, open('../../model/train.en', 'w', encoding='utf-8') as outfile:
-        subprocess.run(command, stdin=infile, stdout=outfile)
+        subprocess.run(command, stdin=infile, stdout=outfile, check=True)
 
 
 def Tokenizer():

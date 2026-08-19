@@ -23,6 +23,32 @@ logger = get_logger("pyuno")
 QWEN_API_KEY = os.getenv("QWEN_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
+DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+LEGACY_PROXY_URL_SETTINGS = {
+    "gpt4o": "GPT4O_TRANSLATION_API_URL",
+    "deepseek": "DEEPSEEK_TRANSLATION_API_URL",
+}
+
+
+def qwen_base_url() -> str:
+    """Allow compatible Qwen gateways while keeping the official safe default."""
+    configured_url = os.getenv("QWEN_BASE_URL", "").strip()
+    return (configured_url or DEFAULT_QWEN_BASE_URL).rstrip("/")
+
+
+def configured_legacy_proxy_url(model: str) -> str:
+    """Resolve an opt-in legacy translation proxy and otherwise fail closed."""
+    setting_name = LEGACY_PROXY_URL_SETTINGS.get(model)
+    if not setting_name:
+        raise ValueError(f"Unsupported backend model: {model}")
+
+    api_url = os.getenv(setting_name, "").strip()
+    if not api_url:
+        raise RuntimeError(
+            f"{model} translation proxy is disabled: set {setting_name} to enable it"
+        )
+    return api_url
+
 def translate(text: str,
               field: str="", 
               stop_words: List[str]=[],
@@ -59,7 +85,7 @@ def translate(text: str,
     custom_translations_str = ", ".join(f'"{k}": "{v}"' for k, v in custom_translations.items())
     if model == "qwen":
         logger.info("model参数设置为qwen,使用%s模型", qwen_model_name())
-        client = OpenAI(api_key=QWEN_API_KEY, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+        client = OpenAI(api_key=QWEN_API_KEY, base_url=qwen_base_url())
         used_model = qwen_model_name()
         response = client.chat.completions.create(
             model = used_model,
@@ -154,21 +180,11 @@ def call_backend_translate_ppt_page(text, model, field, stop_words_str, custom_t
     Returns:
         str: 大模型的原始response（直接返回data）
     """
-    # API基础地址和端点配置（使用api_test.py中的配置）
-    base_url = "http://117.50.216.15/agent_server/app/run/"
-    
-    # 使用api_test.py中的端点ID
-    endpoints = {
-        "gpt4o": "dd69b399afaf46a18efe751e0f21f05f",
-        "deepseek": "d145ae592efa4240867c3b1f99c7a5d7"
-    }
-    
-    if model not in endpoints:
-        raise ValueError(f"不支持的后端模型: {model}")
-    
-    endpoint_id = endpoints[model]
-    url = f"{base_url}{endpoint_id}"
-    
+    # Legacy proxy routes are deployment-owned. There is intentionally no
+    # built-in host or endpoint ID, so the demo cannot call a former private
+    # service by accident.
+    url = configured_legacy_proxy_url(model)
+
     # 构建请求载荷
     payload = {
         "_streaming": False,
@@ -363,7 +379,7 @@ def re_parse_formatted_text_async(text: str):
         修复后的文本
     """
     try:
-        client = OpenAI(api_key=QWEN_API_KEY, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+        client = OpenAI(api_key=QWEN_API_KEY, base_url=qwen_base_url())
         response = client.chat.completions.create(
             model=qwen_model_name(),
             messages=[

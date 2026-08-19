@@ -1,843 +1,101 @@
 {% extends "main/base_layout.html" %}
 
-{% block title %}{% if session.get('language') == 'en' %}PPT Translation{% else %}PPT翻译{% endif %}{% endblock %}
+{% block title %}Portfolio Demo{% endblock %}
 
 {% block styles %}
-<style>
-    /* 重写容器样式 - 固定比例布局 */
-    .container {
-        margin-left: 17vw !important; /* 与侧边栏宽度一致 */
-        width: 83vw !important; /* 占据剩余视口宽度 */
-        background-color: #f8f9fa;
-        color: rgb(110,111,114);
-        line-height: 1.6;
-        padding: 1.4vw; /* 使用视口单位 */
-        min-height: 100vh;
-        box-sizing: border-box;
-    }
-
-    /* 页面头部 - 响应式尺寸 */
-    .page-header {
-        display: flex;
-        align-items: center;
-        margin-bottom: 2.1vw;
-        background: white;
-        padding: 1.4vw 2.1vw;
-        border-radius: 0.8vw;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-
-    .header-icon {
-        width: 2.8vw;
-        height: 2.8vw;
-        min-width: 32px;
-        min-height: 32px;
-        background: rgb(0,148,217);
-        border-radius: 0.6vw;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-right: 1vw;
-    }
-
-    .header-icon i {
-        color: white;
-        font-size: 1.4rem;
-    }
-
-    .header-title {
-        font-size: 2rem;
-        font-weight: 600;
-        color: rgb(0,148,217);
-    }
-
-    .header-actions {
-        margin-left: auto;
-        display: flex;
-        gap: 12px;
-    }
-
-    .btn {
-        padding: 10px 20px;
-        border-radius: 8px;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 14px;
-        font-weight: 500;
-        transition: all 0.2s ease;
-        border: none;
-        cursor: pointer;
-    }
-
-    .btn-secondary {
-        background: #f8f9fa;
-        color: rgb(110,111,114);
-        border: 1px solid #dee2e6;
-    }
-
-    .btn-secondary:hover {
-        background: #e9ecef;
-    }
-
-    .btn-outline {
-        background: white;
-        color: #dc3545;
-        border: 1px solid #dc3545;
-    }
-
-    .btn-outline:hover {
-        background: #dc3545;
-        color: white;
-    }
-
-    /* 主内容区域 - 调整比例 */
-    .main-content {
-        display: grid;
-        grid-template-columns: 15vw 1fr; /* 左侧缩小到15%，右侧更宽 */
-        gap: 1.5vw;
-        align-items: start;
-        width: 100%;
-        max-width: none;
-    }
-
-    /* 左侧配置面板 - 更紧凑的设计 */
-    .config-panel {
-        background: white;
-        border-radius: 0.8vw;
-        padding: 1.0vw; /* 减少内边距 */
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        position: sticky;
-        top: 1.4vw;
-    }
-
-    .config-panel h3 {
-        font-size: 1.2rem; /* 稍微缩小标题 */
-        font-weight: 600;
-        color: rgb(0,148,217);
-        margin-bottom: 1.0vw; /* 减少底部间距 */
-        display: flex;
-        align-items: center;
-        gap: 0.6vw;
-    }
-
-    .form-group {
-        margin-bottom: 0.8vw; /* 减少表单组间距 */
-    }
-
-    .form-group label {
-        display: block;
-        margin-bottom: 0.3vw; /* 减少标签间距 */
-        font-size: 0.9rem; /* 缩小标签字体 */
-        font-weight: 500;
-        color: rgb(110,111,114);
-    }
-
-    .form-control {
-        width: 100%;
-        padding: 0.6vw 0.8vw; /* 减少输入框内边距 */
-        border: 1px solid #dee2e6;
-        border-radius: 0.5vw;
-        font-size: 0.9rem; /* 缩小字体 */
-        color: rgb(110,111,114);
-        background: white;
-        transition: all 0.2s ease;
-    }
-
-    .form-control:focus {
-        outline: none;
-        border-color: rgb(0,148,217);
-        box-shadow: 0 0 0 3px rgba(0,148,217,0.1);
-    }
-
-    .form-text {
-        font-size: 0.8rem;
-        color: var(--brand-cool-gray);
-        margin-top: 0.25rem;
-        line-height: 1.2;
-    }
-
-    /* 右侧主区域 */
-    .translation-area {
-        display: flex;
-        flex-direction: column;
-        gap: 25px;
-    }
-
-    /* PPT翻译卡片 */
-    .upload-card {
-        background: white;
-        border-radius: 12px;
-        padding: 30px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-
-    .upload-card h2 {
-        font-size: 20px;
-        font-weight: 600;
-        color: rgb(0,148,217);
-        margin-bottom: 25px;
-    }
-
-    .upload-zone {
-        border: 2px dashed #dee2e6;
-        border-radius: 12px;
-        padding: 60px 30px;
-        text-align: center;
-        transition: all 0.3s ease;
-        cursor: pointer;
-        background: #fafbfc;
-    }
-
-    .upload-zone.dragover {
-        border-color: rgb(0,148,217);
-        background: rgba(0,148,217,0.02);
-    }
-
-    .upload-zone-content {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 20px;
-    }
-
-    .upload-text {
-        font-size: 16px;
-        color: rgb(110,111,114);
-    }
-
-    .upload-btn {
-        background: rgb(0,148,217);
-        color: white;
-        padding: 12px 30px;
-        border-radius: 25px;
-        font-size: 14px;
-        font-weight: 500;
-        transition: all 0.2s ease;
-        border: none;
-        cursor: pointer;
-    }
-
-    .upload-btn:hover {
-        background: var(--brand-sky-blue);
-        transform: translateY(-1px);
-    }
-
-    /* 历史记录表格 - 优化行高和列宽 */
-    .history-card {
-        background: white;
-        border-radius: 0.8vw;
-        padding: 2.1vw;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-
-    .history-card h3 {
-        font-size: 1.4rem;
-        font-weight: 600;
-        color: rgb(0,148,217);
-        margin-bottom: 1.6vw;
-        display: flex;
-        align-items: center;
-        gap: 0.7vw;
-    }
-    
-    .refresh-btn-header {
-        background: none;
-        border: none;
-        cursor: pointer;
-        padding: 0.2vw;
-        margin-left: auto; /* 将按钮推到右侧 */
-        color: rgb(0,148,217);
-        font-size: 1.2rem;
-        transition: transform 0.2s ease;
-    }
-    
-    .refresh-btn-header:hover {
-        transform: rotate(90deg); /* 悬停时旋转按钮 */
-    }
-    
-    .rotating {
-        animation: rotate 1s linear;
-    }
-    
-    @keyframes rotate {
-        from {
-            transform: rotate(0deg);
-        }
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    .history-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 1rem;
-        table-layout: fixed; /* 固定表格布局以控制列宽 */
-    }
-
-    /* 表格列宽控制 */
-    .history-table th:nth-child(1), /* 文件名 */
-    .history-table td:nth-child(1) {
-        width: 30%; /* 文件名列缩窄 */
-    }
-
-    .history-table th:nth-child(2), /* 上传时间 */
-    .history-table td:nth-child(2) {
-        width: 20%;
-    }
-
-    .history-table th:nth-child(3), /* 文件大小 */
-    .history-table td:nth-child(3) {
-        width: 15%;
-    }
-
-    .history-table th:nth-child(4), /* 翻译状态 */
-    .history-table td:nth-child(4) {
-        width: 18%; /* 状态列加宽 */
-    }
-
-    .history-table th:nth-child(5), /* 操作 */
-    .history-table td:nth-child(5) {
-        width: 17%; /* 增加操作列宽度以容纳两个按钮 */
-    }
-
-    .history-table th {
-        padding: 0.8vw 0.7vw; /* 减少行高 */
-        text-align: left;
-        font-weight: 600;
-        color: rgb(110,111,114);
-        border-bottom: 2px solid #f1f3f4;
-        background: #fafbfc;
-        font-size: 0.9rem;
-    }
-
-    .history-table th:first-child {
-        border-radius: 0.6vw 0 0 0;
-    }
-
-    .history-table th:last-child {
-        border-radius: 0 0.6vw 0 0;
-    }
-
-    .history-table td {
-        padding: 0.8vw 0.7vw; /* 减少行高 */
-        border-bottom: 1px solid #f1f3f4;
-        color: rgb(110,111,114);
-        font-size: 0.9rem;
-        vertical-align: middle;
-    }
-
-    /* 文件名列 - 文本省略 */
-    .history-table td:nth-child(1) {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    /* 翻译状态列 - 确保不换行 */
-    .history-table td:nth-child(4) {
-        white-space: nowrap;
-    }
-
-    .history-table tr:hover {
-        background: #fafbfc;
-    }
-
-    /* 状态样式 */
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: 500;
-    }
-
-    .status-badge.completed {
-        background: #d4edda;
-        color: #155724;
-    }
-
-    .status-badge.processing {
-        background: #fff3cd;
-        color: #856404;
-    }
-
-    .status-badge.pending {
-        background: #cce5ff;
-        color: #004085;
-    }
-
-    /* 操作按钮 - 只显示图标，水平排列 */
-    .action-btn {
-        padding: 0.4vw 0.6vw; /* 缩小按钮尺寸 */
-        border-radius: 0.3vw;
-        font-size: 1rem; /* 图标大小 */
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s ease;
-        margin-right: 0.4vw; /* 按钮间距 */
-        border: none;
-        cursor: pointer;
-        width: 2vw; /* 固定宽度 */
-        height: 2vw; /* 固定高度 */
-        min-width: 24px;
-        min-height: 24px;
-        vertical-align: middle;
-        line-height: 1;
-        box-sizing: border-box;
-        appearance: none;
-        -webkit-appearance: none;
-    }
-
-    .action-btn.download {
-        background: rgb(0,148,217);
-        color: white;
-    }
-
-    .action-btn.download:hover {
-        background: var(--brand-sky-blue);
-        transform: scale(1.05);
-    }
-
-    .action-btn.view {
-        background: #28a745; /* 绿色 */
-        color: white;
-        margin-right: 0.4vw; /* 与其它按钮保持一致的右边距 */
-    }
-
-    .action-btn.view:hover {
-        background: #218838; /* 深一点的绿色 */
-        transform: scale(1.05);
-    }
-
-    .action-btn.delete {
-        background: #dc3545;
-        color: white;
-        margin-right: 0; /* 最后一个按钮不需要右边距 */
-    }
-
-    .action-btn.delete:hover {
-        background: #c82333;
-        transform: scale(1.05);
-    }
-
-    /* 操作列容器 */
-    .history-table td:nth-child(5) {
-        text-align: center; /* 居中对齐按钮 */
-        white-space: nowrap; /* 防止按钮换行 */
-    }
-
-    /* 进度相关样式 */
-    .progress-container {
-        margin-top: 25px;
-        padding: 25px;
-        background: #f8f9fa;
-        border-radius: 12px;
-        display: none;
-    }
-
-    .progress-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 15px;
-    }
-
-    .progress-bar-container {
-        width: 100%;
-        height: 8px;
-        background: #e9ecef;
-        border-radius: 4px;
-        overflow: hidden;
-    }
-
-    .progress-bar-fill {
-        height: 100%;
-        background: rgb(0,148,217);
-        width: 0;
-        transition: width 0.3s ease;
-    }
-
-    .upload-progress {
-        margin-top: 20px;
-        padding: 18px 22px;
-        background: #f0f8ff;
-        border: 1px solid #d0e7f7;
-        border-radius: 12px;
-        display: none;
-    }
-
-    .upload-progress.show {
-        display: block;
-    }
-
-    .upload-progress-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 12px;
-        color: rgb(0,148,217);
-        font-weight: 500;
-    }
-
-    .upload-progress-bar {
-        width: 100%;
-        height: 6px;
-        background: #e1f1fb;
-        border-radius: 4px;
-        overflow: hidden;
-    }
-
-    .upload-progress-bar-fill {
-        height: 100%;
-        width: 0;
-        background: rgb(0,148,217);
-        transition: width 0.2s ease;
-    }
-
-    /* 页面选择器 */
-    .page-selector {
-        position: fixed;
-        right: 30px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: white;
-        border-radius: 12px;
-        padding: 25px;
-        width: 280px;
-        max-height: 80vh;
-        overflow-y: auto;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
-        display: none;
-        z-index: 1000;
-    }
-
-    .page-selector-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-        padding-bottom: 15px;
-        border-bottom: 1px solid #f1f3f4;
-    }
-
-    .page-selector-title {
-        font-size: 16px;
-        font-weight: 600;
-        color: rgb(0,148,217);
-    }
-
-    .page-list {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        margin-bottom: 20px;
-    }
-
-    .page-item {
-        background: #f8f9fa;
-        color: var(--brand-readable-gray);
-        border: 2px solid transparent;
-        border-radius: 8px;
-        padding: 12px 8px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        font-size: 14px;
-        font-weight: 500;
-    }
-
-    .page-item.selected {
-        background: rgb(0,148,217);
-        color: var(--brand-milk-white);
-        border-color: var(--brand-sky-blue);
-    }
-
-    .page-item:hover:not(.selected) {
-        background: rgba(0,148,217,0.1);
-    }
-
-    .start-translate-btn {
-        width: 100%;
-        background: #28a745;
-        color: white;
-        padding: 12px 20px;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        border: none;
-        cursor: pointer;
-    }
-
-    .start-translate-btn:hover {
-        background: #218838;
-    }
-
-    .start-translate-btn:disabled {
-        background: var(--brand-cool-gray);
-        cursor: not-allowed;
-    }
-
-    /* 加载动画 */
-    .loading-spinner {
-        width: 40px;
-        height: 40px;
-        border: 3px solid #f1f3f4;
-        border-top: 3px solid rgb(0,148,217);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin: 20px auto;
-    }
-
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-
-    /* 状态指示器 */
-    .queue-status {
-        background: #cce5ff;
-        color: #004085;
-        padding: 15px 20px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-        display: none;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .queue-status.alert-info {
-        background: #cce5ff;
-        color: #004085;
-    }
-
-    .queue-status.alert-danger {
-        background: #f8d7da;
-        color: #721c24;
-    }
-
-    /* 详细状态 */
-    .detailed-status {
-        margin-top: 20px;
-        background: white;
-        border-radius: 8px;
-        overflow: hidden;
-        border: 1px solid #dee2e6;
-    }
-
-    .status-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 15px 20px;
-        background: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .status-header h4 {
-        margin: 0;
-        font-size: 16px;
-        color: rgb(0,148,217);
-    }
-
-    .toggle-detail-btn {
-        background: none;
-        border: none;
-        color: rgb(110,111,114);
-        cursor: pointer;
-        padding: 5px;
-        border-radius: 4px;
-    }
-
-    .detail-content {
-        padding: 20px;
-        max-height: 0;
-        overflow: hidden;
-        transition: max-height 0.3s ease;
-    }
-
-    .detail-content.expanded {
-        max-height: 400px;
-        overflow-y: auto;
-    }
-
-    .translation-log {
-        background: #f8f9fa;
-        border-radius: 6px;
-        padding: 15px;
-        max-height: 200px;
-        overflow-y: auto;
-        font-family: 'Courier New', monospace;
-        font-size: 13px;
-        color: rgb(110,111,114);
-    }
-
-    .log-entry {
-        margin-bottom: 8px;
-        padding-left: 15px;
-        border-left: 3px solid #dee2e6;
-        word-break: break-word;
-    }
-
-    .log-entry.info {
-        border-left-color: rgb(0,148,217);
-    }
-
-    .log-entry.success {
-        border-left-color: #28a745;
-    }
-
-    .log-entry.error {
-        border-left-color: #dc3545;
-    }
-
-    .log-timestamp {
-        color: var(--brand-cool-gray);
-        margin-right: 8px;
-        font-size: 12px;
-    }
-
-    /* 管理员工具 - 紧凑设计 */
-    .admin-tools {
-        background: #f8f9fa;
-        border-radius: 0.5vw;
-        padding: 1.0vw; /* 减少内边距 */
-        margin-bottom: 1.2vw; /* 减少下方间距 */
-    }
-
-    .admin-tools h3 {
-        margin-bottom: 1vw; /* 减少标题下方间距 */
-        color: rgb(0,148,217);
-        font-size: 1rem; /* 缩小标题 */
-    }
-
-    .admin-tools-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.4vw; /* 减少按钮间距 */
-    }
-
-    .admin-tool-btn {
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 0.4vw;
-        padding: 0.4vw 0.8vw; /* 减少按钮内边距 */
-        color: rgb(110,111,114);
-        font-size: 0.7rem; /* 缩小字体 */
-        text-decoration: none;
-        display: flex;
-        align-items: center;
-        gap: 0.4vw;
-        transition: all 0.2s ease;
-    }
-
-    .admin-tool-btn:hover {
-        background: rgb(0,148,217);
-        color: white;
-        border-color: rgb(0,148,217);
-    }
-
-    /* 响应式设计 - 调整比例 */
-    @media (max-width: 1200px) {
-        .container {
-            margin-left: 16vw !important;
-            width: 84vw !important;
-        }
-        
-        .main-content {
-            grid-template-columns: 15vw 1fr; /* 在中等屏幕上进一步缩小左侧 */
-            gap: 1.5vw;
-        }
-    }
-
-    @media (max-width: 768px) {
-        .container {
-            margin-left: 15vw !important;
-            width: 85vw !important;
-        }
-        
-        .main-content {
-            grid-template-columns: 1fr; /* 小屏幕上改为单列布局 */
-            gap: 1.4vw;
-        }
-        
-        .config-panel {
-            position: static;
-        }
-        
-        .page-selector {
-            right: 1.4vw;
-            width: 18vw;
-            min-width: 200px;
-        }
-        
-        /* 确保历史记录表格在小屏幕上保持固定布局 */
-        .history-table {
-            table-layout: fixed;
-        }
-        
-        /* 在小屏幕上保持操作列宽度 */
-        .history-table th:nth-child(5),
-        .history-table td:nth-child(5) {
-            width: 17%;
-        }
-    }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/workbench-demo.css') }}">
 {% endblock %}
 
 {% block content %}
-<!-- 页面头部 -->
-<div class="page-header">
-    <div class="header-icon">
-        <i class="bi bi-translate"></i>
+<div class="demo-shell">
+<!-- 匿名化作品集叙事 -->
+<section class="portfolio-hero" aria-labelledby="portfolioHeroTitle">
+    <div class="hero-copy">
+        <div class="hero-meta">
+            <span class="portfolio-badge"><span class="badge-dot" aria-hidden="true"></span>PORTFOLIO DEMO</span>
+            <span class="privacy-note"><i class="bi bi-shield-check" aria-hidden="true"></i>{% if session.get('language') == 'en' %}Anonymized · No client data{% else %}已脱敏 · 不含真实客户数据{% endif %}</span>
+        </div>
+        <p class="hero-kicker">PPT AGENT STUDIO</p>
+        <h1 id="portfolioHeroTitle">{% if session.get('language') == 'en' %}Turn slide translation into a verifiable Agent workflow{% else %}把演示文稿翻译，变成可验证的 Agent 工作流{% endif %}</h1>
+        <p class="hero-summary">
+            {% if session.get('language') == 'en' %}
+            A focused document-agent demo that keeps the model inside deterministic engineering boundaries: stable units, structured output, quality gates, targeted repair and atomic delivery.
+            {% else %}
+            一个聚焦文档智能的 Agent Demo：用稳定翻译单元、结构化输出、质量门禁、定向修复与原子发布，把模型能力纳入确定性的工程边界。
+            {% endif %}
+        </p>
+        <div class="hero-actions">
+            <a class="demo-btn demo-btn-primary" href="#translationWorkbench">
+                <i class="bi bi-play-fill" aria-hidden="true"></i>
+                {% if session.get('language') == 'en' %}Try the live workflow{% else %}体验完整工作流{% endif %}
+            </a>
+        </div>
+        <div class="capability-list" aria-label="{% if session.get('language') == 'en' %}Core capabilities{% else %}核心能力{% endif %}">
+            <span><i class="bi bi-check2" aria-hidden="true"></i>{% if session.get('language') == 'en' %}Editable PPTX output{% else %}可编辑 PPTX 输出{% endif %}</span>
+            <span><i class="bi bi-check2" aria-hidden="true"></i>{% if session.get('language') == 'en' %}Page-level control{% else %}按页选择翻译{% endif %}</span>
+            <span><i class="bi bi-check2" aria-hidden="true"></i>{% if session.get('language') == 'en' %}Crash-safe task state{% else %}可恢复任务状态{% endif %}</span>
+        </div>
     </div>
-    <h1 class="header-title">{% if session.get('language') == 'en' %}PPT File Translation Tool{% else %}PPT文件翻译工具{% endif %}</h1>
-{#    <div class="header-actions">#}
-{#        <a href="#" class="btn btn-secondary">#}
-{#            <i class="bi bi-file-pdf"></i> {% if session.get('language') == 'en' %}PDF Annotation Tool{% else %}PDF注释工具{% endif %}#}
-{#        </a>#}
-{#    </div>#}
-</div>
+
+    <div class="workflow-card" aria-label="{% if session.get('language') == 'en' %}Agent workflow{% else %}Agent 工作流{% endif %}">
+        <div class="workflow-card-header">
+            <div>
+                <span class="eyebrow">AGENT WORKFLOW</span>
+                <h2>{% if session.get('language') == 'en' %}Bounded, observable, recoverable{% else %}有边界、可观测、可恢复{% endif %}</h2>
+            </div>
+            <span class="workflow-status"><span aria-hidden="true"></span>{% if session.get('language') == 'en' %}Ready{% else %}就绪{% endif %}</span>
+        </div>
+        <ol class="workflow-list">
+            <li><span class="workflow-index">01</span><span><strong>{% if session.get('language') == 'en' %}Parse PPTX{% else %}解析 PPTX{% endif %}</strong><small>OOXML · Layout</small></span></li>
+            <li><span class="workflow-index">02</span><span><strong>{% if session.get('language') == 'en' %}Build stable units{% else %}构建稳定单元{% endif %}</strong><small>ID · Context</small></span></li>
+            <li class="model-step"><span class="workflow-index">03</span><span><strong>{% if session.get('language') == 'en' %}Generate translation{% else %}生成结构化译文{% endif %}</strong><small>Qwen · DeepSeek</small></span></li>
+            <li><span class="workflow-index">04</span><span><strong>{% if session.get('language') == 'en' %}Run quality gates{% else %}执行质量门禁{% endif %}</strong><small>Contract · Semantics</small></span></li>
+            <li><span class="workflow-index">05</span><span><strong>{% if session.get('language') == 'en' %}Repair failed units{% else %}定向修复失败单元{% endif %}</strong><small>Retry · Fail closed</small></span></li>
+            <li><span class="workflow-index">06</span><span><strong>{% if session.get('language') == 'en' %}Publish atomically{% else %}原子发布产物{% endif %}</strong><small>Hash · Download</small></span></li>
+        </ol>
+    </div>
+
+    <div class="evidence-strip" aria-label="{% if session.get('language') == 'en' %}Verifiable engineering evidence{% else %}可核验工程证据{% endif %}">
+        <article>
+            <strong>433</strong>
+            <span>{% if session.get('language') == 'en' %}automated tests passing on the verified baseline{% else %}当前已核验基线中的自动化测试通过{% endif %}</span>
+        </article>
+        <article>
+            <strong>100 → 1</strong>
+            <span>{% if session.get('language') == 'en' %}provider calls for 100 identical units · synthetic repeat-text fixture{% else %}100 个相同单元的 Provider 调用 · 合成重复文本夹具{% endif %}</span>
+        </article>
+        <article>
+            <strong>2× Gate</strong>
+            <span>{% if session.get('language') == 'en' %}contract and semantic validation before delivery{% else %}交付前执行结构契约与语义双重校验{% endif %}</span>
+        </article>
+    </div>
+</section>
 
 <!-- 队列状态提示 -->
 <div id="queue-status" class="queue-status" role="status" aria-live="polite" aria-atomic="true">
-    <div class="loading-spinner" style="width: 20px; height: 20px; border-width: 2px;" aria-hidden="true"></div>
+    <div class="loading-spinner queue-spinner" aria-hidden="true"></div>
     <span id="queue-message"></span>
 </div>
 
 <!-- 主内容区域 -->
+<section class="workbench-section" id="translationWorkbench" aria-labelledby="workbenchTitle">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">LIVE WORKBENCH</span>
+            <h2 id="workbenchTitle">{% if session.get('language') == 'en' %}Run a PPT translation task{% else %}运行一次 PPT 翻译任务{% endif %}</h2>
+        </div>
+        <p>{% if session.get('language') == 'en' %}Configure the strategy, upload a deck, select pages and observe the task lifecycle.{% else %}配置翻译策略，上传演示文稿并选择页面，随后观察任务完整生命周期。{% endif %}</p>
+    </div>
 <div class="main-content">
     <!-- 左侧配置面板 -->
     <div class="config-panel">
-        <h3>
-            <i class="bi bi-gear"></i>
-            {% if session.get('language') == 'en' %}Translation Settings{% else %}翻译设置{% endif %}
-        </h3>
-
-{#        <!-- 管理员工具 -->#}
-{#        {% if current_user.is_authenticated and current_user.is_administrator() %}#}
-{#        <div class="admin-tools" id="adminTools">#}
-{#            <h3>{% if session.get('language') == 'en' %}Admin Tools{% else %}管理员工具{% endif %}</h3>#}
-{#            <div class="admin-tools-list">#}
-{#                <a href="{{ url_for('main.file_management') }}" class="admin-tool-btn">#}
-{#                    <i class="bi bi-file-earmark-ppt"></i> {% if session.get('language') == 'en' %}File Management{% else %}文件管理{% endif %}#}
-{#                </a>#}
-{#                <a href="{{ url_for('main.logs') }}" class="admin-tool-btn">#}
-{#                    <i class="bi bi-journal-text"></i> {% if session.get('language') == 'en' %}System Logs{% else %}系统日志{% endif %}#}
-{#                </a>#}
-{#            </div>#}
-{#        </div>#}
-{#        {% endif %}#}
+        <div class="panel-heading">
+            <span class="step-number">01</span>
+            <div>
+                <h3>{% if session.get('language') == 'en' %}Translation strategy{% else %}翻译策略{% endif %}</h3>
+                <p>{% if session.get('language') == 'en' %}Model, languages and layout behavior{% else %}模型、语言与版式行为{% endif %}</p>
+            </div>
+        </div>
 
         <div class="form-group">
             <label for="source-language">{% if session.get('language') == 'en' %}Source Language{% else %}源语言{% endif %}</label>
@@ -859,7 +117,7 @@
 
 
         <div class="form-group">
-            <label for="bilingual_translation">{% if session.get('language') == 'en' %}Language display{% else %}语言展示方式{% endif %}</label>
+            <label for="bilingual_translation">{% if session.get('language') == 'en' %}Output display mode{% else %}译文展示方式{% endif %}</label>
             <select id="bilingual_translation" name="bilingual_translation" class="form-control">
                 <option value="translation_only" selected>{% if session.get('language') == 'en' %}Keep translated content only{% else %}只保留翻译内容{% endif %}</option>
                 <option value="paragraph_up">{% if session.get('language') == 'en' %}Keep both source and translated content(source on top){% else %}保留源语言和翻译内容（源语言在上）{% endif %}</option>
@@ -870,14 +128,13 @@
         <div class="form-group">
             <label for="model">{% if session.get('language') == 'en' %}Translation Model{% else %}翻译模型{% endif %}</label>
             <select id="model" class="form-control">
-                <option value="qwen">Qwen2.5</option>
+                <option value="qwen">Qwen 3.7 Plus</option>
                 <option value="deepseek">DeepSeek-Chat</option>
-{#                <option value="gpt4o">ChatGPT-4o</option>#}
             </select>
         </div>
 
         <div class="form-group">
-            <label for="enable_text_splitting">{% if session.get('language') == 'en' %}OCR Text Configuration{% else %}图片识别配置{% endif %}</label>
+            <label for="enable_text_splitting">{% if session.get('language') == 'en' %}OCR strategy{% else %}图片文字识别{% endif %}</label>
             <select id="enable_text_splitting" class="form-control">
                 <option value="False">{% if session.get('language') == 'en' %}Disable OCR{% else %}不启用ocr识别{% endif %}</option>
                 <option value="True_spliting">{% if session.get('language') == 'en' %}Enable text line splitting (Recommended){% else %}启用文本行分割（推荐）{% endif %}</option>
@@ -886,25 +143,22 @@
         </div>
 
         <div class="form-group">
-            <label for="enable_uno_conversion">{% if session.get('language') == 'en' %}Enable PPTX Font Size Auto-adjustment{% else %}激活pptx的字体大小自适应{% endif %}</label>
+            <label for="enable_uno_conversion">{% if session.get('language') == 'en' %}Layout protection{% else %}版式保护{% endif %}</label>
             <select id="enable_uno_conversion" class="form-control">
                 <option value="True">{% if session.get('language') == 'en' %}Enable (Recommended){% else %}启用（推荐）{% endif %}</option>
                 <option value="False">{% if session.get('language') == 'en' %}Disable{% else %}关闭{% endif %}</option>
             </select>
-            <small class="form-text text-muted" style="font-size: 0.8rem; color: var(--brand-cool-gray); margin-top: 0.25rem;">
+            <small class="form-text text-muted">
                 {% if session.get('language') == 'en' %}
-                When enabled, LibreOffice will be used for PPTX→ODP→PPTX conversion. This may cause format changes in the PPT. If excessive format changes occur, please disable this option.
+                Uses PPTX→ODP→PPTX conversion to improve font fitting. Disable it if the source deck contains highly customized layouts.
                 {% else %}
-                启用后将使用LibreOffice进行PPTX→ODP→PPTX转换，这一行为可能会导致ppt的版式出现变化，若出现版式变化过大，请关闭此选项。
+                通过 PPTX→ODP→PPTX 转换改善字体适配；若源文件包含高度定制版式，可关闭此选项。
                 {% endif %}
             </small>
         </div>
-        <!-- 新增的词汇表部分 -->
-        <div class="form-group">
-            <label>{% if session.get('language') == 'en' %}Vocabulary{% else %}词汇表{% endif %}</label>
-            <button type="button" class="btn btn-secondary" id="vocabularyConfigBtn" onclick="openVocabularyConfig()">
-                {% if session.get('language') == 'en' %}Not Configured{% else %}未配置{% endif %}
-            </button>
+        <div class="deterministic-note">
+            <i class="bi bi-lock" aria-hidden="true"></i>
+            <span>{% if session.get('language') == 'en' %}State, validation and file writes stay under deterministic program control.{% else %}状态、校验与文件写入均由确定性程序控制。{% endif %}</span>
         </div>
     </div>
 
@@ -912,7 +166,14 @@
     <div class="translation-area">
         <!-- PPT翻译卡片 -->
         <div class="upload-card">
-            <h2>{% if session.get('language') == 'en' %}PPT Translation{% else %}PPT翻译{% endif %}</h2>
+            <div class="panel-heading upload-card-heading">
+                <span class="step-number">02</span>
+                <div>
+                    <h2>{% if session.get('language') == 'en' %}Upload and select pages{% else %}上传并选择页面{% endif %}</h2>
+                    <p>{% if session.get('language') == 'en' %}The browser reads the PPTX package to build the page selector.{% else %}浏览器读取 PPTX 包结构并生成页面选择器。{% endif %}</p>
+                </div>
+                <span class="file-limit">PPT / PPTX · 50 MB</span>
+            </div>
             
             <div class="upload-zone" id="dropZone" role="button" tabindex="0" aria-controls="fileInput" aria-describedby="pptUploadHint" aria-busy="false">
                 <div class="upload-zone-content">
@@ -924,7 +185,7 @@
                     </span>
                     <p class="upload-hint" id="pptUploadHint">{% if session.get('language') == 'en' %}PPT or PPTX, up to 50 MB{% else %}支持 PPT 或 PPTX，最大 50 MB{% endif %}</p>
                 </div>
-                <input type="file" id="fileInput" accept=".ppt,.pptx" style="display: none;" aria-label="{% if session.get('language') == 'en' %}Select a PPT file{% else %}选择 PPT 文件{% endif %}">
+                <input type="file" id="fileInput" accept=".ppt,.pptx" hidden aria-label="{% if session.get('language') == 'en' %}Select a PPT file{% else %}选择 PPT 文件{% endif %}">
             </div>
 
             <div id="uploadProgressWrapper" class="upload-progress" role="status" aria-live="polite">
@@ -964,10 +225,10 @@
                         </button>
                     </div>
                     <div id="detailContent" class="detail-content">
-                        <div style="margin-bottom: 15px;">
+                        <div class="detail-row">
                             <strong>{% if session.get('language') == 'en' %}Current Stage:{% else %}当前阶段:{% endif %}</strong> <span id="currentStage">{% if session.get('language') == 'en' %}Waiting to start{% else %}等待开始{% endif %}</span>
                         </div>
-                        <div style="margin-bottom: 15px;">
+                        <div class="detail-row">
                             <strong>{% if session.get('language') == 'en' %}Current Operation:{% else %}当前操作:{% endif %}</strong> <span id="currentOperation">-</span>
                         </div>
                         <div>
@@ -981,7 +242,7 @@
             <div id="pptResultContainer" class="translation-result" role="status" aria-live="polite" hidden>
                 <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
                 <div class="translation-result-content">
-                    <span>{% if session.get('language') == 'en' %}This translation is complete.{% else %}本次翻译已完成。{% endif %}</span>
+                    <span>{% if session.get('language') == 'en' %}Validated output is ready.{% else %}已通过校验，翻译产物可以下载。{% endif %}</span>
                     <a id="pptCurrentDownload" class="btn btn-primary" hidden>
                         <i class="bi bi-download" aria-hidden="true"></i>
                         {% if session.get('language') == 'en' %}Download this result{% else %}下载本次结果{% endif %}
@@ -995,7 +256,7 @@
             <div class="history-header">
                 <h3>
                     <i class="bi bi-clock-history" aria-hidden="true"></i>
-                    {% if session.get('language') == 'en' %}History{% else %}历史记录{% endif %}
+                    {% if session.get('language') == 'en' %}Task history{% else %}任务历史{% endif %}
                 </h3>
                 <button type="button" class="refresh-btn-header" id="refreshHistoryBtn" title="{% if session.get('language') == 'en' %}Refresh history{% else %}刷新历史记录{% endif %}" aria-label="{% if session.get('language') == 'en' %}Refresh history{% else %}刷新历史记录{% endif %}">
                     <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
@@ -1021,6 +282,7 @@
         </div>
     </div>
 </div>
+</section>
 
 <!-- 页面选择悬浮窗 -->
 <div id="pageSelector" class="page-selector" role="region" aria-labelledby="pageSelectorTitle">
@@ -1042,6 +304,7 @@
         <i class="bi bi-translate" aria-hidden="true"></i>
         {% if session.get('language') == 'en' %}Start Translation{% else %}开始翻译{% endif %}
     </button>
+</div>
 </div>
 {% endblock %}
 
@@ -1431,11 +694,6 @@ async function startTranslation() {
         formData.append('enable_text_splitting', enable_text_splitting);
         formData.append('enable_uno_conversion', enable_uno_conversion);
         formData.append('select_page', Array.from(selectedPages).join(','));
-
-        if (window.selectedVocabulary && window.selectedVocabulary.length > 0) {
-            formData.append('selected_vocabulary', window.selectedVocabulary.join(','));
-            console.log('Selected vocabulary IDs:', window.selectedVocabulary);
-        }
 
         const result = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
@@ -1902,384 +1160,5 @@ async function startTranslation() {
         }
     });
     
-    // 新增词汇表配置功能
-    function openVocabularyConfig() {
-        // 创建浮动窗口
-        const modal = document.createElement('div');
-        modal.id = 'vocabularyModal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 800px;
-            max-width: 90vw;
-            max-height: 80vh;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-            z-index: 10000;
-            display: flex;
-            flex-direction: column;
-        `;
-        
-        // 添加窗口内容
-        modal.innerHTML = `
-            <div style="padding: 20px; flex: 1; overflow-y: auto;">
-                <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Vocabulary Configuration' : '词汇表配置'}</h4>
-                <div style="margin-bottom: 15px; display: flex; gap: 10px;">
-                    <input type="text" id="vocabularySearch" placeholder="${currentLanguage === 'en' ? 'Search vocabulary...' : '搜索词汇...'}" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                    <button id="searchBtn" style="padding: 8px 15px; background: var(--brand-sky-blue); color: var(--brand-milk-white); border: none; border-radius: 4px; cursor: pointer;">${currentLanguage === 'en' ? 'Search' : '搜索'}</button>
-                </div>
-                <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
-                    <select id="categoryFilter" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                        <option value="">${currentLanguage === 'en' ? 'Select Category' : '添加标签'}</option>
-                    </select>
-                    <button id="addCategoryBtn" style="padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">${currentLanguage === 'en' ? 'Add' : '添加'}</button>
-                </div>
-                <div id="selectedCategoryTags" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 5px;">
-                    <!-- 分类标签将在这里动态显示 -->
-                </div>
-                <div style="margin-bottom: 15px; display: flex; align-items: center;">
-                    <input type="checkbox" id="selectAllCheckbox" style="margin-right: 10px;">
-                    <label for="selectAllCheckbox" style="color: var(--brand-readable-gray) !important; font-weight: 500;">${currentLanguage === 'en' ? 'Select All' : '全选'}</label>
-                </div>
-                <div id="vocabularyList" style="min-height: 300px; border: 1px solid #ddd; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto;">
-                    <p>${currentLanguage === 'en' ? 'Loading...' : '加载中...'}</p>
-                </div>
-            </div>
-            <div style="padding: 15px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 10px;">
-                <button class="btn btn-secondary" onclick="closeVocabularyConfig()">${currentLanguage === 'en' ? 'Cancel' : '取消'}</button>
-                <button class="btn btn-primary" onclick="saveVocabularyConfig()">${currentLanguage === 'en' ? 'OK' : '确定'}</button>
-            </div>
-        `;
-
-        // 添加遮罩层
-        const overlay = document.createElement('div');
-        overlay.id = 'modalOverlay';
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 9999;
-        `;
-        
-        // 添加到页面
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
-        
-        // 加载词汇表数据
-        loadVocabularyData();
-        
-        // 绑定事件
-        document.getElementById('searchBtn').addEventListener('click', () => {
-            const searchTerm = document.getElementById('vocabularySearch').value;
-            loadVocabularyData(searchTerm);
-        });
-        
-        document.getElementById('vocabularySearch').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const searchTerm = document.getElementById('vocabularySearch').value;
-                loadVocabularyData(searchTerm);
-            }
-        });
-        
-        // 分类筛选事件
-        document.getElementById('addCategoryBtn').addEventListener('click', addCategoryFilter);
-        
-        document.getElementById('categoryFilter').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                addCategoryFilter();
-            }
-        });
-        
-        // 清除筛选
-        document.getElementById('clearFilterBtn').addEventListener('click', () => {
-            document.getElementById('class1Filter').value = '';
-            document.getElementById('class2Filter').value = '';
-            filterVocabularyData();
-        });
-        
-        // 全选/取消全选功能
-        document.getElementById('selectAllCheckbox').addEventListener('change', function() {
-            const checkboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = this.checked;
-            });
-        });
-        
-        // 为每个词汇条目添加事件监听器，更新主全选框状态
-        const vocabularyList = document.getElementById('vocabularyList');
-        const observer = new MutationObserver(() => {
-            const checkboxes = vocabularyList.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                checkbox.addEventListener('change', updateSelectAllCheckbox);
-                
-                // 恢复之前选中的状态
-                if (window.selectedVocabulary && window.selectedVocabulary.includes(checkbox.value)) {
-                    checkbox.checked = true;
-                }
-            });
-            
-            // 更新全选框状态
-            updateSelectAllCheckbox();
-        });
-        
-        observer.observe(vocabularyList, { childList: true, subtree: true });
-    }
-    
-    function updateSelectAllCheckbox() {
-        const allCheckboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]');
-        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
-        const allChecked = allCheckboxes.length > 0 && Array.from(allCheckboxes).every(cb => cb.checked);
-        selectAllCheckbox.checked = allChecked;
-        
-        // 如果没有复选框，确保全选框未选中
-        if (allCheckboxes.length === 0) {
-            selectAllCheckbox.checked = false;
-        }
-    }
-    
-    // 全局存储所有词汇数据
-    let allVocabularyData = [];
-    // 存储当前选中的分类
-    let selectedCategories = [];
-    
-    async function loadVocabularyData(searchTerm = '') {
-        try {
-            // Load all translations (private and public)
-            const response = await fetch(`/api/translations?search=${encodeURIComponent(searchTerm)}&page=1&per_page=1000&visibility=all`);
-            if (!response.ok) {
-                throw new Error(currentLanguage === 'en' ? 'Failed to get vocabulary data' : '获取词汇表数据失败');
-            }
-            const data = await response.json();
-            
-            // 保存所有数据用于筛选
-            allVocabularyData = data.translations;
-            
-            // 填充分类筛选下拉框
-            populateCategoryFilters(allVocabularyData);
-            
-            // 显示数据
-            displayVocabularyData(allVocabularyData);
-        } catch (error) {
-            console.error('加载词汇表数据失败:', error);
-            document.getElementById('vocabularyList').innerHTML = `<p>${currentLanguage === 'en' ? 'Failed to load data' : '加载数据失败'}</p>`;
-        }
-    }
-    
-    // 填充分类筛选下拉框
-    function populateCategoryFilters(data) {
-        const categorySet = new Set();
-        
-        data.forEach(item => {
-            if (item.category) {
-                // 分割分类字符串（使用分号分隔）
-                const categories = item.category.split(';').map(cat => cat.trim()).filter(cat => cat);
-                categories.forEach(cat => categorySet.add(cat));
-            }
-        });
-        
-        const categoryFilter = document.getElementById('categoryFilter');
-        if (categoryFilter) {
-            // 清空选项
-            categoryFilter.innerHTML = `<option value="">${currentLanguage === 'en' ? 'Select Category' : '添加标签'}</option>`;
-            
-            // 添加分类选项
-            Array.from(categorySet).sort().forEach(category => {
-                const option = document.createElement('option');
-                option.value = category;
-                option.textContent = category;
-                categoryFilter.appendChild(option);
-            });
-        }
-    }
-    
-    // 添加分类到筛选条件
-    function addCategoryFilter() {
-        const categoryFilter = document.getElementById('categoryFilter');
-        const selectedCategory = categoryFilter.value;
-        
-        if (selectedCategory && !selectedCategories.includes(selectedCategory)) {
-            selectedCategories.push(selectedCategory);
-            updateCategoryTags();
-            applyFilters();
-        }
-        
-        // 重置选择框
-        categoryFilter.selectedIndex = 0;
-    }
-    
-    // 移除分类筛选条件
-    function removeCategoryFilter(category) {
-        selectedCategories = selectedCategories.filter(cat => cat !== category);
-        updateCategoryTags();
-        applyFilters();
-    }
-    
-    // 清除所有分类筛选条件
-    function clearCategoryFilters() {
-        selectedCategories = [];
-        updateCategoryTags();
-        applyFilters();
-    }
-    
-    // 更新分类标签显示
-    function updateCategoryTags() {
-        const tagsContainer = document.getElementById('selectedCategoryTags');
-        if (!tagsContainer) return;
-        
-        if (selectedCategories.length === 0) {
-            tagsContainer.innerHTML = '';
-            return;
-        }
-        
-        let html = '';
-        selectedCategories.forEach(category => {
-            html += `
-                <span style="display: inline-flex; align-items: center; background: var(--brand-sky-blue); color: var(--brand-milk-white); padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-                    ${category}
-                    <button type="button" onclick="removeCategoryFilter('${category}')" style="margin-left: 5px; background: none; border: none; color: white; cursor: pointer; font-weight: bold;">×</button>
-                </span>
-            `;
-        });
-        
-        // 添加清除按钮
-        html += `<button type="button" onclick="clearCategoryFilters()" style="background: var(--brand-cool-gray); color: var(--brand-milk-white); border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer;">${currentLanguage === 'en' ? 'Clear Filters' : '清除筛选'}</button>`;
-        
-        tagsContainer.innerHTML = html;
-    }
-    
-    // 应用所有筛选条件
-    function applyFilters() {
-        let filteredData = [...allVocabularyData];
-        
-        // 应用分类筛选（并集模式）
-        if (selectedCategories.length > 0) {
-            filteredData = filteredData.filter(item => {
-                if (!item.category) return false;
-                
-                const itemCategories = item.category.split(';').map(cat => cat.trim()).filter(cat => cat);
-                return selectedCategories.some(selectedCat => itemCategories.includes(selectedCat));
-            });
-        }
-        
-        displayVocabularyData(filteredData);
-    }
-    
-    function filterVocabularyData() {
-        const class1Filter = document.getElementById('class1Filter').value;
-        const class2Filter = document.getElementById('class2Filter').value;
-        
-        let filteredData = allVocabularyData;
-        
-        if (class1Filter) {
-            filteredData = filteredData.filter(item => item.class1 === class1Filter);
-        }
-        
-        if (class2Filter) {
-            filteredData = filteredData.filter(item => item.class2 === class2Filter);
-        }
-        
-        displayVocabularyData(filteredData);
-    }
-    
-    function displayVocabularyData(data) {
-        const vocabularyList = document.getElementById('vocabularyList');
-        if (!data || data.length === 0) {
-            vocabularyList.innerHTML = `<p>${currentLanguage === 'en' ? 'No related vocabulary found' : '未找到相关词汇'}</p>`;
-            return;
-        }
-        
-        // 添加表头（不包含全选复选框）
-        let html = `
-            <div style="display: flex; align-items: center; padding: 8px 0; border-bottom: 2px solid var(--brand-readable-gray); font-weight: bold; background-color: rgba(110, 111, 114, 0.08);">
-                <div style="width: 30px; padding-left: 10px;">
-                    <!-- 移除了表头的全选复选框 -->
-                </div>
-                <div style="flex: 1; display: flex;">
-                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'English' : '英文'}</div>
-                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Chinese' : '中文'}</div>
-                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Dutch' : '荷兰语'}</div>
-                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Category' : '分类'}</div>
-                    <div style="flex: 1; padding: 0 5px; color: var(--brand-readable-gray);">${currentLanguage === 'en' ? 'Type' : '类型'}</div>
-                </div>
-            </div>
-        `;
-        
-        // 添加数据行
-        html += data.map(item => `
-            <div style="display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
-                <div style="width: 30px; padding-left: 10px;">
-                    <input type="checkbox" id="vocab_${item.id}" value="${item.id}" style="margin-right: 10px;" ${window.selectedVocabulary && window.selectedVocabulary.includes(String(item.id)) ? 'checked' : ''}>
-                </div>
-                <div style="flex: 1; display: flex; font-size: 14px; color: var(--brand-readable-gray);">
-                    <div style="flex: 1; padding: 0 5px;">${item.english}</div>
-                    <div style="flex: 1; padding: 0 5px;">${item.chinese}</div>
-                    <div style="flex: 1; padding: 0 5px;">${item.dutch || ''}</div>
-                    <div style="flex: 1; padding: 0 5px;">${item.category || ''}</div>
-                    <div style="flex: 1; padding: 0 5px;">${item.is_public ? `<span style="color: var(--brand-sky-blue);">${currentLanguage === 'en' ? 'Public' : '公共'}</span>` : (currentLanguage === 'en' ? 'Private' : '私人')}</div>
-                </div>
-            </div>
-        `).join('');
-        
-        vocabularyList.innerHTML = html;
-        
-        // 全选/取消全选功能
-        document.getElementById('selectAllCheckbox').addEventListener('change', function() {
-            const checkboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = this.checked;
-            });
-            // 更新全选框状态
-            updateSelectAllCheckbox();
-        });
-        
-        // 为每个复选框添加事件监听器
-        const checkboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]');
-        checkboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', updateSelectAllCheckbox);
-        });
-        
-        // 更新主界面的全选框状态
-        updateSelectAllCheckbox();
-    }
-    
-    function closeVocabularyConfig() {
-        const modal = document.getElementById('vocabularyModal');
-        const overlay = document.getElementById('modalOverlay');
-        if (modal) modal.remove();
-        if (overlay) overlay.remove();
-    }
-    
-    // 更新词汇表配置按钮显示
-    function saveVocabularyConfig() {
-        // 获取选中的词汇（移除了对表头全选复选框的排除）
-        const selectedCheckboxes = document.querySelectorAll('#vocabularyList input[type="checkbox"]:checked');
-        const selectedVocabIds = Array.from(selectedCheckboxes).map(cb => cb.value);
-        
-        // 更新按钮文本和样式
-        const btn = document.getElementById('vocabularyConfigBtn');
-        if (selectedVocabIds.length > 0) {
-            btn.textContent = `${getText('configured')} (${selectedVocabIds.length})`;
-            btn.classList.remove('btn-secondary');
-            btn.classList.add('btn-success');
-        } else {
-            btn.textContent = getText('notConfigured');
-            btn.classList.remove('btn-success');
-            btn.classList.add('btn-secondary');
-        }
-        
-        // 保存选中的词汇ID到全局变量，供后续使用
-        window.selectedVocabulary = selectedVocabIds;
-        
-        console.log('保存词汇表配置，选中词汇ID:', selectedVocabIds);
-        
-        // 关闭窗口
-        closeVocabularyConfig();
-    }
 </script>
 {% endblock %}

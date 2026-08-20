@@ -62,6 +62,10 @@
     --studio-success-bg: #ecfdf7;
     --studio-success-border: #a7e3cf;
     --studio-warning: #d97706;
+    --studio-warning-text: #92400e;
+    --studio-warning-text-strong: #78350f;
+    --studio-warning-bg: rgba(245, 158, 11, 0.1);
+    --studio-warning-border: rgba(180, 83, 9, 0.28);
     --studio-danger: #dc3545;
     --studio-danger-muted: #c2414a;
 
@@ -162,6 +166,11 @@
     --studio-radius-md: 16px;
     --studio-radius-lg: 22px;
     --studio-radius-xl: 28px;
+    --studio-space-2xs: 4px;
+    --studio-space-xs: 8px;
+    --studio-space-sm: 12px;
+    --studio-space-md: 16px;
+    --studio-space-lg: 24px;
     --studio-header-height: 72px;
     --studio-content-width: 1440px;
 }

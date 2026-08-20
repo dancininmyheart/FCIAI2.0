@@ -60,19 +60,8 @@ class User(UserMixin, db.Model):
         return self.status == 'approved'
 
     def is_administrator(self):
-        """
-        检查用户是否是管理员
-        优化版本：避免懒加载，直接比较role_id
-        """
-        if not self.role_id:
-            return False
-
-        # 使用缓存的管理员角色ID，避免每次查询数据库
-        if not hasattr(self.__class__, '_admin_role_id'):
-            admin_role = Role.query.filter_by(name='admin').first()
-            self.__class__._admin_role_id = admin_role.id if admin_role else None
-
-        return self.role_id == self.__class__._admin_role_id
+        """Check the role in the current database, not a process-global ID cache."""
+        return bool(self.role and self.role.name == 'admin')
 
     def is_sso_user(self):
         """检查是否为SSO用户"""

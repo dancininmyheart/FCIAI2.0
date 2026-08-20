@@ -16,9 +16,21 @@ Copy-Item .env.demo.example .env
 编辑 `.env`：
 
 1. 替换 `SECRET_KEY`。
-2. 至少配置 Qwen 或 DeepSeek 中的一个 Provider。
-3. Windows 若未自动发现 LibreOffice，设置 `LIBREOFFICE_PATH` 为安装根目录。
-4. 保持 `SSO_ENABLED=false`，避免进入任何外部身份系统。
+2. 将 `DEMO_ACCESS_PASSWORD` 替换为不少于 12 个字符的唯一随机强密码。
+3. 至少配置 Qwen 或 DeepSeek 中的一个 Provider。
+4. Windows 若未自动发现 LibreOffice，设置 `LIBREOFFICE_PATH` 为安装根目录。
+5. 保持 `SSO_ENABLED=false`，避免进入任何外部身份系统。
+
+Demo 登录保护的完整配置如下：
+
+```dotenv
+DEMO_ACCESS_USERNAME=demo
+DEMO_ACCESS_PASSWORD=
+DEMO_LOGIN_MAX_ATTEMPTS=5
+DEMO_LOGIN_LOCKOUT_SECONDS=300
+```
+
+`DEMO_ACCESS_USERNAME` 默认为 `demo`；示例中的密码故意留空，服务会保持可启动但入口拒绝登录。密码没有可用默认值，必须显式配置并至少 12 个字符。请用密码管理器生成强随机密码，不要复用个人、公司、数据库或 Provider 密钥。默认连续失败 5 次后锁定 300 秒。Demo 会话与当前服务进程绑定，重启服务或轮换密码后需要重新登录。
 
 `--demo` 默认把任务账本放在系统临时目录的 `ppt-agent-studio/demo.sqlite3`，不要求 MySQL。它也会在相关变量未设置时启用 V2 编排、翻译记忆、结构/语义质量门和可编辑写回；显式环境变量仍可用于对比或回滚。若需自定义位置，可设置 `DEMO_DATABASE_PATH`；路径必须指向一个 SQLite 文件，而不是目录。
 
@@ -34,7 +46,9 @@ python run.py --demo --check
 python run.py --demo
 ```
 
-浏览器访问 `http://127.0.0.1:5000`，点击“进入演示工作区”。系统会在隔离的 Demo 数据库中创建一个无共享密码的本地访客身份。
+浏览器访问 `http://127.0.0.1:5000`，使用配置的 Demo 用户名和密码登录，然后进入演示工作区。
+
+应用内失败计数与锁定按浏览器 Cookie/会话生效，不是全局 IP 限流。若把 Demo 暴露到公网，必须在反向代理或网关启用 TLS 和基于来源 IP 的限流，并尽量通过访问控制限制来源；仅依赖应用内锁定无法阻止更换 Cookie 或分布式尝试。
 
 ## 2. Provider 配置
 
@@ -172,6 +186,7 @@ python run.py
 - 浏览器书签、下载栏、通知、系统用户名和绝对路径不进入画面。
 - 现场使用的演示文件名、作者、批注、隐藏页和文档属性均已脱敏。
 - `.env`、终端历史和日志不包含 API Key、数据库密码、内网地址或真实账号。
+- Demo 密码是唯一随机强密码；若对公网开放，反向代理已启用 TLS、来源访问控制和基于 IP 的登录限流。
 - 预先验证 Provider 余额、网络、Demo SQLite、LibreOffice 和下载目录；只有展示常规部署时才需额外验证 MySQL。
 - 准备一份已生成的匿名结果文件，应对现场网络或 Provider 故障；需要明确说明它是预生成备份。
 - 发布仓库前另做许可证、提交历史、样例资产和生成物审查。UI 脱敏不等于完成公开发布合规审计。

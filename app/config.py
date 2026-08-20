@@ -84,6 +84,14 @@ def _positive_setting(value: str | None, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
+def _bounded_positive_setting(
+    value: str | None,
+    default: int,
+    maximum: int,
+) -> int:
+    return min(_positive_setting(value, default), maximum)
+
+
 TRANSLATION_SETTINGS = TranslationSettings.from_environment(os.environ)
 
 class Config:
@@ -92,6 +100,12 @@ class Config:
     # 基本配置
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'hard to guess string'
     DEMO_MODE = _setting_bool(os.environ.get('DEMO_MODE', 'false'))
+    DEMO_ACCESS_USERNAME = 'demo'
+    DEMO_ACCESS_PASSWORD = None
+    DEMO_ACCESS_CONFIGURED = False
+    DEMO_ACCESS_SESSION_MARKER = None
+    DEMO_LOGIN_MAX_ATTEMPTS = 5
+    DEMO_LOGIN_LOCKOUT_SECONDS = 300
     DEMO_USER_USERNAME = os.environ.get('DEMO_USER_USERNAME', 'ppt_demo_guest')
     DEMO_USER_EMAIL = os.environ.get('DEMO_USER_EMAIL', 'ppt-demo@localhost.invalid')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -243,8 +257,31 @@ class Config:
             os.environ.get('DEMO_MODE', 'true' if cls.DEMO_MODE else 'false')
         )
         app.config['DEMO_MODE'] = demo_mode
+        demo_access_username = os.environ.get('DEMO_ACCESS_USERNAME', 'demo').strip()
+        demo_access_password = os.environ.get('DEMO_ACCESS_PASSWORD')
+        app.config['DEMO_ACCESS_USERNAME'] = demo_access_username or 'demo'
+        app.config['DEMO_ACCESS_PASSWORD'] = demo_access_password
+        app.config['DEMO_ACCESS_CONFIGURED'] = bool(
+            demo_access_password is not None
+            and len(demo_access_password) >= 12
+            and demo_access_password.strip()
+        )
+        app.config['DEMO_LOGIN_MAX_ATTEMPTS'] = _bounded_positive_setting(
+            os.environ.get('DEMO_LOGIN_MAX_ATTEMPTS'),
+            5,
+            100,
+        )
+        app.config['DEMO_LOGIN_LOCKOUT_SECONDS'] = _bounded_positive_setting(
+            os.environ.get('DEMO_LOGIN_LOCKOUT_SECONDS'),
+            300,
+            86400,
+        )
 
         if demo_mode:
+            # Invalidates pre-gate and previous-process login cookies. The Demo
+            # launcher is intentionally single-process, so a per-process marker
+            # is both safer and deterministic for this deployment profile.
+            app.config['DEMO_ACCESS_SESSION_MARKER'] = secrets.token_urlsafe(32)
             default_demo_database = (
                 Path(tempfile.gettempdir())
                 / 'ppt-agent-studio'

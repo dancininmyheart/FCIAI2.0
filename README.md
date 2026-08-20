@@ -34,13 +34,13 @@ python -m pip install -r requirements.txt
 Copy-Item .env.demo.example .env
 ```
 
-编辑 `.env`，至少填写一个模型 Provider，然后启动：
+编辑 `.env`，至少填写一个模型 Provider，并将 `DEMO_ACCESS_PASSWORD` 替换为不少于 12 个字符的随机强密码，然后启动：
 
 ```powershell
 python run.py --demo
 ```
 
-访问 `http://127.0.0.1:5000`，点击“进入演示工作区”。`--demo` 会创建一个无共享密码的本地访客身份，同时启动 Web 和内嵌 Worker；它还会在未显式配置时启用 V2 编排、翻译记忆、结构/语义质量门和可编辑写回策略。显式环境变量仍可覆盖这些 Demo 默认值。该入口不适合作为多进程生产部署方式。
+访问 `http://127.0.0.1:5000`，使用 `.env` 中配置的 Demo 账号登录，再进入演示工作区。`--demo` 会同时启动 Web 和内嵌 Worker；它还会在未显式配置时启用 V2 编排、翻译记忆、结构/语义质量门和可编辑写回策略。显式环境变量仍可覆盖这些 Demo 默认值。该入口不适合作为多进程生产部署方式。
 
 Demo 的任务状态仍写入关系数据库账本，但默认数据库是系统临时目录中的 `ppt-agent-studio/demo.sqlite3`，无需先安装 MySQL。如需验证 MySQL 部署，请按下文配置后使用常规入口 `python run.py`。
 
@@ -74,6 +74,19 @@ PPT 上传
 ## 配置概览
 
 不要提交 `.env`。仓库只提供不含密钥的 [.env.demo.example](.env.demo.example)。
+
+### Demo 登录保护
+
+```dotenv
+DEMO_ACCESS_USERNAME=demo
+DEMO_ACCESS_PASSWORD=
+DEMO_LOGIN_MAX_ATTEMPTS=5
+DEMO_LOGIN_LOCKOUT_SECONDS=300
+```
+
+`DEMO_ACCESS_USERNAME` 默认为 `demo`；示例中的密码故意留空，此时入口会拒绝登录。`DEMO_ACCESS_PASSWORD` 必须显式配置且至少 12 个字符。请使用密码管理器生成的唯一随机强密码，不要复用个人、公司或 Provider 凭据。连续登录失败默认达到 5 次后锁定 300 秒，可通过后两个变量调整。Demo 会话与当前服务进程绑定，重启服务或轮换密码后需要重新登录。
+
+应用内锁定按浏览器 Cookie/会话生效，不能替代网络层防护。如果将 Demo 暴露到公网，必须使用 TLS，并在反向代理或网关按来源 IP 配置限流；同时限制可访问来源，避免把这个单进程 Demo 入口当作生产身份认证系统。
 
 ### Qwen
 
@@ -178,6 +191,7 @@ python tools/qa/run_translation_acceptance.py --root . --provider deterministic 
 - 本分支的公开产品名为 **PPT Agent Studio**，与任何原公司、客户或商标无关。
 - 公开演示只使用自制、合成、开源许可或已获授权的 PPT；不要上传公司或客户机密材料。
 - 配置文件、页面截图、日志和录屏中不得出现 API Key、账号、内网地址、真实客户名或本机用户目录。
+- 公网部署前为 Demo 登录设置唯一随机强密码，并在反向代理启用 TLS 与基于来源 IP 的限流；应用内会话锁定不能单独抵御分布式或更换 Cookie 的尝试。
 - 调用第三方模型时，PPT 文本会发送到所配置的服务；演示者需自行确认数据处理条款。
 - 这是匿名化作品集 Demo，不代表仓库已经完成面向公开发布的法律、许可证或安全合规审计。
 

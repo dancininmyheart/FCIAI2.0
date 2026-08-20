@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 sso_bp = Blueprint('sso', __name__, url_prefix='/auth/sso')
 
 
+@sso_bp.before_request
+def disable_sso_in_demo_mode():
+    """Do not expose any alternate authentication path in demo mode."""
+    if current_app.config.get('DEMO_MODE', False):
+        return '', 404
+    return None
+
+
 @sso_bp.route('/login')
 def sso_login():
     """SSO登录入口"""

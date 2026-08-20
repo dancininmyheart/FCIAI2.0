@@ -334,3 +334,44 @@ def test_login_template_explains_when_sso_is_unavailable(isolated_app: Flask) ->
     assert 'name="password"' not in login
     assert "SSO 登录暂不可用" in login
     assert "请联系系统管理员检查单点登录配置" in login
+
+
+def test_demo_login_template_requests_environment_credentials(isolated_app: Flask) -> None:
+    with isolated_app.test_request_context("/auth/login"):
+        login = render_template(
+            "auth/login.html",
+            demo_mode=True,
+            demo_login_nonce="test-nonce",
+            demo_access_configured=True,
+        )
+
+    assert 'action="/auth/demo"' in login
+    assert 'name="demo_login_nonce" value="test-nonce"' in login
+    assert '<label for="demo-username">演示用户名</label>' in login
+    assert 'name="username" type="text" autocomplete="username"' in login
+    assert '<label for="demo-password">演示密码</label>' in login
+    assert 'name="password" type="password" autocomplete="current-password"' in login
+    assert 'minlength="12" required' in login
+    assert "无需账号或公开密码" not in login
+    assert "demo-config-warning" not in login
+    assert 'type="submit" class="btn btn-primary demo-btn" disabled' not in login
+
+
+def test_demo_login_template_disables_entry_until_operator_configures_access(
+    isolated_app: Flask,
+) -> None:
+    with isolated_app.test_request_context("/auth/login"):
+        login = render_template(
+            "auth/login.html",
+            demo_mode=True,
+            demo_login_nonce="test-nonce",
+            demo_access_configured=False,
+        )
+
+    assert 'id="demo-config-warning" role="status" aria-live="polite"' in login
+    assert "演示访问尚未配置" in login
+    assert "请由运维人员配置演示访问密码" in login
+    assert 'name="username" type="text" autocomplete="username"' in login
+    assert 'name="password" type="password" autocomplete="current-password"' in login
+    assert 'type="submit" class="btn btn-primary demo-btn" disabled aria-disabled="true"' in login
+    assert "DEMO_ACCESS_PASSWORD" not in login

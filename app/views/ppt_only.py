@@ -13,12 +13,24 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from flask import Blueprint
+from flask import Blueprint, current_app
 
+from ..demo_access import demo_access_session_is_verified
 from . import main as main_views
 
 
 bp = Blueprint("main", __name__)
+
+
+@bp.before_request
+def require_verified_demo_access():
+    """Keep every PPT surface behind the current process's Demo gate."""
+    if (
+        current_app.config.get("DEMO_MODE", False)
+        and not demo_access_session_is_verified()
+    ):
+        return current_app.login_manager.unauthorized()
+    return None
 
 
 def _register(
@@ -57,7 +69,11 @@ _register(
 )
 
 # The PPT vocabulary picker intentionally remains read-only.
-_register("/api/translations", "get_translations", main_views.get_translations)
+_register(
+    "/api/translations",
+    "get_translations",
+    main_views.get_translations,
+)
 
 # Page preference and the supported public PPT compatibility API.
 _register("/switch_language", "switch_language", main_views.switch_language, ("POST",))
@@ -67,7 +83,12 @@ _register(
     main_views.start_translation,
     ("POST",),
 )
-_register("/ppt_translate", "ppt_translate_simple", main_views.ppt_translate_simple, ("POST",))
+_register(
+    "/ppt_translate",
+    "ppt_translate_simple",
+    main_views.ppt_translate_simple,
+    ("POST",),
+)
 
 
 __all__ = ["bp"]

@@ -17,12 +17,34 @@
             {% if demo_mode %}
             <div class="demo-entry">
                 <span class="mode-badge">面试演示模式</span>
-                <h2>准备好查看完整工作流</h2>
-                <p>无需账号或公开密码，以匿名访客身份进入。</p>
-                <form method="post" action="{{ url_for('auth.demo_login') }}">
+                <h2>验证后查看完整工作流</h2>
+                <p id="demo-access-help">输入演示环境凭据，以匿名访客身份进入 PPT Agent Studio。</p>
+
+                {% if not demo_access_configured %}
+                <div class="demo-access-warning" id="demo-config-warning" role="status" aria-live="polite">
+                    <i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+                    <div>
+                        <strong>演示访问尚未配置</strong>
+                        <span>请由运维人员配置演示访问密码（至少 12 个字符）并重启服务。</span>
+                    </div>
+                </div>
+                {% endif %}
+
+                <form class="demo-login-form" method="post" action="{{ url_for('auth.demo_login') }}" aria-describedby="demo-access-help{% if not demo_access_configured %} demo-config-warning{% endif %}">
                     <input type="hidden" name="demo_login_nonce" value="{{ demo_login_nonce }}">
-                    <button type="submit" class="btn btn-primary demo-btn">
-                        <span class="icon" aria-hidden="true"><i class="fas fa-wand-magic-sparkles"></i></span>
+
+                    <div class="form-group">
+                        <label for="demo-username">演示用户名</label>
+                        <input id="demo-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required{% if not demo_access_configured %} disabled{% endif %}>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="demo-password">演示密码</label>
+                        <input id="demo-password" name="password" type="password" autocomplete="current-password" minlength="12" required{% if not demo_access_configured %} disabled{% endif %}>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary demo-btn"{% if not demo_access_configured %} disabled aria-disabled="true"{% endif %}>
+                        <span class="icon" aria-hidden="true"><i class="fas fa-lock"></i></span>
                         <span class="btn-text">进入演示工作台</span>
                         <span class="chevron" aria-hidden="true"><i class="fas fa-arrow-right"></i></span>
                     </button>

@@ -44,7 +44,7 @@ def test_demo_entry_is_hidden_and_route_is_closed_when_switch_is_off(
 
     assert page.status_code == 200
     assert "PPT Agent Studio" in page.get_data(as_text=True)
-    assert "进入演示工作台" not in page.get_data(as_text=True)
+    assert "登录 PPT 翻译工作台" not in page.get_data(as_text=True)
     assert blocked.status_code == 404
 
 
@@ -392,7 +392,7 @@ def test_demo_entry_creates_and_reuses_an_approved_anonymous_user(demo_app: Flas
     assert page.status_code == 200
     assert page.headers["Cache-Control"] == "no-store"
     html = page.get_data(as_text=True)
-    assert "进入演示工作台" in html
+    assert "登录 PPT 翻译工作台" in html
     assert 'action="/auth/demo"' in html
     assert 'href="/auth/sso/login"' not in html
 
@@ -441,7 +441,7 @@ def test_demo_entry_creates_and_reuses_an_approved_anonymous_user(demo_app: Flas
         assert str(user.id) == first_user_id
         assert user.status == "approved"
         assert user.email == "ppt-demo@localhost.invalid"
-        assert user.display_name == "Demo Visitor"
+        assert user.display_name == "PPT User"
         assert user.sso_provider is None
         assert user.sso_subject == "ppt-agent-studio-demo-v1"
         assert user.role is not None and user.role.name == "user"
@@ -569,7 +569,7 @@ def test_demo_identity_rejects_unsafe_status_or_role_without_mutating_it(
         user = User(
             username="ppt_demo_guest",
             email="ppt-demo@localhost.invalid",
-            display_name="Demo Visitor",
+            display_name="PPT User",
             sso_subject="ppt-agent-studio-demo-v1",
             status=status,
             role=role,

@@ -161,7 +161,7 @@ def _get_or_create_demo_role() -> Role:
         role = Role.query.filter_by(name='user').first()
     if role is None:
         logger.error('Demo user role could not be provisioned')
-        abort(503, description='Demo identity is unavailable.')
+        abort(503, description='Application identity is unavailable.')
     return role
 
 
@@ -172,13 +172,13 @@ def _get_or_create_demo_user() -> User:
     if user is None:
         if User.query.filter_by(email=email).first() is not None:
             logger.error('Reserved demo email is already assigned to another account')
-            abort(409, description='Demo identity is unavailable.')
+            abort(409, description='Application identity is unavailable.')
 
         default_role = _get_or_create_demo_role()
         user = User(
             username=username,
             email=email,
-            display_name='Demo Visitor',
+            display_name='PPT User',
             sso_subject=_DEMO_USER_MARKER,
             status='approved',
             role=default_role,
@@ -199,7 +199,7 @@ def _get_or_create_demo_user() -> User:
 
     if user is None or not _is_managed_demo_user(user, username, email):
         logger.error('Reserved demo username conflicts with a non-demo account')
-        abort(409, description='Demo identity is unavailable.')
+        abort(409, description='Application identity is unavailable.')
 
     if (
         user.status != 'approved'
@@ -207,11 +207,11 @@ def _get_or_create_demo_user() -> User:
         or user.role.name != 'user'
     ):
         logger.error('Reserved demo identity has an unsafe status or role')
-        abort(409, description='Demo identity is unavailable.')
+        abort(409, description='Application identity is unavailable.')
 
     changed = False
-    if user.display_name != 'Demo Visitor':
-        user.display_name = 'Demo Visitor'
+    if user.display_name != 'PPT User':
+        user.display_name = 'PPT User'
         changed = True
     if changed:
         db.session.commit()
@@ -334,7 +334,7 @@ def login():
 
 @bp.route('/demo', methods=['POST'])
 def demo_login():
-    """Enter the local interview workspace after the configured access check."""
+    """Enter the protected PPT workspace after the configured access check."""
     if not current_app.config.get('DEMO_MODE', False):
         abort(404)
 
@@ -356,11 +356,11 @@ def demo_login():
         and _constant_time_text_matches(submitted_nonce, expected_nonce)
     )
     if not nonce_matches:
-        flash('演示登录请求无效或已过期。')
+        flash('登录请求无效或已过期。')
         return _render_login_page(400)
 
     if not _demo_access_is_configured():
-        flash('演示访问尚未配置，请联系运维人员。')
+        flash('应用访问尚未配置，请联系管理员。')
         return _render_login_page(503)
 
     now = time.time()
@@ -402,7 +402,7 @@ def demo_login():
             )
             session[_DEMO_LOGIN_LOCKED_UNTIL_KEY] = locked_until
             return _render_demo_lockout(now, locked_until)
-        flash('演示用户名或密码不正确。')
+        flash('用户名或密码不正确。')
         return _render_login_page(401)
 
     from app.utils.timezone_helper import now_with_timezone
@@ -416,20 +416,20 @@ def demo_login():
         if current_user.is_authenticated:
             logout_user()
         session.clear()
-        flash('演示会话暂时无法启动，请稍后重试。')
+        flash('登录会话暂时无法启动，请稍后重试。')
         return _render_login_page(503)
 
     if current_user.is_authenticated:
         logout_user()
     session.clear()
     if not login_user(user):
-        abort(503, description='Demo session could not be started.')
+        abort(503, description='Application session could not be started.')
     session['username'] = user.username
     session.permanent = False
     if not mark_demo_access_session_verified():
         logout_user()
         session.clear()
-        abort(503, description='Demo session could not be verified.')
+        abort(503, description='Application session could not be verified.')
     return redirect(url_for('main.index'))
 
 

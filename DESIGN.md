@@ -2,15 +2,14 @@
 
 ## Product Intent
 
-PPT Agent Studio is an anonymized portfolio demo for a stateful PowerPoint
-translation agent. The interface should feel quiet, reliable, and technically
-credible. It is a focused workbench rather than a marketing site: upload
-settings, task state, recovery actions, and output access must remain easy to
-scan during a short interview demonstration.
+PPT Agent Studio is a focused application for stateful PowerPoint translation.
+The interface should feel quiet, reliable, and technically credible. It is a
+working translation surface rather than a marketing site: upload settings,
+task state, recovery actions, and output access must remain easy to scan during
+normal use.
 
-The public UI exposes only the PPT translation workflow. Historical PDF,
-analysis, dictionary-administration, and company-specific surfaces are outside
-the demo navigation and design contract.
+The UI exposes only the PPT translation workflow. Unrelated historical modules
+are outside the application navigation and design contract.
 
 ## Public Identity
 
@@ -20,7 +19,7 @@ the demo navigation and design contract.
   favicon, legal entity name, or branded illustration.
 - Use generic presentation/translation icons only when they clarify an action.
 - Screenshots and fixtures must use synthetic or authorized names and content.
-- Demo screens must not expose API keys, account identifiers, internal hosts,
+- Application screens must not expose API keys, account identifiers, internal hosts,
   local user directories, or original filenames from confidential documents.
 
 ## Experience Principles
@@ -91,8 +90,8 @@ accent and is not used as body text on light surfaces.
 ### App Shell
 
 The shell provides a skip link, landmarks, the text product identity, and at
-most the navigation needed for PPT translation and task history. Demo mode must
-not render links to legacy product modules.
+most the navigation needed for PPT translation and task history. The focused
+translation mode must not render links to unrelated product modules.
 
 ### Upload Zone
 
@@ -136,7 +135,7 @@ or the primary action.
   duplicate-text fixture, 100 calls → 1**.
 - Error messages may include a correlation ID but never raw source text, secrets,
   absolute local paths, or Provider credentials.
-- Use `demo-deck.pptx`, `sample-presentation.pptx`, and similarly generic names
+- Use `presentation-example.pptx`, `sample-presentation.pptx`, and similarly generic names
   in documentation and screenshots.
 
 ## Motion And Accessibility
@@ -147,9 +146,9 @@ or the primary action.
 - Live task messages use `aria-live`; decorative icons use `aria-hidden`.
 - Touch targets are at least 40px and no workflow depends on hover.
 
-## Portfolio Boundary
+## Release Boundary
 
-Anonymous presentation branding is not a substitute for an open-source release
-review. Before publishing the repository, separately review licenses, commit
-history, sample files, generated artifacts, environment files, logs, and source
-comments for confidential or company-specific material.
+Product branding is not a substitute for an open-source release review. Before
+publishing the repository, separately review licenses, commit history, sample
+files, generated artifacts, environment files, logs, and source comments for
+confidential or third-party material.

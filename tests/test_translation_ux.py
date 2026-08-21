@@ -347,9 +347,9 @@ def test_demo_login_template_requests_environment_credentials(isolated_app: Flas
 
     assert 'action="/auth/demo"' in login
     assert 'name="demo_login_nonce" value="test-nonce"' in login
-    assert '<label for="demo-username">演示用户名</label>' in login
+    assert '<label for="demo-username">用户名</label>' in login
     assert 'name="username" type="text" autocomplete="username"' in login
-    assert '<label for="demo-password">演示密码</label>' in login
+    assert '<label for="demo-password">密码</label>' in login
     assert 'name="password" type="password" autocomplete="current-password"' in login
     assert 'minlength="12" required' in login
     assert "无需账号或公开密码" not in login
@@ -369,8 +369,8 @@ def test_demo_login_template_disables_entry_until_operator_configures_access(
         )
 
     assert 'id="demo-config-warning" role="status" aria-live="polite"' in login
-    assert "演示访问尚未配置" in login
-    assert "请由运维人员配置演示访问密码" in login
+    assert "登录访问尚未配置" in login
+    assert "请由系统管理员配置访问密码（至少 12 个字符）并重启服务。" in login
     assert 'name="username" type="text" autocomplete="username"' in login
     assert 'name="password" type="password" autocomplete="current-password"' in login
     assert 'type="submit" class="btn btn-primary demo-btn" disabled aria-disabled="true"' in login

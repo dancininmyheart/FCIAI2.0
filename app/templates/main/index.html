@@ -1,6 +1,6 @@
 {% extends "main/base_layout.html" %}
 
-{% block title %}Portfolio Demo{% endblock %}
+{% block title %}{% if session.get('language') == 'en' %}PPT Translation{% else %}PPT 翻译{% endif %}{% endblock %}
 
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/workbench-demo.css') }}">
@@ -8,26 +8,26 @@
 
 {% block content %}
 <div class="demo-shell">
-<!-- 匿名化作品集叙事 -->
+<!-- PPT 翻译应用概览 -->
 <section class="portfolio-hero" aria-labelledby="portfolioHeroTitle">
     <div class="hero-copy">
         <div class="hero-meta">
-            <span class="portfolio-badge"><span class="badge-dot" aria-hidden="true"></span>PORTFOLIO DEMO</span>
-            <span class="privacy-note"><i class="bi bi-shield-check" aria-hidden="true"></i>{% if session.get('language') == 'en' %}Anonymized · No client data{% else %}已脱敏 · 不含真实客户数据{% endif %}</span>
+            <span class="portfolio-badge"><span class="badge-dot" aria-hidden="true"></span>{% if session.get('language') == 'en' %}SMART PPT TRANSLATION{% else %}智能 PPT 翻译{% endif %}</span>
+            <span class="privacy-note"><i class="bi bi-shield-check" aria-hidden="true"></i>{% if session.get('language') == 'en' %}Layout-preserving output{% else %}保留原始版式{% endif %}</span>
         </div>
-        <p class="hero-kicker">PPT AGENT STUDIO</p>
-        <h1 id="portfolioHeroTitle">{% if session.get('language') == 'en' %}Turn slide translation into a verifiable Agent workflow{% else %}把演示文稿翻译，变成可验证的 Agent 工作流{% endif %}</h1>
+        <p class="hero-kicker">PPT TRANSLATION WORKSPACE</p>
+        <h1 id="portfolioHeroTitle">{% if session.get('language') == 'en' %}Translate presentations without rebuilding the slides{% else %}翻译演示文稿，无需重新制作幻灯片{% endif %}</h1>
         <p class="hero-summary">
             {% if session.get('language') == 'en' %}
-            A focused document-agent demo that keeps the model inside deterministic engineering boundaries: stable units, structured output, quality gates, targeted repair and atomic delivery.
+            Upload a PowerPoint deck, choose the pages and target language, then download an editable translated PPTX with the original layout preserved.
             {% else %}
-            一个聚焦文档智能的 Agent Demo：用稳定翻译单元、结构化输出、质量门禁、定向修复与原子发布，把模型能力纳入确定性的工程边界。
+            上传 PowerPoint 演示文稿，选择需要处理的页面与目标语言，即可获得保留原始版式、可继续编辑的翻译版 PPTX。
             {% endif %}
         </p>
         <div class="hero-actions">
             <a class="demo-btn demo-btn-primary" href="#translationWorkbench">
                 <i class="bi bi-play-fill" aria-hidden="true"></i>
-                {% if session.get('language') == 'en' %}Try the live workflow{% else %}体验完整工作流{% endif %}
+                {% if session.get('language') == 'en' %}Start translating{% else %}开始翻译{% endif %}
             </a>
         </div>
         <div class="capability-list" aria-label="{% if session.get('language') == 'en' %}Core capabilities{% else %}核心能力{% endif %}">
@@ -37,36 +37,36 @@
         </div>
     </div>
 
-    <div class="workflow-card" aria-label="{% if session.get('language') == 'en' %}Agent workflow{% else %}Agent 工作流{% endif %}">
+    <div class="workflow-card" aria-label="{% if session.get('language') == 'en' %}Translation workflow{% else %}翻译流程{% endif %}">
         <div class="workflow-card-header">
             <div>
-                <span class="eyebrow">AGENT WORKFLOW</span>
-                <h2>{% if session.get('language') == 'en' %}Bounded, observable, recoverable{% else %}有边界、可观测、可恢复{% endif %}</h2>
+                <span class="eyebrow">TRANSLATION FLOW</span>
+                <h2>{% if session.get('language') == 'en' %}From upload to editable output{% else %}从上传到可编辑文件{% endif %}</h2>
             </div>
             <span class="workflow-status"><span aria-hidden="true"></span>{% if session.get('language') == 'en' %}Ready{% else %}就绪{% endif %}</span>
         </div>
         <ol class="workflow-list">
-            <li><span class="workflow-index">01</span><span><strong>{% if session.get('language') == 'en' %}Parse PPTX{% else %}解析 PPTX{% endif %}</strong><small>OOXML · Layout</small></span></li>
-            <li><span class="workflow-index">02</span><span><strong>{% if session.get('language') == 'en' %}Build stable units{% else %}构建稳定单元{% endif %}</strong><small>ID · Context</small></span></li>
-            <li class="model-step"><span class="workflow-index">03</span><span><strong>{% if session.get('language') == 'en' %}Generate translation{% else %}生成结构化译文{% endif %}</strong><small>Qwen · DeepSeek</small></span></li>
-            <li><span class="workflow-index">04</span><span><strong>{% if session.get('language') == 'en' %}Run quality gates{% else %}执行质量门禁{% endif %}</strong><small>Contract · Semantics</small></span></li>
-            <li><span class="workflow-index">05</span><span><strong>{% if session.get('language') == 'en' %}Repair failed units{% else %}定向修复失败单元{% endif %}</strong><small>Retry · Fail closed</small></span></li>
-            <li><span class="workflow-index">06</span><span><strong>{% if session.get('language') == 'en' %}Publish atomically{% else %}原子发布产物{% endif %}</strong><small>Hash · Download</small></span></li>
+            <li><span class="workflow-index">01</span><span><strong>{% if session.get('language') == 'en' %}Read presentation{% else %}读取演示文稿{% endif %}</strong><small>PPTX · Layout</small></span></li>
+            <li><span class="workflow-index">02</span><span><strong>{% if session.get('language') == 'en' %}Extract slide content{% else %}提取页面内容{% endif %}</strong><small>Text · Context</small></span></li>
+            <li class="model-step"><span class="workflow-index">03</span><span><strong>{% if session.get('language') == 'en' %}Translate content{% else %}智能翻译内容{% endif %}</strong><small>Qwen · DeepSeek</small></span></li>
+            <li><span class="workflow-index">04</span><span><strong>{% if session.get('language') == 'en' %}Check translation{% else %}检查翻译结果{% endif %}</strong><small>Format · Meaning</small></span></li>
+            <li><span class="workflow-index">05</span><span><strong>{% if session.get('language') == 'en' %}Adjust translated layout{% else %}调整译文版式{% endif %}</strong><small>Fit · Retry</small></span></li>
+            <li><span class="workflow-index">06</span><span><strong>{% if session.get('language') == 'en' %}Create output file{% else %}生成输出文件{% endif %}</strong><small>PPTX · Download</small></span></li>
         </ol>
     </div>
 
-    <div class="evidence-strip" aria-label="{% if session.get('language') == 'en' %}Verifiable engineering evidence{% else %}可核验工程证据{% endif %}">
+    <div class="evidence-strip" aria-label="{% if session.get('language') == 'en' %}PPT translation capabilities{% else %}PPT 翻译能力{% endif %}">
         <article>
-            <strong>477</strong>
-            <span>{% if session.get('language') == 'en' %}automated tests passing on the verified baseline{% else %}当前已核验基线中的自动化测试通过{% endif %}</span>
+            <strong>PPT / PPTX</strong>
+            <span>{% if session.get('language') == 'en' %}Upload common PowerPoint presentation formats{% else %}支持常见 PowerPoint 演示文稿格式{% endif %}</span>
         </article>
         <article>
-            <strong>100 → 1</strong>
-            <span>{% if session.get('language') == 'en' %}provider calls for 100 identical units · synthetic repeat-text fixture{% else %}100 个相同单元的 Provider 调用 · 合成重复文本夹具{% endif %}</span>
+            <strong>{% if session.get('language') == 'en' %}Page selection{% else %}按页选择{% endif %}</strong>
+            <span>{% if session.get('language') == 'en' %}Translate only the slides you need{% else %}只翻译当前需要处理的幻灯片{% endif %}</span>
         </article>
         <article>
-            <strong>2× Gate</strong>
-            <span>{% if session.get('language') == 'en' %}contract and semantic validation before delivery{% else %}交付前执行结构契约与语义双重校验{% endif %}</span>
+            <strong>{% if session.get('language') == 'en' %}Editable output{% else %}可编辑输出{% endif %}</strong>
+            <span>{% if session.get('language') == 'en' %}Download a translated PPTX for continued editing{% else %}下载翻译版 PPTX 并继续编辑{% endif %}</span>
         </article>
     </div>
 </section>
@@ -81,10 +81,10 @@
 <section class="workbench-section" id="translationWorkbench" aria-labelledby="workbenchTitle">
     <div class="section-heading">
         <div>
-            <span class="eyebrow">LIVE WORKBENCH</span>
-            <h2 id="workbenchTitle">{% if session.get('language') == 'en' %}Run a PPT translation task{% else %}运行一次 PPT 翻译任务{% endif %}</h2>
+            <span class="eyebrow">PPT TRANSLATION</span>
+            <h2 id="workbenchTitle">{% if session.get('language') == 'en' %}Create a translated presentation{% else %}创建翻译版演示文稿{% endif %}</h2>
         </div>
-        <p>{% if session.get('language') == 'en' %}Configure the strategy, upload a deck, select pages and observe the task lifecycle.{% else %}配置翻译策略，上传演示文稿并选择页面，随后观察任务完整生命周期。{% endif %}</p>
+        <p>{% if session.get('language') == 'en' %}Choose the language and output settings, then upload a deck and select the pages to translate.{% else %}选择语言与输出设置，然后上传演示文稿并选择需要翻译的页面。{% endif %}</p>
     </div>
 <div class="main-content">
     <!-- 左侧配置面板 -->
@@ -158,7 +158,7 @@
         </div>
         <div class="deterministic-note">
             <i class="bi bi-lock" aria-hidden="true"></i>
-            <span>{% if session.get('language') == 'en' %}State, validation and file writes stay under deterministic program control.{% else %}状态、校验与文件写入均由确定性程序控制。{% endif %}</span>
+            <span>{% if session.get('language') == 'en' %}The output structure is checked before the translated file is created.{% else %}生成翻译文件前，系统会检查输出结构。{% endif %}</span>
         </div>
     </div>
 
@@ -242,7 +242,7 @@
             <div id="pptResultContainer" class="translation-result" role="status" aria-live="polite" hidden>
                 <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
                 <div class="translation-result-content">
-                    <span>{% if session.get('language') == 'en' %}Validated output is ready.{% else %}已通过校验，翻译产物可以下载。{% endif %}</span>
+                    <span>{% if session.get('language') == 'en' %}Your translated presentation is ready.{% else %}演示文稿翻译完成，可以下载。{% endif %}</span>
                     <a id="pptCurrentDownload" class="btn btn-primary" hidden>
                         <i class="bi bi-download" aria-hidden="true"></i>
                         {% if session.get('language') == 'en' %}Download this result{% else %}下载本次结果{% endif %}

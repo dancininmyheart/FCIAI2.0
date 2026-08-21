@@ -1,12 +1,12 @@
 # PPT Agent Studio
 
-> 匿名化作品集 Demo · 仅用于展示 Agent 工程能力
+> 面向 PowerPoint 的智能翻译应用
 
 PPT Agent Studio 是一个面向 PowerPoint 的状态化文档翻译 Agent。它把 `.ppt` / `.pptx` 拆成带稳定标识的翻译单元，让大模型负责语义转换，再由确定性程序完成协议校验、失败单元修复、OOXML 写回和产物发布。
 
-这个分支只展示 PPT 翻译主流程。PDF、成分分析、词典后台等历史功能不属于 Demo 的公开界面或演示范围。
+当前应用专注于 PPT 翻译主流程，提供从上传、模型翻译、质量检查到可编辑文件下载的一体化体验。
 
-## Demo 能做什么
+## 主要功能
 
 - 上传 `.ppt` / `.pptx`，选择源语言、目标语言、模型和页码范围。
 - 生成仅译文或双语版本，并尽量保留文本框、段落和可编辑版式。
@@ -14,7 +14,7 @@ PPT Agent Studio 是一个面向 PowerPoint 的状态化文档翻译 Agent。它
 - 展示排队、处理中、成功、失败等任务状态，完成后下载译文。
 - 使用 Qwen 或 DeepSeek Provider；真实翻译需要自行配置对应服务。
 
-Demo 模式会隐藏与面试演示无关的入口，并使用匿名化的产品名称与中性视觉。它不会把真实模型调用替换成假结果，也不会绕过数据库任务账本。
+应用使用真实模型 Provider 完成翻译，并通过持久化任务账本跟踪任务状态；页面仅保留 PPT 翻译所需的功能入口。
 
 ## 快速启动
 
@@ -23,7 +23,7 @@ Demo 模式会隐藏与面试演示无关的入口，并使用匿名化的产品
 - Python 3.11
 - Qwen 或 DeepSeek 的有效 API 配置
 - LibreOffice（仅旧 `.ppt` 转换、渲染和版式验收需要）
-- MySQL 8（仅需要按常规部署方式演示持久化数据库时使用；`--demo` 默认使用本地 SQLite）
+- MySQL 8（多进程或长期运行部署建议使用；`--demo` 本地一体化模式默认使用 SQLite）
 
 Windows PowerShell：
 
@@ -40,11 +40,11 @@ Copy-Item .env.demo.example .env
 python run.py --demo
 ```
 
-访问 `http://127.0.0.1:5000`，使用 `.env` 中配置的 Demo 账号登录，再进入演示工作区。`--demo` 会同时启动 Web 和内嵌 Worker；它还会在未显式配置时启用 V2 编排、翻译记忆、结构/语义质量门和可编辑写回策略。显式环境变量仍可覆盖这些 Demo 默认值。该入口不适合作为多进程生产部署方式。
+访问 `http://127.0.0.1:5000`，使用 `.env` 中配置的账号登录。`--demo` 是本地一体化运行模式，会同时启动 Web 和内嵌 Worker；它还会在未显式配置时启用 V2 编排、翻译记忆、结构/语义质量门和可编辑写回策略。显式环境变量仍可覆盖这些默认值。该模式不适合作为多进程生产部署方式。
 
-Demo 的任务状态仍写入关系数据库账本，但默认数据库是系统临时目录中的 `ppt-agent-studio/demo.sqlite3`，无需先安装 MySQL。如需验证 MySQL 部署，请按下文配置后使用常规入口 `python run.py`。
+本地一体化模式的任务状态仍写入关系数据库账本，默认数据库是系统临时目录中的 `ppt-agent-studio/demo.sqlite3`，无需先安装 MySQL。如需使用 MySQL，请按下文配置后使用常规入口 `python run.py`。
 
-详细配置、演示脚本和故障排查见 [DEMO.md](DEMO.md)。
+详细配置、使用流程和故障排查见 [部署与使用指南](DEMO.md)。
 
 ## 核心工作流
 
@@ -62,7 +62,7 @@ PPT 上传
 
 这套设计的重点不是让模型自由规划，而是为不确定的模型输出建立可靠边界：
 
-- **状态可恢复**：Web 与 Worker 通过持久化任务账本协作，使用 lease、版本号和显式状态转换处理取消、重试与进程中断；Demo 使用 SQLite，常规部署使用 MySQL。
+- **状态可恢复**：Web 与 Worker 通过持久化任务账本协作，使用 lease、版本号和显式状态转换处理取消、重试与进程中断；本地一体化模式使用 SQLite，常规部署可使用 MySQL。
 - **输出可校验**：版本化 JSON 协议固定 unit/segment ID、顺序和数量，并校验保留标记、精确术语及明显源语言残留。
 - **修复有边界**：只把失败单元送回 Provider 修复一次；仍不合格则失败关闭，不发布半成品。
 - **副作用可控**：源文件不可变，每次执行使用独立 attempt 目录；候选产物通过哈希和包完整性检查后原子晋升。
@@ -75,7 +75,7 @@ PPT 上传
 
 不要提交 `.env`。仓库只提供不含密钥的 [.env.demo.example](.env.demo.example)。
 
-### Demo 登录保护
+### 登录保护
 
 ```dotenv
 DEMO_ACCESS_USERNAME=demo
@@ -84,9 +84,9 @@ DEMO_LOGIN_MAX_ATTEMPTS=5
 DEMO_LOGIN_LOCKOUT_SECONDS=300
 ```
 
-`DEMO_ACCESS_USERNAME` 默认为 `demo`；示例中的密码故意留空，此时入口会拒绝登录。`DEMO_ACCESS_PASSWORD` 必须显式配置且至少 12 个字符。请使用密码管理器生成的唯一随机强密码，不要复用个人、公司或 Provider 凭据。连续登录失败默认达到 5 次后锁定 300 秒，可通过后两个变量调整。Demo 会话与当前服务进程绑定，重启服务或轮换密码后需要重新登录。
+`DEMO_ACCESS_USERNAME` 默认为 `demo`；示例中的密码故意留空，此时入口会拒绝登录。`DEMO_ACCESS_PASSWORD` 必须显式配置且至少 12 个字符。请使用密码管理器生成的唯一随机强密码，不要复用个人、数据库或 Provider 凭据。连续登录失败默认达到 5 次后锁定 300 秒，可通过后两个变量调整。登录会话与当前服务进程绑定，重启服务或轮换密码后需要重新登录。
 
-应用内锁定按浏览器 Cookie/会话生效，不能替代网络层防护。如果将 Demo 暴露到公网，必须使用 TLS，并在反向代理或网关按来源 IP 配置限流；同时限制可访问来源，避免把这个单进程 Demo 入口当作生产身份认证系统。
+应用内锁定按浏览器 Cookie/会话生效，不能替代网络层防护。如果将应用开放到公网，必须使用 TLS，并在反向代理或网关按来源 IP 配置限流，同时限制可访问来源。该轻量登录入口不应替代生产级身份认证系统。
 
 ### Qwen
 
@@ -119,7 +119,7 @@ PPTX_XML_AUTOFIT_POLICY=editable
 
 ### MySQL
 
-`python run.py --demo` 会有意忽略下面的 `DB_*` 配置并使用隔离的本地 SQLite。若要演示真实 MySQL 任务账本，配置以下变量后使用 `python run.py`（不带 `--demo`）：
+`python run.py --demo` 会忽略下面的 `DB_*` 配置并使用隔离的本地 SQLite。若要使用 MySQL 任务账本，配置以下变量后使用 `python run.py`（不带 `--demo`）：
 
 ```dotenv
 DB_TYPE=mysql
@@ -144,7 +144,7 @@ Windows 可把 `LIBREOFFICE_PATH` 指向 LibreOffice 安装根目录，例如：
 LIBREOFFICE_PATH=C:\Program Files\LibreOffice
 ```
 
-常见系统路径可自动发现；若只演示 `.pptx` 的结构化翻译，部分路径不会主动使用 LibreOffice，但旧 `.ppt` 转换和渲染验收仍依赖它。
+常见系统路径可自动发现；若只处理 `.pptx` 的结构化翻译，部分路径不会主动使用 LibreOffice，但旧 `.ppt` 转换和渲染验收仍依赖它。
 
 ## 质量与指标边界
 
@@ -181,19 +181,19 @@ python tools/qa/benchmark_translation_architecture.py --root . --output .omo/evi
 对你有权使用的样例 PPT 做确定性验收：
 
 ```powershell
-python tools/qa/run_translation_acceptance.py --root . --provider deterministic --ppt ".\path\to\your-anonymized-deck.pptx" --libreoffice "C:\Program Files\LibreOffice\program\soffice.exe" --output ".\.omo\evidence\translation-acceptance" --semantic-qa-mode enforce --autofit-policy editable
+python tools/qa/run_translation_acceptance.py --root . --provider deterministic --ppt ".\path\to\your-authorized-deck.pptx" --libreoffice "C:\Program Files\LibreOffice\program\soffice.exe" --output ".\.omo\evidence\translation-acceptance" --semantic-qa-mode enforce --autofit-policy editable
 ```
 
-验收工具会复制源文件后再处理，不应修改原始演示文稿。
+验收工具会复制源文件后再处理，不应修改原始 PPT 文件。
 
-## 隐私与公开范围
+## 隐私与使用边界
 
-- 本分支的公开产品名为 **PPT Agent Studio**，与任何原公司、客户或商标无关。
-- 公开演示只使用自制、合成、开源许可或已获授权的 PPT；不要上传公司或客户机密材料。
-- 配置文件、页面截图、日志和录屏中不得出现 API Key、账号、内网地址、真实客户名或本机用户目录。
-- 公网部署前为 Demo 登录设置唯一随机强密码，并在反向代理启用 TLS 与基于来源 IP 的限流；应用内会话锁定不能单独抵御分布式或更换 Cookie 的尝试。
-- 调用第三方模型时，PPT 文本会发送到所配置的服务；演示者需自行确认数据处理条款。
-- 这是匿名化作品集 Demo，不代表仓库已经完成面向公开发布的法律、许可证或安全合规审计。
+- 产品名称为 **PPT Agent Studio**。
+- 仅上传自制、开源许可或已获授权的 PPT，不要上传任何机密或敏感材料。
+- 配置文件、页面截图和日志中不得出现 API Key、账号、内网地址或本机用户目录。
+- 公网部署前设置唯一随机强密码，并在反向代理启用 TLS 与基于来源 IP 的限流；应用内会话锁定不能单独抵御分布式或更换 Cookie 的尝试。
+- 调用第三方模型时，PPT 文本会发送到所配置的服务；部署者需自行确认相应的数据处理条款。
+- 正式公开发布前应独立完成许可证、安全与合规审查。
 
 ## 非目标
 

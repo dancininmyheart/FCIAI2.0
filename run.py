@@ -100,7 +100,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--demo",
         action="store_true",
-        help="Start the interview demo with local storage and one-click anonymous access.",
+        help="Start the protected PPT application with isolated local storage.",
     )
     parser.add_argument("--config", default=os.environ.get("FLASK_CONFIG", "development"))
     return parser.parse_args(argv)

@@ -71,9 +71,9 @@
                     </div>
 
                     <div class="nav-utilities">
-                        <span class="demo-status" title="{% if session.get('language') == 'en' %}Interview demo environment{% else %}面试演示环境{% endif %}">
+                        <span class="demo-status" title="{% if session.get('language') == 'en' %}PPT translation service{% else %}PPT 翻译服务{% endif %}">
                             <span class="demo-status-dot" aria-hidden="true"></span>
-                            <span>{% if session.get('language') == 'en' %}Demo workspace{% else %}Demo 工作区{% endif %}</span>
+                            <span>{% if session.get('language') == 'en' %}Service online{% else %}服务在线{% endif %}</span>
                         </span>
                         <button type="button" class="floating-language-btn" onclick="switchLanguage()" title="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}" aria-label="{% if session.get('language') == 'en' %}Switch to Chinese{% else %}切换为英文{% endif %}">
                             <i class="bi bi-translate" aria-hidden="true"></i>

@@ -112,6 +112,8 @@ PPTX_XML_AUTOFIT_POLICY=editable
 
 `PPTX_SEMANTIC_QA_MODE=enforce` 是 PPTX 的默认语义质量门：英译中时若译文仍包含源文中的高置信英文短语，或违反精确词库约束，只重试失败的翻译单元一次，已通过单元保持不变。临时回滚可设为 `observe`（记录问题但仍写入候选译文）或 `off`（跳过语义检查）；unit/segment ID、顺序、数量和保留标记等结构校验始终启用。
 
+结构化 Provider 返回错误 segment 数量时，系统先拆分到单个翻译单元，并用包含全部预期 segment ID 的精确骨架重试。若纯文本 run 段落第二次仍只发生数量不一致，且返回 segments 串联后与聚合 `target_text` 完全一致，系统会把完整译文锚定到原文最长的 run、补齐其余空 segment，再重新执行结构和语义校验。包含换行、字段或其他控制流的段落，以及聚合译文不一致的响应，仍然 fail-closed。
+
 `PPTX_XML_AUTOFIT_POLICY=editable` 是默认版式策略：被修改文本框需要缩小时，只有在所有可见 run/field 的实际字号都能安全解析时，才把字号烘焙进 run/段落属性并写入 `a:noAutofit`，从而消除该文本体的非 100% `a:normAutofit` 隐式缩放。若任一继承字号无法解析，或缺少几何时无法安全物化已有行距压缩，整个文本体保持原字号和 AutoFit XML，不做部分烘焙，并分别记录 `reason=unresolved_inherited_font_size` 或 `reason=unmaterialized_line_spacing_reduction` 的无内容警告；原有非 100% `normAutofit` 可能因此保留。原有 100% `normAutofit` 保持不变，`a:spAutoFit` 在译文已能容纳时也可以保留。若需回滚到旧版隐式缩放行为，可临时设为 `legacy_norm`。该设置只影响后续任务，不会改写历史产物。
 
 Qwen 默认使用 `qwen3.7-plus`，并在翻译时关闭思考模式。PPTX 结构化请求会额外启用 JSON Object 输出模式。修改上述开关后，必须同时重启 Web 与 Worker，确保任务进程读取到相同配置。

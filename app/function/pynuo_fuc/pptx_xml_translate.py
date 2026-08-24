@@ -17,6 +17,7 @@ from app.translation.pptx_contract import (
     PptxContractError,
     parse_pptx_response,
     parse_pptx_response_structure,
+    recover_single_unit_segment_count_response,
     serialize_pptx_request,
     validate_unit_translation_quality,
 )
@@ -222,7 +223,21 @@ def _translate_structured_batch(
                     domain,
                 )
                 continue
-            raise
+            recovery = (
+                recover_single_unit_segment_count_response(response.text, units[0])
+                if error.code == "segment_count"
+                else None
+            )
+            if recovery is None:
+                raise
+            recovered, actual_segments = recovery
+            translations = (recovered,)
+            _log_segment_count_recovery(
+                request,
+                recovered.unit_id,
+                len(units[0].text_items),
+                actual_segments,
+            )
         if semantic_qa_mode == "off":
             return translations
         quality_errors = _quality_errors(units, translations)
@@ -361,6 +376,22 @@ def _log_quality_observation(
     )
 
 
+def _log_segment_count_recovery(
+    request: XmlTranslationRequest,
+    unit_id: str,
+    expected_segments: int,
+    actual_segments: int,
+) -> None:
+    correlation = current_correlation(request.model)
+    logger.warning(
+        "pptx_segment_count_recovered job_id=%s unit_id=%s expected_segments=%d actual_segments=%d strategy=longest_source_run",
+        correlation.public_job_id,
+        unit_id,
+        expected_segments,
+        actual_segments,
+    )
+
+
 def _repair_provider_request(
     request: XmlTranslationRequest,
     source_contract: str,
@@ -368,6 +399,7 @@ def _repair_provider_request(
     error: PptxContractError,
     domain: str,
 ) -> ProviderRequest:
+    source_payload = json.loads(source_contract)
     try:
         candidate: object = json.loads(candidate_response)
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -378,9 +410,12 @@ def _repair_provider_request(
             "unit_id": error.unit_id,
             "detail": error.detail,
         },
-        "source_contract": json.loads(source_contract),
+        "source_contract": source_payload,
         "candidate_response": candidate,
     }
+    response_requirements = _segment_response_requirements(source_payload, error)
+    if response_requirements is not None:
+        payload["response_requirements"] = response_requirements
     return ProviderRequest.create(
         text=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         source_language=request.source_language,
@@ -391,6 +426,38 @@ def _repair_provider_request(
         custom_translations=dict(request.custom_translations),
         output_format="structured",
     )
+
+
+def _segment_response_requirements(
+    source_payload: object,
+    error: PptxContractError,
+) -> dict[str, object] | None:
+    if error.code != "segment_count" or not isinstance(source_payload, dict):
+        return None
+    units = source_payload.get("units")
+    if not isinstance(units, list):
+        return None
+    for unit in units:
+        if not isinstance(unit, dict) or unit.get("unit_id") != error.unit_id:
+            continue
+        stream = unit.get("source_stream")
+        if not isinstance(stream, list):
+            return None
+        segment_ids = [
+            item.get("segment_id")
+            for item in stream
+            if isinstance(item, dict) and item.get("kind") == "text"
+        ]
+        if not segment_ids or any(not isinstance(segment_id, str) for segment_id in segment_ids):
+            return None
+        return {
+            "expected_segment_count": len(segment_ids),
+            "segments": [
+                {"segment_id": segment_id, "target_text": ""}
+                for segment_id in segment_ids
+            ],
+        }
+    return None
 
 
 def _slide_batches(

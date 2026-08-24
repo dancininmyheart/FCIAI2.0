@@ -1601,6 +1601,177 @@ def test_default_xml_engine_fails_closed_after_second_invalid_response(tmp_path:
     assert not output.exists()
 
 
+@pytest.mark.parametrize(
+    "write_mode",
+    ("translation_only", "paragraph_up", "paragraph_down"),
+)
+def test_single_unit_segment_count_failure_recovers_from_aggregate_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    write_mode: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml("Clinical ", "nutrition ", "outlook"),
+    )
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    target = "临床营养展望"
+    wrong_segment_count = _response_json(
+        unit.unit_id,
+        target,
+        [(unit.text_items[0].segment_id, target)],
+    )
+    provider = ContractProvider(
+        responses=[wrong_segment_count, wrong_segment_count],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation=write_mode,
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    repair_payload = json.loads(provider.requests[1].text)
+    requirements = repair_payload["response_requirements"]
+    assert requirements["expected_segment_count"] == 3
+    assert [item["segment_id"] for item in requirements["segments"]] == [
+        item.segment_id for item in unit.text_items
+    ]
+    assert "pptx_segment_count_recovered" in caplog.text
+    assert "expected_segments=3" in caplog.text
+    assert "actual_segments=1" in caplog.text
+    assert target not in caplog.text
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    written_texts = [node.text for node in root.findall(".//a:t", NS)]
+    if write_mode == "translation_only":
+        assert written_texts == [None, target, None]
+    else:
+        assert written_texts.count(target) == 1
+        for source_text in ("Clinical ", "nutrition ", "outlook"):
+            assert written_texts.count(source_text) == 1
+
+
+def test_segment_count_recovery_remains_fail_closed_for_control_stream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    slide = _simple_slide_xml("First", "Second").replace(
+        "</a:r><a:r>",
+        "</a:r><a:br/><a:r>",
+        1,
+    )
+    _write_minimal_pptx(source, slide)
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    wrong_segment_count = _response_json(
+        unit.unit_id,
+        "第一\n第二",
+        [(unit.text_items[0].segment_id, "第一\n第二")],
+    )
+    provider = ContractProvider(
+        responses=[wrong_segment_count, wrong_segment_count],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(PptxContractError) as raised:
+        translate_pptx_with_xml(
+            request,
+            provider_registry=ProviderRegistry((provider,)),
+        )
+
+    assert raised.value.code == "segment_count"
+    assert "expected=2 actual=1" in raised.value.detail
+    assert "pptx_segment_count_recovered" not in caplog.text
+    assert not output.exists()
+
+
+def test_segment_count_recovery_rejects_an_inconsistent_aggregate_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Clinical ", "outlook"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    inconsistent = _response_json(
+        unit.unit_id,
+        "临床展望",
+        [(unit.text_items[0].segment_id, "不一致的候选内容")],
+    )
+    provider = ContractProvider(responses=[inconsistent, inconsistent])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+
+    with pytest.raises(PptxContractError) as raised:
+        translate_pptx_with_xml(
+            request,
+            provider_registry=ProviderRegistry((provider,)),
+        )
+
+    assert raised.value.code == "segment_count"
+    assert not output.exists()
+
+
 def test_provider_contract_failure_never_enters_uno_runtime_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

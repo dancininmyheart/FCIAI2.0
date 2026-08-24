@@ -96,6 +96,68 @@ def parse_pptx_response_structure(
     return tuple(translations)
 
 
+def recover_single_unit_segment_count_response(
+    raw: str,
+    unit: PptxRequestUnit,
+) -> tuple[PptxUnitTranslation, int] | None:
+    """Recover a valid aggregate translation when only run allocation is invalid.
+
+    The fallback is intentionally limited to paragraphs made exclusively from
+    translatable text runs.  Line breaks and protected fields carry ordering
+    semantics that cannot be reconstructed safely from one aggregate string.
+    """
+    if not unit.text_items or any(
+        not isinstance(item, PptxTextStreamItem)
+        for item in unit.source_stream
+    ):
+        return None
+
+    payload = _parse_json_object(_strip_json_fence(raw))
+    _require_exact_fields(payload, _ROOT_FIELDS)
+    if _integer(payload["provider_contract_schema_version"]) != PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION:
+        raise PptxContractError("schema_version", "unsupported provider contract version")
+    if _string(payload["document_kind"]) != PPTX_DOCUMENT_KIND:
+        raise PptxContractError("document_kind", "unexpected document kind")
+    items = _array(payload["translations"])
+    if len(items) != 1:
+        return None
+    item = _mapping(items[0], unit.unit_id)
+    _require_exact_fields(item, _TRANSLATION_FIELDS, unit.unit_id)
+    if _string(item["unit_id"], unit.unit_id) != unit.unit_id:
+        return None
+    target_text = _string(item["target_text"], unit.unit_id)
+    actual_segments = _array(item["segments"], unit.unit_id)
+    if len(actual_segments) == len(unit.text_items):
+        return None
+    candidate_parts: list[str] = []
+    for raw_segment in actual_segments:
+        candidate = _mapping(raw_segment, unit.unit_id)
+        _require_exact_fields(candidate, _SEGMENT_FIELDS, unit.unit_id)
+        _string(candidate["segment_id"], unit.unit_id)
+        candidate_parts.append(_string(candidate["target_text"], unit.unit_id))
+    if "".join(candidate_parts) != target_text:
+        return None
+
+    anchor_index = max(
+        range(len(unit.text_items)),
+        key=lambda index: len(unit.text_items[index].source_text),
+    )
+    segments = tuple(
+        PptxSegmentTranslation(
+            source.segment_id,
+            target_text if index == anchor_index else "",
+        )
+        for index, source in enumerate(unit.text_items)
+    )
+    translation = PptxUnitTranslation(
+        unit.unit_id,
+        reconstruct_target(unit, segments),
+        segments,
+    )
+    validate_unit_translation_structure(unit, translation)
+    return translation, len(actual_segments)
+
+
 def _serialize_unit(unit: PptxRequestUnit) -> dict[str, JsonValue]:
     return {
         "unit_id": unit.unit_id,
@@ -143,7 +205,11 @@ def _parse_segments(raw: JsonValue, unit: PptxRequestUnit) -> tuple[PptxSegmentT
     items = _array(raw, unit.unit_id)
     expected = unit.text_items
     if len(items) != len(expected):
-        raise PptxContractError("segment_count", "segment count differs from request", unit.unit_id)
+        raise PptxContractError(
+            "segment_count",
+            f"segment count differs from request: expected={len(expected)} actual={len(items)}",
+            unit.unit_id,
+        )
     parsed: list[PptxSegmentTranslation] = []
     for raw_item, source in zip(items, expected, strict=True):
         item = _mapping(raw_item, unit.unit_id)
@@ -231,6 +297,7 @@ __all__ = [
     "PptxUnitTranslation",
     "parse_pptx_response",
     "parse_pptx_response_structure",
+    "recover_single_unit_segment_count_response",
     "reconstruct_target",
     "reserved_marker_counts",
     "serialize_pptx_request",

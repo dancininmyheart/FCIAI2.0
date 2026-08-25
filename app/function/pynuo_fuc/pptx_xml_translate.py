@@ -25,7 +25,7 @@ from app.translation.pptx_contract_types import PptxRequestUnit, PptxUnitTransla
 from app.translation.domain import build_presentation_domain_sample, detect_presentation_domain
 from app.translation.providers import ProviderRegistry, default_provider_registry
 from app.translation.metrics import current_correlation
-from app.translation.types import ProviderError, ProviderRequest
+from app.translation.types import ProviderError, ProviderRequest, ProviderResult
 
 
 logger = logging.getLogger(__name__)
@@ -173,21 +173,53 @@ def _translate_structured_batch(
         domain=domain,
         stop_words=tuple(request.stop_words),
         custom_translations=dict(request.custom_translations),
+        timeout_seconds=request.provider_timeout_seconds,
         output_format="structured",
     )
     last_contract_error: PptxContractError | None = None
-    for attempt in range(2):
+    for contract_attempt in range(2):
         try:
-            response = registry.translate(request.model, provider_request)
+            response = _translate_provider_request(
+                request,
+                registry,
+                provider_request,
+                units,
+            )
         except ProviderError as error:
-            if attempt == 0 and error.retryable:
-                continue
+            if error.code == "provider_timeout" and error.retryable and len(units) > 1:
+                midpoint = len(units) // 2
+                logger.warning(
+                    "pptx_provider_timeout_split job_id=%s units=%d left=%d right=%d "
+                    "request_chars=%d timeout_seconds=%.3f",
+                    current_correlation(request.model).public_job_id,
+                    len(units),
+                    midpoint,
+                    len(units) - midpoint,
+                    len(provider_request.text),
+                    provider_request.timeout_seconds,
+                )
+                return (
+                    _translate_structured_batch(
+                        request,
+                        registry,
+                        units[:midpoint],
+                        domain,
+                        semantic_qa_mode,
+                    )
+                    + _translate_structured_batch(
+                        request,
+                        registry,
+                        units[midpoint:],
+                        domain,
+                        semantic_qa_mode,
+                    )
+                )
             raise
         try:
             translations = parse_pptx_response_structure(response.text, units)
         except PptxContractError as error:
             last_contract_error = error
-            _log_contract_rejection(request, error, attempt + 1, len(response.text))
+            _log_contract_rejection(request, error, contract_attempt + 1, len(response.text))
             if len(units) > 1:
                 midpoint = len(units) // 2
                 logger.info(
@@ -214,7 +246,7 @@ def _translate_structured_batch(
                         semantic_qa_mode,
                     )
                 )
-            if attempt == 0:
+            if contract_attempt == 0:
                 provider_request = _repair_provider_request(
                     request,
                     provider_request.text,
@@ -248,7 +280,7 @@ def _translate_structured_batch(
                 _log_quality_observation(request, error)
             return translations
         for error in quality_errors:
-            _log_contract_rejection(request, error, attempt + 1, len(response.text))
+            _log_contract_rejection(request, error, contract_attempt + 1, len(response.text))
         return _repair_quality_failures(
             request,
             registry,
@@ -260,6 +292,35 @@ def _translate_structured_batch(
     if last_contract_error is not None:
         raise last_contract_error
     raise PptxContractError("provider_failure", "provider did not return a response")
+
+
+def _translate_provider_request(
+    request: XmlTranslationRequest,
+    registry: ProviderRegistry,
+    provider_request: ProviderRequest,
+    units: tuple[PptxRequestUnit, ...],
+) -> ProviderResult:
+    for provider_attempt in range(2):
+        try:
+            return registry.translate(request.model, provider_request)
+        except ProviderError as error:
+            should_retry = provider_attempt == 0 and error.retryable
+            if error.code == "provider_timeout" and len(units) > 1:
+                should_retry = False
+            if not should_retry:
+                raise
+            logger.warning(
+                "pptx_provider_retry job_id=%s provider=%s attempt=%d unit_id=%s "
+                "error_code=%s request_chars=%d timeout_seconds=%.3f",
+                current_correlation(request.model).public_job_id,
+                error.provider,
+                provider_attempt + 1,
+                units[0].unit_id if len(units) == 1 else "multiple",
+                error.code,
+                len(provider_request.text),
+                provider_request.timeout_seconds,
+            )
+    raise AssertionError("provider retry loop exhausted without a result")
 
 
 def _pptx_semantic_qa_mode() -> str:
@@ -313,7 +374,12 @@ def _repair_quality_failures(
             error,
             domain,
         )
-        response = registry.translate(request.model, repair_request)
+        response = _translate_provider_request(
+            request,
+            registry,
+            repair_request,
+            (unit,),
+        )
         try:
             repaired.append(parse_pptx_response(response.text, (unit,))[0])
         except PptxContractError as repair_error:
@@ -424,6 +490,7 @@ def _repair_provider_request(
         domain=domain,
         stop_words=tuple(request.stop_words),
         custom_translations=dict(request.custom_translations),
+        timeout_seconds=request.provider_timeout_seconds,
         output_format="structured",
     )
 

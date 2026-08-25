@@ -96,6 +96,7 @@ class DocumentTranslationService:
                         custom_translations=dict(unit.glossary),
                         source_language=unit.source_language,
                         target_language=unit.target_language,
+                        timeout_seconds=self._settings.provider_timeout_seconds,
                         output_format="plain",
                     ),
                 )

@@ -5,6 +5,7 @@
 import os
 import json
 from dataclasses import asdict, dataclass
+from math import isfinite
 from typing import Dict, Any, Literal, Mapping, Optional, Set, TypeAlias
 from pathlib import Path
 from dotenv import load_dotenv
@@ -30,6 +31,7 @@ class TranslationSettings:
     provider_max_concurrency: int = 10
     pptx_semantic_qa_mode: PptxSemanticQaMode = "enforce"
     pptx_xml_autofit_policy: PptxXmlAutofitPolicy = "editable"
+    provider_timeout_seconds: float = 120.0
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> 'TranslationSettings':
@@ -54,9 +56,13 @@ class TranslationSettings:
             pptx_xml_autofit_policy=(
                 pptx_autofit if pptx_autofit in ("legacy_norm", "editable") else "editable"
             ),
+            provider_timeout_seconds=_positive_float_setting(
+                environment.get("TRANSLATION_PROVIDER_TIMEOUT_SECONDS"),
+                120.0,
+            ),
         )
 
-    def as_flask_config(self) -> dict[str, str | int | bool]:
+    def as_flask_config(self) -> dict[str, str | int | float | bool]:
         values = asdict(self)
         return {
             "TRANSLATION_ARCH_MODE": values["arch_mode"],
@@ -67,6 +73,7 @@ class TranslationSettings:
             "TRANSLATION_PROVIDER_MAX_CONCURRENT": values["provider_max_concurrency"],
             "PPTX_SEMANTIC_QA_MODE": values["pptx_semantic_qa_mode"],
             "PPTX_XML_AUTOFIT_POLICY": values["pptx_xml_autofit_policy"],
+            "TRANSLATION_PROVIDER_TIMEOUT_SECONDS": values["provider_timeout_seconds"],
         }
 
 
@@ -80,6 +87,14 @@ def _positive_setting(value: str | None, default: int) -> int:
     except ValueError:
         return default
     return parsed if parsed > 0 else default
+
+
+def _positive_float_setting(value: str | None, default: float) -> float:
+    try:
+        parsed = float(value) if value is not None else default
+    except ValueError:
+        return default
+    return parsed if isfinite(parsed) and parsed > 0 else default
 
 
 TRANSLATION_SETTINGS = TranslationSettings.from_environment(os.environ)
@@ -99,6 +114,7 @@ class Config:
     TRANSLATION_PROVIDER_MAX_CONCURRENT = TRANSLATION_SETTINGS.provider_max_concurrency
     PPTX_SEMANTIC_QA_MODE = TRANSLATION_SETTINGS.pptx_semantic_qa_mode
     PPTX_XML_AUTOFIT_POLICY = TRANSLATION_SETTINGS.pptx_xml_autofit_policy
+    TRANSLATION_PROVIDER_TIMEOUT_SECONDS = TRANSLATION_SETTINGS.provider_timeout_seconds
     
     # 文件存储配置
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or 'uploads'

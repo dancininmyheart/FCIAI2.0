@@ -56,6 +56,7 @@ class XmlTranslationRequest:
     custom_translations: Mapping[str, str]
     bilingual_translation: str
     progress_callback: ProgressCallback | None
+    provider_timeout_seconds: float = 120.0
 
 
 @dataclass(frozen=True, slots=True)

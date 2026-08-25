@@ -257,6 +257,7 @@ if not exist ".env" (
     echo PPTX_XML_RUNTIME_FALLBACK=0 >> .env
     echo PPTX_SEMANTIC_QA_MODE=enforce >> .env
     echo PPTX_XML_AUTOFIT_POLICY=editable >> .env
+    echo TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120 >> .env
     echo [信息] 请编辑 .env 文件配置相关参数
 )
 

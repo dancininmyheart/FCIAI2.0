@@ -25,6 +25,7 @@ def test_windows_installer_builds_one_web_and_one_worker() -> None:
     assert "PPTX_XML_RUNTIME_FALLBACK=0" in script
     assert "PPTX_SEMANTIC_QA_MODE=enforce" in script
     assert "PPTX_XML_AUTOFIT_POLICY=editable" in script
+    assert "TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120" in script
 
 
 def test_database_setup_writes_fail_closed_pptx_defaults() -> None:
@@ -35,6 +36,7 @@ def test_database_setup_writes_fail_closed_pptx_defaults() -> None:
     assert "PPTX_XML_RUNTIME_FALLBACK=0" in script
     assert "PPTX_SEMANTIC_QA_MODE=enforce" in script
     assert "PPTX_XML_AUTOFIT_POLICY=editable" in script
+    assert "TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120" in script
 
 
 def test_linux_installer_builds_supervisor_web_worker_group() -> None:

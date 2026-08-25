@@ -87,6 +87,7 @@ TRANSLATION_ARCH_MODE=legacy
 TRANSLATION_QUALITY_MODE=off
 TRANSLATION_MEMORY_ENABLED=0
 TRANSLATION_AUTO_RECOVER=0
+TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120
 QWEN_MODEL=qwen3.7-plus
 PPTX_XML_ENGINE=structured_v2
 PPTX_XML_RUNTIME_FALLBACK=0
@@ -101,6 +102,7 @@ TRANSLATION_ARCH_MODE=v2
 TRANSLATION_QUALITY_MODE=observe
 TRANSLATION_MEMORY_ENABLED=1
 TRANSLATION_AUTO_RECOVER=0
+TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120
 QWEN_MODEL=qwen3.7-plus
 PPTX_XML_ENGINE=structured_v2
 PPTX_XML_RUNTIME_FALLBACK=0
@@ -111,6 +113,8 @@ PPTX_XML_AUTOFIT_POLICY=editable
 `TRANSLATION_ARCH_MODE` 控制任务编排版本，`PPTX_XML_ENGINE` 独立控制 `.pptx` 的提取和写回方式。`structured_v2` 直接处理底层 XML；`PPTX_XML_RUNTIME_FALLBACK=0` 会让 Provider 或结构化协议错误直接结束任务，不再静默进入旧版 `[block]`/UNO 翻译路径。只有在明确接受版式风险时，才可临时把运行时回退设为 `1`，该回退仅处理允许降级的 ZIP、XML、包或不支持结构错误。
 
 `PPTX_SEMANTIC_QA_MODE=enforce` 是 PPTX 的默认语义质量门：英译中时若译文仍包含源文中的高置信英文短语，或违反精确词库约束，只重试失败的翻译单元一次，已通过单元保持不变。临时回滚可设为 `observe`（记录问题但仍写入候选译文）或 `off`（跳过语义检查）；unit/segment ID、顺序、数量和保留标记等结构校验始终启用。
+
+`TRANSLATION_PROVIDER_TIMEOUT_SECONDS` 控制正文翻译 Provider 单次请求的超时，默认 120 秒；可选的 PPTX 领域识别仍使用独立的 60 秒上限，失败时回到“通用”领域。Qwen SDK 内部重试已关闭，由应用统一控制重试次数；PPTX 同页多单元请求超时时会自动二分拆批，单单元只重试一次，仍超时则失败关闭且不发布部分文件。修改该值后需要同时重启 Web 与 Worker。
 
 结构化 Provider 返回错误 segment 数量时，系统先拆分到单个翻译单元，并用包含全部预期 segment ID 的精确骨架重试。若纯文本 run 段落第二次仍只发生数量不一致，且返回 segments 串联后与聚合 `target_text` 完全一致，系统会把完整译文锚定到原文最长的 run、补齐其余空 segment，再重新执行结构和语义校验。包含换行、字段或其他控制流的段落，以及聚合译文不一致的响应，仍然 fail-closed。
 

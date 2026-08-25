@@ -37,6 +37,7 @@ def translate(text: str,
         from app.translation.structured import translate_ppt_page
         from app.translation.types import ProviderRequest
 
+        settings = current_translation_settings()
         request = ProviderRequest.create(
             text=text,
             field=field,
@@ -44,12 +45,13 @@ def translate(text: str,
             custom_translations=custom_translations,
             source_language=source_language,
             target_language=target_language,
+            timeout_seconds=settings.provider_timeout_seconds,
         )
         return translate_ppt_page(
             default_provider_registry(),
             normalized_model,
             request,
-            current_translation_settings().quality_mode,
+            settings.quality_mode,
         ).text
     if normalized_model == "gpt-4o":
         model = "gpt4o"

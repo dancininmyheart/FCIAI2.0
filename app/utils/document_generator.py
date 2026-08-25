@@ -614,6 +614,7 @@ def _sync_translate_single_text(text: str,
                 custom_translations=custom_translations,
                 source_language=source_language,
                 target_language=target_language,
+                timeout_seconds=current_translation_settings().provider_timeout_seconds,
                 output_format="plain",
             ),
         )

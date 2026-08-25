@@ -11,6 +11,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 import re
 
 from app.translation.providers import default_provider_registry
+from app.translation.service import current_translation_settings
 from app.translation.types import ProviderError, ProviderRequest, TranslationProvider
 
 def perform_ocr_on_image(image_path: str, api_key: str) -> Optional[Dict]:
@@ -239,6 +240,7 @@ def _translate_text(
                 field="image OCR",
                 source_language=source_language,
                 target_language=target_language,
+                timeout_seconds=current_translation_settings().provider_timeout_seconds,
                 output_format="plain",
             ),
         ).text

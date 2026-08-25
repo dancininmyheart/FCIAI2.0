@@ -450,6 +450,7 @@ def _try_translate_pptx_with_xml(presentation_path: str,
         from pathlib import Path
         from pptx_xml_translate import XmlTranslationRequest, translate_pptx_with_xml
         from app.function.pynuo_fuc.pptx_xml_types import PptxXmlFallbackEligibleError
+        from app.translation.service import current_translation_settings
 
         validated_page_indices = _validate_and_normalize_page_indices(select_page)
         original_dir = os.path.dirname(presentation_path)
@@ -467,6 +468,7 @@ def _try_translate_pptx_with_xml(presentation_path: str,
             custom_translations=custom_translations,
             bilingual_translation=bilingual_translation,
             progress_callback=progress_callback,
+            provider_timeout_seconds=current_translation_settings().provider_timeout_seconds,
         )
         result_path = translate_pptx_with_xml(request)
         logger.info(f"底层XML翻译完成: {result_path}")

@@ -48,6 +48,15 @@ def test_provider_limit_inherits_total_and_explicit_values_are_parsed_once() -> 
     assert explicit.pptx_xml_autofit_policy == "legacy_norm"
 
 
+def test_provider_request_timeout_is_configurable() -> None:
+    settings = TranslationSettings.from_environment(
+        {"TRANSLATION_PROVIDER_TIMEOUT_SECONDS": "240.5"},
+    )
+
+    assert settings.provider_timeout_seconds == 240.5
+    assert settings.as_flask_config()["TRANSLATION_PROVIDER_TIMEOUT_SECONDS"] == 240.5
+
+
 def test_exact_six_setting_rollback_restores_legacy_without_schema_action() -> None:
     rollback_environment = {
         "TRANSLATION_ARCH_MODE": "legacy",

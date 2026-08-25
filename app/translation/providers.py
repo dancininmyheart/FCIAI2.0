@@ -258,6 +258,7 @@ class _OpenAiQwenTransport:
                 api_key=os.getenv("QWEN_API_KEY"),
                 base_url=_QWEN_BASE_URL,
                 timeout=timeout_seconds,
+                max_retries=0,
             )
             request = {
                 "model": model,
@@ -271,8 +272,10 @@ class _OpenAiQwenTransport:
             else:
                 request["max_tokens"] = 32768
             response = client.chat.completions.create(**request)
-        except (APIConnectionError, APITimeoutError) as exc:
-            raise TimeoutError("Qwen request timed out or could not connect") from exc
+        except APITimeoutError as exc:
+            raise TimeoutError("Qwen request timed out") from exc
+        except APIConnectionError as exc:
+            raise OSError("Qwen request could not connect") from exc
         except OpenAIError as exc:
             raise RuntimeError("Qwen API request failed") from exc
         return response.choices[0].message.content or ""

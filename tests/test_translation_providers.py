@@ -232,6 +232,108 @@ def test_openai_qwen_transport_sends_json_object_response_format(
     assert "max_tokens" not in calls[0]
 
 
+def test_openai_qwen_transport_does_not_add_hidden_sdk_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_options: list[dict[str, object]] = []
+
+    class FakeCompletions:
+        def create(self, **kwargs: object) -> SimpleNamespace:
+            message = SimpleNamespace(content='{"status":"ok"}')
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            client_options.append(kwargs)
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    fake_openai = ModuleType("openai")
+    fake_openai.OpenAIError = type("OpenAIError", (Exception,), {})
+    fake_openai.APIConnectionError = type(
+        "APIConnectionError",
+        (fake_openai.OpenAIError,),
+        {},
+    )
+    fake_openai.APITimeoutError = type(
+        "APITimeoutError",
+        (fake_openai.OpenAIError,),
+        {},
+    )
+    fake_openai.OpenAI = FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+    _OpenAiQwenTransport().complete_json("qwen-test", "Return JSON.", "{}", 12)
+
+    assert client_options[0]["max_retries"] == 0
+
+
+def test_openai_qwen_transport_keeps_connection_failures_distinct_from_timeouts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeOpenAIError(Exception):
+        pass
+
+    class FakeAPIConnectionError(FakeOpenAIError):
+        pass
+
+    class FakeAPITimeoutError(FakeAPIConnectionError):
+        pass
+
+    class FakeCompletions:
+        def create(self, **kwargs: object) -> SimpleNamespace:
+            raise FakeAPIConnectionError("connection unavailable")
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    fake_openai = ModuleType("openai")
+    fake_openai.OpenAIError = FakeOpenAIError
+    fake_openai.APIConnectionError = FakeAPIConnectionError
+    fake_openai.APITimeoutError = FakeAPITimeoutError
+    fake_openai.OpenAI = FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+    with pytest.raises(ProviderError) as raised:
+        QwenProvider(_OpenAiQwenTransport()).translate(_request())
+
+    assert raised.value.code == "provider_unavailable"
+
+
+def test_openai_qwen_transport_maps_sdk_timeouts_to_retryable_provider_timeouts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeOpenAIError(Exception):
+        pass
+
+    class FakeAPIConnectionError(FakeOpenAIError):
+        pass
+
+    class FakeAPITimeoutError(FakeAPIConnectionError):
+        pass
+
+    class FakeCompletions:
+        def create(self, **kwargs: object) -> SimpleNamespace:
+            raise FakeAPITimeoutError("read timed out")
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    fake_openai = ModuleType("openai")
+    fake_openai.OpenAIError = FakeOpenAIError
+    fake_openai.APIConnectionError = FakeAPIConnectionError
+    fake_openai.APITimeoutError = FakeAPITimeoutError
+    fake_openai.OpenAI = FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+    with pytest.raises(ProviderError) as raised:
+        QwenProvider(_OpenAiQwenTransport()).translate(_request())
+
+    assert raised.value.code == "provider_timeout"
+    assert raised.value.retryable is True
+
+
 def test_openai_qwen_transport_wraps_sdk_status_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

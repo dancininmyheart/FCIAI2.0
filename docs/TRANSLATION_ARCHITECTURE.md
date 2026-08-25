@@ -138,6 +138,7 @@ TRANSLATION_MEMORY_ENABLED=0
 TRANSLATION_AUTO_RECOVER=0
 TASK_QUEUE_MAX_CONCURRENT=10
 TRANSLATION_PROVIDER_MAX_CONCURRENT=10
+TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120
 PPTX_SEMANTIC_QA_MODE=enforce
 PPTX_XML_AUTOFIT_POLICY=editable
 ```
@@ -149,6 +150,7 @@ TRANSLATION_ARCH_MODE=v2
 TRANSLATION_QUALITY_MODE=observe
 TRANSLATION_MEMORY_ENABLED=1
 TRANSLATION_AUTO_RECOVER=0
+TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120
 PPTX_SEMANTIC_QA_MODE=enforce
 PPTX_XML_AUTOFIT_POLICY=editable
 ```
@@ -220,6 +222,8 @@ slide XML
 `PPTX_SEMANTIC_QA_MODE=enforce` 才执行源语言残留与词库检查；`observe/off` 只改变语义门，不会关闭这些
 结构约束。
 
+正文翻译 Provider 单次请求默认使用 `TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120`；可选的 PPTX 领域识别保留独立的 60 秒上限，失败时回到“通用”领域。Qwen Adapter 禁用 SDK 内部重试，避免与应用重试相乘。PPTX 结构化批次发生 `provider_timeout` 时，多单元批次立即二分后分别重试；单单元批次最多调用两次，仍失败则保持 fail-closed，不写出部分 PPTX。连接失败保持为 `provider_unavailable`，不会触发拆批。拆批日志只记录 job ID、单元数、请求字符数和超时值，不记录源文或密钥。
+
 运行时降级由独立开关控制：
 
 ```dotenv
@@ -227,6 +231,7 @@ PPTX_XML_ENGINE=structured_v2
 PPTX_XML_RUNTIME_FALLBACK=0
 PPTX_SEMANTIC_QA_MODE=enforce
 PPTX_XML_AUTOFIT_POLICY=editable
+TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120
 ```
 
 只有 ZIP、XML、写入、包完整性、重复 shape ID 和不支持的文本结构等类型化运行时

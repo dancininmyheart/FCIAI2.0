@@ -53,7 +53,7 @@ NS = {"a": A_NS, "p": P_NS, "mc": MC_NS}
 
 @dataclass(frozen=True, slots=True)
 class ContractProvider:
-    responses: list[str] = field(default_factory=list)
+    responses: list[str | ProviderError] = field(default_factory=list)
     requests: list[ProviderRequest] = field(default_factory=list)
     domain: str = "通用"
     domain_error: Exception | None = None
@@ -80,6 +80,8 @@ class ContractProvider:
         self.trace.append("translation")
         if self.responses:
             response = self.responses.pop(0)
+            if isinstance(response, ProviderError):
+                raise response
         else:
             payload = json.loads(request.text)
             translations = []
@@ -969,6 +971,62 @@ def test_default_xml_engine_retries_invalid_contract_once_and_never_publishes_ma
     assert [node.text for node in ElementTree.fromstring(slide_data).findall(".//a:t", NS)] == ["母乳"]
 
 
+def test_contract_repair_gets_an_independent_retry_after_provider_timeout(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Milk"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    timeout = ProviderError(
+        provider="qwen",
+        code="provider_timeout",
+        detail="provider request timed out",
+        retryable=True,
+    )
+    provider = ContractProvider(
+        responses=[
+            _response_json(
+                unit.unit_id,
+                "母乳[块]",
+                [(unit.text_items[0].segment_id, "母乳[块]")],
+            ),
+            timeout,
+            _response_json(
+                unit.unit_id,
+                "母乳",
+                [(unit.text_items[0].segment_id, "母乳")],
+            ),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+        "pptx_structured_v2_repair",
+    ]
+
+
 def test_structured_translation_splits_an_invalid_multi_unit_batch(tmp_path: Path) -> None:
     source = tmp_path / "source.pptx"
     output = tmp_path / "translated.pptx"
@@ -1019,7 +1077,148 @@ def test_structured_translation_splits_an_invalid_multi_unit_batch(tmp_path: Pat
     assert [len(json.loads(item.text)["units"]) for item in provider.requests] == [2, 1, 1]
 
 
-def test_semantic_repair_retries_only_the_offending_unit_and_freezes_accepted_units(
+def test_structured_translation_splits_a_timed_out_multi_unit_batch(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    slide = (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        f"<p:sld xmlns:a='{A_NS}' xmlns:p='{P_NS}'><p:cSld><p:spTree>"
+        f"{_simple_shape_xml(7, 'First')}{_simple_shape_xml(8, 'Second')}"
+        "</p:spTree></p:cSld></p:sld>"
+    )
+    _write_minimal_pptx(source, slide)
+    provider = ContractProvider(
+        responses=[
+            ProviderError(
+                provider="qwen",
+                code="provider_timeout",
+                detail="provider request timed out",
+                retryable=True,
+            ),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [len(json.loads(item.text)["units"]) for item in provider.requests] == [2, 1, 1]
+
+
+def test_structured_translation_forwards_the_configured_provider_timeout(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Milk"))
+    provider = ContractProvider()
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+        provider_timeout_seconds=240.5,
+    )
+
+    translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert provider.requests[0].timeout_seconds == 240.5
+
+
+def test_structured_translation_retries_one_timed_out_unit_once(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Milk"))
+    provider = ContractProvider(
+        responses=[
+            ProviderError(
+                provider="qwen",
+                code="provider_timeout",
+                detail="provider request timed out",
+                retryable=True,
+            ),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [len(json.loads(item.text)["units"]) for item in provider.requests] == [1, 1]
+
+
+def test_structured_translation_fails_closed_after_two_single_unit_timeouts(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Milk"))
+    timeout = ProviderError(
+        provider="qwen",
+        code="provider_timeout",
+        detail="provider request timed out",
+        retryable=True,
+    )
+    provider = ContractProvider(responses=[timeout, timeout])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    with pytest.raises(ProviderError, match="provider_timeout"):
+        translate_pptx_with_xml(
+            request,
+            provider_registry=ProviderRegistry((provider,)),
+        )
+
+    assert len(provider.requests) == 2
+    assert not output.exists()
+
+
+def test_semantic_repair_retries_a_timeout_only_for_the_offending_unit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1076,7 +1275,13 @@ def test_semantic_repair_retries_only_the_offending_unit_and_freezes_accepted_un
         repaired_target,
         [(units[1].text_items[0].segment_id, repaired_target)],
     )
-    provider = ContractProvider(responses=[initial, repaired])
+    timeout = ProviderError(
+        provider="qwen",
+        code="provider_timeout",
+        detail="provider request timed out",
+        retryable=True,
+    )
+    provider = ContractProvider(responses=[initial, timeout, repaired])
     request = XmlTranslationRequest(
         input_path=source,
         output_path=output,
@@ -1096,6 +1301,7 @@ def test_semantic_repair_retries_only_the_offending_unit_and_freezes_accepted_un
     assert [item.field for item in provider.requests] == [
         "pptx_structured_v2",
         "pptx_structured_v2_repair",
+        "pptx_structured_v2_repair",
     ]
     repair_payload = json.loads(provider.requests[1].text)
     assert [item["unit_id"] for item in repair_payload["source_contract"]["units"]] == [
@@ -1105,7 +1311,11 @@ def test_semantic_repair_retries_only_the_offending_unit_and_freezes_accepted_un
         item["unit_id"]
         for item in repair_payload["candidate_response"]["translations"]
     ] == [units[1].unit_id]
-    assert [item.domain for item in provider.requests] == [provider.domain, provider.domain]
+    assert [item.domain for item in provider.requests] == [
+        provider.domain,
+        provider.domain,
+        provider.domain,
+    ]
     assert repair_payload["source_contract"]["document_domain"] == provider.domain
     with zipfile.ZipFile(output) as archive:
         root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
@@ -1787,6 +1997,32 @@ def test_provider_contract_failure_never_enters_uno_runtime_fallback(
 
     with pytest.raises(PptxContractError):
         _try_controller_xml_path(controller, tmp_path / "deck.pptx")
+
+
+def test_controller_applies_the_runtime_provider_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.function.pynuo_fuc import pyuno_controller as controller
+    from app.translation.service import TranslationSettings
+    import pptx_xml_translate as xml_translate_module
+
+    captured: list[XmlTranslationRequest] = []
+
+    def capture_request(request: XmlTranslationRequest) -> str:
+        captured.append(request)
+        return str(request.output_path)
+
+    isolated_app = Flask(__name__)
+    isolated_app.extensions["translation_settings"] = TranslationSettings(
+        provider_timeout_seconds=240.5,
+    )
+    monkeypatch.setattr(xml_translate_module, "translate_pptx_with_xml", capture_request)
+
+    with isolated_app.app_context():
+        _try_controller_xml_path(controller, tmp_path / "deck.pptx")
+
+    assert captured[0].provider_timeout_seconds == 240.5
 
 
 def test_typed_package_failure_uses_uno_fallback_only_when_explicitly_enabled(

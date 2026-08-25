@@ -145,8 +145,6 @@ def _validate_bilingual_writeback(
     translations: tuple[PptxUnitTranslation, ...],
     mode: WriteMode,
 ) -> None:
-    if mode is WriteMode.TRANSLATION_ONLY:
-        return
     source_targets = _package_targets(input_path)
     output_targets = _package_targets(output_path)
     for translation in translations:
@@ -158,21 +156,31 @@ def _validate_bilingual_writeback(
                 "could not locate the translated paragraph to confirm its source text",
                 translation.unit_id,
             )
-        if _normalized_text(source.unit.source_text) == _normalized_text(
-            translation.target_text,
-        ):
+        if mode is WriteMode.TRANSLATION_ONLY:
+            expected_target = (
+                _repeated_full_sentence_translation(source, translation)
+                or translation.target_text
+            )
+            if output.unit.source_text != expected_target:
+                raise PptxContractError(
+                    "roundtrip_text_mismatch",
+                    "translated text changed during PPTX writeback",
+                    translation.unit_id,
+                )
+            continue
+        if source.unit.source_text == translation.target_text:
             continue
 
-        source_runs = _normalized_run_texts(source)
-        translated_runs = _normalized_translated_runs(source, translation)
+        source_runs = _run_texts(source)
+        translated_runs = _translated_run_texts(source, translation)
         translation_paragraph = _adjacent_translation_paragraph(output, mode)
         if translation_paragraph is not None:
-            source_present = _normalized_run_texts(output) == source_runs
+            source_present = _run_texts(output) == source_runs
             translation_present = (
-                _normalized_paragraph_run_texts(translation_paragraph) == translated_runs
+                _paragraph_run_texts(translation_paragraph) == translated_runs
             )
         else:
-            output_runs = _normalized_run_texts(output)
+            output_runs = _run_texts(output)
             if mode is WriteMode.PARAGRAPH_UP:
                 source_present = output_runs[: len(source_runs)] == source_runs
                 translation_present = output_runs[-len(translated_runs) :] == translated_runs
@@ -212,23 +220,23 @@ def _package_targets(path: Path) -> dict[str, StructuredParagraphTarget]:
     return targets
 
 
-def _normalized_run_texts(
+def _run_texts(
     target: StructuredParagraphTarget,
 ) -> tuple[str, ...]:
-    return tuple(_normalized_text(node.text or "") for _, node in target.segment_nodes)
+    return tuple(node.text or "" for _, node in target.segment_nodes)
 
 
-def _normalized_translated_runs(
+def _translated_run_texts(
     target: StructuredParagraphTarget,
     translation: PptxUnitTranslation,
 ) -> tuple[str, ...]:
     repeated = _repeated_full_sentence_translation(target, translation)
     if repeated is not None:
-        return (_normalized_text(repeated),)
-    return tuple(_normalized_text(segment.target_text) for segment in translation.segments)
+        return (repeated,)
+    return tuple(segment.target_text for segment in translation.segments)
 
 
-def _normalized_paragraph_run_texts(
+def _paragraph_run_texts(
     paragraph: ElementTree.Element,
 ) -> tuple[str, ...]:
     texts: list[str] = []
@@ -237,7 +245,7 @@ def _normalized_paragraph_run_texts(
             continue
         text_node = child.find(A_T)
         if text_node is not None:
-            texts.append(_normalized_text(text_node.text or ""))
+            texts.append(text_node.text or "")
     return tuple(texts)
 
 
@@ -300,9 +308,7 @@ def _apply_translation(
     translation: PptxUnitTranslation,
     mode: WriteMode,
 ) -> bool:
-    if _normalized_text(target.unit.source_text) == _normalized_text(
-        translation.target_text,
-    ):
+    if target.unit.source_text == translation.target_text:
         return False
     original_content = tuple(copy.deepcopy(node) for node in target.content_nodes)
     match mode:

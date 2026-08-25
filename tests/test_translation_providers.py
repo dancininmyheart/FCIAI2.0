@@ -151,6 +151,7 @@ def test_qwen_provider_uses_json_mode_for_pptx_repair_contract() -> None:
     assert transport.calls == ["json"]
     assert "response_requirements" in transport.systems[0]
     assert "do not add, remove, merge, reorder, or rename segments" in transport.systems[0]
+    assert "missing target-language word boundary" in transport.systems[0]
 
 
 def test_qwen_provider_uses_json_mode_and_safe_prompt_for_domain_detection() -> None:

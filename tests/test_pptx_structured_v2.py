@@ -219,7 +219,7 @@ def test_provider_contract_is_exact_json_and_contains_no_internal_sentinel(tmp_p
     }
 
 
-def test_response_parser_canonicalizes_target_text_from_written_stream(tmp_path: Path) -> None:
+def test_response_parser_rejects_non_whitespace_target_mismatch(tmp_path: Path) -> None:
     source = tmp_path / "source.pptx"
     _write_minimal_pptx(source, _structured_slide_xml())
     units = extract_structured_units_from_pptx(
@@ -237,9 +237,803 @@ def test_response_parser_canonicalizes_target_text_from_written_stream(tmp_path:
         ],
     )
 
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "target_mismatch"
+    assert raised.value.unit_id == unit.unit_id
+
+
+def test_response_parser_restores_whitespace_at_segment_boundaries(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "\u6210\u672c\u53ef\u63a7"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        "Token costs are controllable",
+        [
+            (unit.text_items[0].segment_id, "Token"),
+            (unit.text_items[1].segment_id, "costs are controllable"),
+        ],
+    )
+
+    caplog.set_level(logging.INFO)
     parsed = parse_pptx_response(response, units)
 
-    assert parsed[0].target_text == "translated hello\n1translated world"
+    assert parsed[0].target_text == "Token costs are controllable"
+    assert tuple(segment.target_text for segment in parsed[0].segments) == (
+        "Token",
+        " costs are controllable",
+    )
+    assert "pptx_segment_whitespace_reconciled" in caplog.text
+    assert unit.unit_id in caplog.text
+    assert "Token costs are controllable" not in caplog.text
+
+
+def test_response_parser_rejects_a_glued_english_boundary_in_aggregate(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "\u6210\u672c\u53ef\u63a7"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        "Tokencosts are controllable",
+        [
+            (unit.text_items[0].segment_id, "Token"),
+            (unit.text_items[1].segment_id, "costs are controllable"),
+        ],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "missing_target_boundary_space"
+
+
+@pytest.mark.parametrize(
+    ("source_parts", "target_parts", "aggregate"),
+    (
+        (("是否", "AI", "抢走订单"), ("is", "AI", "stealing"), "isAIstealing"),
+        (
+            ("支持", "DCVS", "大规模"),
+            ("supports", "DCVS", "large-scale"),
+            "supportsDCVSlarge-scale",
+        ),
+        (("市场易", "生成引擎优化"), ("MarketEase", "GEO"), "MarketEaseGEO"),
+        (
+            ("专有", "GEO", "智能"),
+            ("Proprietary", "GEO", "Intelligent"),
+            "ProprietaryGEOIntelligent",
+        ),
+    ),
+)
+def test_response_parser_rejects_glued_standalone_english_tokens(
+    tmp_path: Path,
+    source_parts: tuple[str, ...],
+    target_parts: tuple[str, ...],
+    aggregate: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml(*source_parts))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        aggregate,
+        [
+            (source_item.segment_id, target)
+            for source_item, target in zip(unit.text_items, target_parts, strict=True)
+        ],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "missing_target_boundary_space"
+
+
+def test_response_parser_rejects_glued_title_word_chain(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("平台", "四个", "关键", "优势"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        "Platform'sFourKeyAdvantages",
+        [
+            (unit.text_items[0].segment_id, "Platform's"),
+            (unit.text_items[1].segment_id, "Four"),
+            (unit.text_items[2].segment_id, "Key"),
+            (unit.text_items[3].segment_id, "Advantages"),
+        ],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "missing_target_boundary_space"
+
+
+@pytest.mark.parametrize(
+    ("source_parts", "target_parts", "aggregate"),
+    (
+        (("5.1", "倍"), ("5.1", "x"), "5.1x"),
+        (("KPI", "数量"), ("KPI", "s"), "KPIs"),
+        (("关键指标", "数量"), ("Key KPI", "s"), "Key KPIs"),
+        (("增长率", "倍数"), ("Growth 5.1", "x"), "Growth 5.1x"),
+        (("重量", "单位"), ("Weight 10", "kg"), "Weight 10kg"),
+        (("开放", "智能"), ("Open", "AI"), "OpenAI"),
+        (("演示", "文稿"), ("Power", "Point"), "PowerPoint"),
+        (("传输", "协议"), ("TCP", "/IP"), "TCP/IP"),
+    ),
+)
+def test_response_parser_allows_high_confidence_compounds_with_chinese_source_runs(
+    tmp_path: Path,
+    source_parts: tuple[str, str],
+    target_parts: tuple[str, str],
+    aggregate: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml(*source_parts))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        aggregate,
+        [
+            (source_item.segment_id, target)
+            for source_item, target in zip(unit.text_items, target_parts, strict=True)
+        ],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert parsed[0].target_text == aggregate
+    assert tuple(segment.target_text for segment in parsed[0].segments) == target_parts
+
+
+def test_response_parser_does_not_reconcile_control_characters_as_spaces(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "\u6210\u672c\u53ef\u63a7"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        "Token\tcosts are controllable",
+        [
+            (unit.text_items[0].segment_id, "Token"),
+            (unit.text_items[1].segment_id, "costs are controllable"),
+        ],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "target_mismatch"
+
+
+def test_response_parser_redistributes_existing_boundary_spaces(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "\u6210\u672c\u53ef\u63a7"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        "Token costs are controllable",
+        [
+            (unit.text_items[0].segment_id, "Token "),
+            (unit.text_items[1].segment_id, " costs are controllable"),
+        ],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert tuple(segment.target_text for segment in parsed[0].segments) == (
+        "Token",
+        " costs are controllable",
+    )
+
+
+def test_response_parser_reuses_explicit_whitespace_runs(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Every", "AI", " ", "recommendation", ""))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        "Every AI recommendation",
+        [
+            (unit.text_items[0].segment_id, "Every"),
+            (unit.text_items[1].segment_id, "AI"),
+            (unit.text_items[2].segment_id, " "),
+            (unit.text_items[3].segment_id, "recommendation"),
+            (unit.text_items[4].segment_id, ""),
+        ],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert tuple(segment.target_text for segment in parsed[0].segments) == (
+        "Every",
+        " AI",
+        " ",
+        "recommendation",
+        "",
+    )
+    assert parsed[0].target_text == "Every AI recommendation"
+
+
+@pytest.mark.parametrize(
+    ("parts", "aggregate"),
+    (
+        (("5.1", "x"), "5.1x"),
+        (("KPI", "s"), "KPIs"),
+        (("invis", "ible"), "invisible"),
+        (("Omni-", "C"), "Omni-C"),
+        (("example", ".com"), "example.com"),
+    ),
+)
+def test_response_parser_preserves_legitimate_boundaries_without_spaces(
+    tmp_path: Path,
+    parts: tuple[str, str],
+    aggregate: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml(*parts))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        aggregate,
+        [
+            (source_item.segment_id, part)
+            for source_item, part in zip(unit.text_items, parts, strict=True)
+        ],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert parsed[0].target_text == aggregate
+    assert tuple(segment.target_text for segment in parsed[0].segments) == parts
+
+
+@pytest.mark.parametrize("separator", ("\u00a0", "\u202f"))
+def test_response_parser_preserves_unicode_boundary_spaces(
+    tmp_path: Path,
+    separator: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "\u6210\u672c"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    response = _response_json(
+        unit.unit_id,
+        f"Token{separator}costs",
+        [
+            (unit.text_items[0].segment_id, "Token"),
+            (unit.text_items[1].segment_id, "costs"),
+        ],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert parsed[0].segments[1].target_text == f"{separator}costs"
+    assert parsed[0].target_text == f"Token{separator}costs"
+
+
+def test_response_parser_rejects_an_adjacent_long_duplicate_translation(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("\u5e73\u53f0\u4e3a\u4f01\u4e1a\u9500\u552e\u56e2\u961f\u63d0\u4f9b\u5b9e\u65f6\u6d1e\u5bdf"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    sentence = "The platform provides real-time insights for enterprise sales teams."
+    response = _response_json(
+        unit.unit_id,
+        f"{sentence} {sentence}",
+        [(unit.text_items[0].segment_id, f"{sentence} {sentence}")],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "duplicate_target_span"
+    assert raised.value.unit_id == unit.unit_id
+
+
+def test_response_parser_allows_short_emphatic_repetition(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("\u975e\u5e38\u91cd\u8981"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    target = "This is very very important."
+    response = _response_json(
+        unit.unit_id,
+        target,
+        [(unit.text_items[0].segment_id, target)],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert parsed[0].target_text == target
+
+
+def test_response_parser_allows_long_repetition_present_in_source(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    source_phrase = "\u5e73\u53f0\u4e3a\u4f01\u4e1a\u9500\u552e\u56e2\u961f\u63d0\u4f9b\u5b9e\u65f6\u6d1e\u5bdf\u548c\u4f18\u5316\u5efa\u8bae"
+    _write_minimal_pptx(source, _simple_slide_xml(source_phrase + source_phrase))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    sentence = "The platform provides real-time insights and optimization advice for enterprise sales teams."
+    target = f"{sentence} {sentence}"
+    response = _response_json(
+        unit.unit_id,
+        target,
+        [(unit.text_items[0].segment_id, target)],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert parsed[0].target_text == target
+
+
+def test_unrelated_source_repetition_does_not_exempt_target_duplicate(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    repeated_source = "平台为企业销售团队提供实时洞察和优化建议"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml(repeated_source + repeated_source, "补充说明"),
+    )
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    sentence = "The unrelated target sentence is duplicated without source justification."
+    duplicated = f"{sentence} {sentence}"
+    response = _response_json(
+        unit.unit_id,
+        f"Background: {duplicated}",
+        [
+            (unit.text_items[0].segment_id, "Background: "),
+            (unit.text_items[1].segment_id, duplicated),
+        ],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "duplicate_target_span"
+
+
+def test_partial_source_repetition_does_not_exempt_whole_target_duplicate(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    repeated_source = "平台为企业销售团队提供实时洞察和优化建议"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml(repeated_source + repeated_source + "补充说明"),
+    )
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    sentence = "The unrelated target sentence is duplicated without source justification."
+    duplicated = f"{sentence} {sentence}"
+    response = _response_json(
+        unit.unit_id,
+        duplicated,
+        [(unit.text_items[0].segment_id, duplicated)],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "duplicate_target_span"
+
+
+def test_cross_segment_target_duplicate_is_not_exempted_by_other_source_repeat(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    repeated_source = "平台为企业销售团队提供实时洞察和优化建议"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml(repeated_source + repeated_source, "补充说明"),
+    )
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )
+    unit = units[0]
+    sentence = "The target sentence spans segment boundaries and repeats unexpectedly."
+    response = _response_json(
+        unit.unit_id,
+        f"{sentence} {sentence}",
+        [
+            (unit.text_items[0].segment_id, sentence),
+            (unit.text_items[1].segment_id, f" {sentence}"),
+        ],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "duplicate_target_span"
+
+
+def test_adjacent_long_duplicate_translation_is_repaired_before_writeback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("\u5e73\u53f0\u4e3a\u4f01\u4e1a\u9500\u552e\u56e2\u961f\u63d0\u4f9b\u5b9e\u65f6\u6d1e\u5bdf"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    sentence = "The platform provides real-time insights for enterprise sales teams."
+    duplicated = f"{sentence} {sentence}"
+    provider = ContractProvider(
+        responses=[
+            _response_json(
+                unit.unit_id,
+                duplicated,
+                [(unit.text_items[0].segment_id, duplicated)],
+            ),
+            _response_json(
+                unit.unit_id,
+                sentence,
+                [(unit.text_items[0].segment_id, sentence)],
+            ),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    repair_payload = json.loads(provider.requests[1].text)
+    assert repair_payload["validation_error"]["code"] == "duplicate_target_span"
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert "".join(node.text or "" for node in root.findall(".//a:r/a:t", NS)) == sentence
+
+
+def test_non_whitespace_target_mismatch_is_repaired_before_writeback(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "\u6210\u672c\u53ef\u63a7"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    provider = ContractProvider(
+        responses=[
+            _response_json(
+                unit.unit_id,
+                "Token costs are controllable",
+                [
+                    (unit.text_items[0].segment_id, "Token"),
+                    (unit.text_items[1].segment_id, "expenses are controllable"),
+                ],
+            ),
+            _response_json(
+                unit.unit_id,
+                "Token costs are controllable",
+                [
+                    (unit.text_items[0].segment_id, "Token"),
+                    (unit.text_items[1].segment_id, " costs are controllable"),
+                ],
+            ),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    repair_payload = json.loads(provider.requests[1].text)
+    assert repair_payload["validation_error"]["code"] == "target_mismatch"
+    assert [
+        item["segment_id"]
+        for item in repair_payload["response_requirements"]["segments"]
+    ] == [item.segment_id for item in unit.text_items]
+
+
+@pytest.mark.parametrize("semantic_qa_mode", ("off", "observe", "enforce"))
+def test_glued_aggregate_target_is_repaired_before_writeback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    semantic_qa_mode: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "成本可控"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    provider = ContractProvider(
+        responses=[
+            _response_json(
+                unit.unit_id,
+                "Tokencosts are controllable",
+                [
+                    (unit.text_items[0].segment_id, "Token"),
+                    (unit.text_items[1].segment_id, "costs are controllable"),
+                ],
+            ),
+            _response_json(
+                unit.unit_id,
+                "Token costs are controllable",
+                [
+                    (unit.text_items[0].segment_id, "Token"),
+                    (unit.text_items[1].segment_id, " costs are controllable"),
+                ],
+            ),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", semantic_qa_mode)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    repair_payload = json.loads(provider.requests[1].text)
+    assert repair_payload["validation_error"]["code"] == "missing_target_boundary_space"
+    assert [
+        item["segment_id"]
+        for item in repair_payload["response_requirements"]["segments"]
+    ] == [item.segment_id for item in unit.text_items]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert "".join(node.text or "" for node in root.findall(".//a:r/a:t", NS)) == (
+        "Token costs are controllable"
+    )
+
+
+@pytest.mark.parametrize(
+    "write_mode",
+    ("translation_only", "paragraph_up", "paragraph_down"),
+)
+def test_segment_boundary_whitespace_round_trips_through_pptx_writeback(
+    tmp_path: Path,
+    write_mode: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "\u6210\u672c\u53ef\u63a7"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    provider = ContractProvider(
+        responses=[
+            _response_json(
+                unit.unit_id,
+                "Token costs are controllable",
+                [
+                    (unit.text_items[0].segment_id, "Token"),
+                    (unit.text_items[1].segment_id, "costs are controllable"),
+                ],
+            ),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation=write_mode,
+        progress_callback=None,
+    )
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert len(provider.requests) == 1
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    written_texts = [node.text or "" for node in root.findall(".//a:r/a:t", NS)]
+    if write_mode == "translation_only":
+        translated_texts = written_texts
+    elif write_mode == "paragraph_up":
+        translated_texts = written_texts[-2:]
+    else:
+        translated_texts = written_texts[:2]
+    assert translated_texts == ["Token", " costs are controllable"]
+    assert "".join(translated_texts) == "Token costs are controllable"
+
+
+def test_structured_writer_preserves_whitespace_only_translation_changes(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token ", "costs"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="English",
+    )[0]
+    translations = (
+        PptxUnitTranslation(
+            unit_id=unit.unit_id,
+            target_text="Token  costs",
+            segments=(
+                PptxSegmentTranslation(unit.text_items[0].segment_id, "Token"),
+                PptxSegmentTranslation(unit.text_items[1].segment_id, "  costs"),
+            ),
+        ),
+    )
+
+    write_structured_translated_pptx(
+        source,
+        output,
+        translations,
+        "translation_only",
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert "".join(node.text or "" for node in root.findall(".//a:r/a:t", NS)) == "Token  costs"
+
+
+def test_structured_writer_rejects_glued_translation_that_bypasses_parser(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Token", "成本可控"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    translation = PptxUnitTranslation(
+        unit_id=unit.unit_id,
+        target_text="Tokencosts are controllable",
+        segments=(
+            PptxSegmentTranslation(unit.text_items[0].segment_id, "Token"),
+            PptxSegmentTranslation(
+                unit.text_items[1].segment_id,
+                "costs are controllable",
+            ),
+        ),
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        write_structured_translated_pptx(
+            source,
+            output,
+            (translation,),
+            "translation_only",
+        )
+
+    assert raised.value.code == "missing_target_boundary_space"
+    assert not output.exists()
 
 
 def test_qwen_v2_prompt_uses_ids_and_never_teaches_the_legacy_sentinel() -> None:
@@ -256,6 +1050,8 @@ def test_qwen_v2_prompt_uses_ids_and_never_teaches_the_legacy_sentinel() -> None
     system = transport.calls[0][1]
     assert "unit_id" in system and "segment_id" in system
     assert "source_stream" in system and "protected_field" in system
+    assert "Concatenating segment target_text values" in system
+    assert "including every whitespace character and punctuation mark" in system
     assert "[block]" not in system.casefold()
     assert "[块]" not in system
 
@@ -642,7 +1438,7 @@ def test_translation_only_writes_repeated_full_sentence_translation_only_once(
     assert root.findall(".//a:br", NS) == []
 
 
-def test_bilingual_writer_does_not_append_normalized_source_equivalent_target(
+def test_bilingual_writer_preserves_exact_source_different_target(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "source.pptx"
@@ -668,12 +1464,15 @@ def test_bilingual_writer_does_not_append_normalized_source_equivalent_target(
 
     with zipfile.ZipFile(output) as archive:
         root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
-    assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == ["Milk 72%"]
-    assert root.findall(".//a:br", NS) == []
+    assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == [
+        "Milk 72%",
+        " milk\u300072% ",
+    ]
+    assert len(root.findall(".//a:br", NS)) == 1
     assert root.find(".//a:bodyPr/a:normAutofit", NS) is None
 
 
-def test_translation_only_preserves_slide_xml_for_normalized_source_equivalent_target(
+def test_translation_only_writes_exact_source_different_target(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "source.pptx"
@@ -702,9 +1501,15 @@ def test_translation_only_preserves_slide_xml_for_normalized_source_equivalent_t
     )
 
     with zipfile.ZipFile(source) as source_archive, zipfile.ZipFile(output) as output_archive:
-        assert output_archive.read("ppt/slides/slide1.xml") == source_archive.read(
+        assert output_archive.read("ppt/slides/slide1.xml") != source_archive.read(
             "ppt/slides/slide1.xml",
         )
+        root = ElementTree.fromstring(output_archive.read("ppt/slides/slide1.xml"))
+    assert [node.text or "" for node in root.findall(".//a:r/a:t", NS)] == [
+        " hello",
+        "WORLD ",
+    ]
+    assert root.find(".//a:fld/a:t", NS).text == "1"
 
 
 def test_structured_writer_only_changes_autofit_for_the_modified_text_body(
@@ -1885,6 +2690,124 @@ def test_single_unit_segment_count_failure_recovers_from_aggregate_target(
         assert written_texts.count(target) == 1
         for source_text in ("Clinical ", "nutrition ", "outlook"):
             assert written_texts.count(source_text) == 1
+
+
+@pytest.mark.parametrize("semantic_qa_mode", ("off", "observe", "enforce"))
+@pytest.mark.parametrize(
+    ("source_parts", "glued_target"),
+    (
+        (("是否", "AI", "抢走订单"), "isAIstealing"),
+        (("Token", "成本可控"), "Tokencosts are controllable"),
+    ),
+)
+def test_segment_count_recovery_rejects_glued_english_aggregate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    semantic_qa_mode: str,
+    source_parts: tuple[str, ...],
+    glued_target: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml(*source_parts))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    wrong_segment_count = _response_json(
+        unit.unit_id,
+        glued_target,
+        [(unit.text_items[0].segment_id, glued_target)],
+    )
+    provider = ContractProvider(
+        responses=[wrong_segment_count, wrong_segment_count],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", semantic_qa_mode)
+
+    with pytest.raises(PptxContractError) as raised:
+        translate_pptx_with_xml(
+            request,
+            provider_registry=ProviderRegistry((provider,)),
+        )
+
+    assert raised.value.code == "missing_target_boundary_space"
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("source_parts", "target"),
+    (
+        (("Token", "化过程"), "Tokenization is controllable"),
+        (("KPI", "数量可控"), "KPIs are controllable"),
+        (("Open", "人工智能平台"), "OpenAI platform"),
+    ),
+)
+def test_segment_count_recovery_preserves_safe_english_compounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_parts: tuple[str, ...],
+    target: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml(*source_parts))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    wrong_segment_count = _response_json(
+        unit.unit_id,
+        target,
+        [(unit.text_items[0].segment_id, target)],
+    )
+    provider = ContractProvider(
+        responses=[wrong_segment_count, wrong_segment_count],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert "".join(node.text or "" for node in root.findall(".//a:t", NS)) == target
 
 
 def test_segment_count_recovery_remains_fail_closed_for_control_stream(

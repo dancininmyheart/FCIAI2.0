@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import unicodedata
 from typing import Final, assert_never
 
 from app.translation.pptx_contract_types import (
@@ -19,9 +21,13 @@ from app.translation.pptx_contract_validation import (
     reserved_marker_counts,
     validate_pptx_translations,
     validate_request_units,
+    validate_unit_translation_boundaries,
     validate_unit_translation_quality,
     validate_unit_translation_structure,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION: Final = 2
@@ -82,16 +88,39 @@ def parse_pptx_response_structure(
         unit_id = _string(item["unit_id"], unit.unit_id)
         if unit_id != unit.unit_id:
             raise PptxContractError("unit_order", "unit ID or order differs from request", unit.unit_id)
-        # The aggregate field is retained for provider compatibility, but the
-        # segment stream is the source of truth because it is what gets written.
-        _string(item["target_text"], unit.unit_id)
+        aggregate_target = _string(item["target_text"], unit.unit_id)
         segments = _parse_segments(item["segments"], unit)
+        reconciled_segments = _reconcile_boundary_whitespace(
+            unit,
+            aggregate_target,
+            segments,
+        )
+        if reconciled_segments is None:
+            raise PptxContractError(
+                "target_mismatch",
+                "target text differs from translated stream",
+                unit.unit_id,
+            )
+        if reconciled_segments != segments:
+            logger.info(
+                "pptx_segment_whitespace_reconciled unit_id=%s segments=%d changed_segments=%d whitespace_delta=%d",
+                unit.unit_id,
+                len(segments),
+                sum(
+                    source.target_text != target.target_text
+                    for source, target in zip(segments, reconciled_segments, strict=True)
+                ),
+                _boundary_whitespace_count(reconciled_segments)
+                - _boundary_whitespace_count(segments),
+            )
+        segments = reconciled_segments
         translation = PptxUnitTranslation(
             unit_id,
-            reconstruct_target(unit, segments),
+            aggregate_target,
             segments,
         )
         validate_unit_translation_structure(unit, translation)
+        validate_unit_translation_boundaries(unit, translation)
         translations.append(translation)
     return tuple(translations)
 
@@ -155,6 +184,7 @@ def recover_single_unit_segment_count_response(
         segments,
     )
     validate_unit_translation_structure(unit, translation)
+    validate_unit_translation_boundaries(unit, translation)
     return translation, len(actual_segments)
 
 
@@ -219,6 +249,124 @@ def _parse_segments(raw: JsonValue, unit: PptxRequestUnit) -> tuple[PptxSegmentT
             raise PptxContractError("segment_order", "segment ID or order differs from request", unit.unit_id)
         parsed.append(PptxSegmentTranslation(segment_id, _string(item["target_text"], unit.unit_id)))
     return tuple(parsed)
+
+
+def _reconcile_boundary_whitespace(
+    unit: PptxRequestUnit,
+    aggregate_target: str,
+    segments: tuple[PptxSegmentTranslation, ...],
+) -> tuple[PptxSegmentTranslation, ...] | None:
+    if reconstruct_target(unit, segments) == aggregate_target:
+        return segments
+    if any(not isinstance(item, PptxTextStreamItem) for item in unit.source_stream):
+        return None
+
+    indexed_bodies: list[tuple[int, str]] = []
+    for index, segment in enumerate(segments):
+        body = _boundary_body(segment.target_text)
+        if body:
+            indexed_bodies.append((index, body))
+    if not indexed_bodies:
+        return None
+
+    cursor = 0
+    prefix_end = _consume_inline_whitespace(aggregate_target, cursor)
+    first_index, first_body = indexed_bodies[0]
+    if not aggregate_target.startswith(first_body, prefix_end):
+        return None
+    reconciled_texts = ["" for _ in segments]
+    reconciled_texts[first_index] = first_body
+    _assign_boundary_whitespace(
+        reconciled_texts,
+        segments,
+        range(first_index),
+        aggregate_target[:prefix_end],
+        fallback_index=first_index,
+        prepend=True,
+    )
+    cursor = prefix_end + len(first_body)
+
+    previous_index = first_index
+    for index, body in indexed_bodies[1:]:
+        boundary = _consume_inline_whitespace(aggregate_target, cursor)
+        if not aggregate_target.startswith(body, boundary):
+            return None
+        reconciled_texts[index] = body
+        _assign_boundary_whitespace(
+            reconciled_texts,
+            segments,
+            range(previous_index + 1, index),
+            aggregate_target[cursor:boundary],
+            fallback_index=index,
+            prepend=True,
+        )
+        cursor = boundary + len(body)
+        previous_index = index
+
+    suffix_end = _consume_inline_whitespace(aggregate_target, cursor)
+    if suffix_end != len(aggregate_target):
+        return None
+    _assign_boundary_whitespace(
+        reconciled_texts,
+        segments,
+        range(previous_index + 1, len(segments)),
+        aggregate_target[cursor:suffix_end],
+        fallback_index=previous_index,
+        prepend=False,
+    )
+    reconciled = tuple(
+        PptxSegmentTranslation(segment.segment_id, text)
+        for segment, text in zip(segments, reconciled_texts, strict=True)
+    )
+    if reconstruct_target(unit, reconciled) != aggregate_target:
+        return None
+    return reconciled
+
+
+def _assign_boundary_whitespace(
+    reconciled_texts: list[str],
+    segments: tuple[PptxSegmentTranslation, ...],
+    candidate_indices: range,
+    whitespace: str,
+    *,
+    fallback_index: int,
+    prepend: bool,
+) -> None:
+    candidates = tuple(candidate_indices)
+    owner = next(
+        (index for index in candidates if segments[index].target_text),
+        candidates[0] if candidates else fallback_index,
+    )
+    if prepend:
+        reconciled_texts[owner] = whitespace + reconciled_texts[owner]
+    else:
+        reconciled_texts[owner] += whitespace
+
+
+def _boundary_body(text: str) -> str:
+    start = _consume_inline_whitespace(text, 0)
+    end = len(text)
+    while end > start and _is_inline_whitespace(text[end - 1]):
+        end -= 1
+    return text[start:end]
+
+
+def _consume_inline_whitespace(text: str, start: int) -> int:
+    cursor = start
+    while cursor < len(text) and _is_inline_whitespace(text[cursor]):
+        cursor += 1
+    return cursor
+
+
+def _is_inline_whitespace(character: str) -> bool:
+    return unicodedata.category(character) == "Zs"
+
+
+def _boundary_whitespace_count(segments: tuple[PptxSegmentTranslation, ...]) -> int:
+    return sum(
+        sum(_is_inline_whitespace(character) for character in segment.target_text)
+        for segment in segments
+    )
 
 
 def _parse_json_object(raw: str) -> dict[str, JsonValue]:

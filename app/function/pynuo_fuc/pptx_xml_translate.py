@@ -499,7 +499,15 @@ def _segment_response_requirements(
     source_payload: object,
     error: PptxContractError,
 ) -> dict[str, object] | None:
-    if error.code != "segment_count" or not isinstance(source_payload, dict):
+    if (
+        error.code not in {
+            "segment_count",
+            "target_mismatch",
+            "duplicate_target_span",
+            "missing_target_boundary_space",
+        }
+        or not isinstance(source_payload, dict)
+    ):
         return None
     units = source_payload.get("units")
     if not isinstance(units, list):

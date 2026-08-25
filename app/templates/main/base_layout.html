@@ -31,7 +31,7 @@
             margin: 0;
             padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: var(--brand-milk-white);
+            background-color: var(--legacy-page-bg);
             display: flex;
             min-height: 100vh;
             overflow-x: hidden;
@@ -43,7 +43,7 @@
             width: 17vw; /* 使用视口宽度的17% */
             min-width: 200px; /* 最小宽度保证可读性 */
             max-width: 280px; /* 最大宽度避免过宽 */
-            background: var(--brand-milk-white);
+            background: var(--legacy-card-bg);
             box-shadow: 2px 0 8px rgba(0,0,0,0.1);
             height: 100vh;
             position: fixed;
@@ -168,7 +168,7 @@
         .container {
             margin-left: 17vw; /* 与侧边栏宽度一致 */
             width: 83vw; /* 占据剩余的83%视口宽度 */
-            background-color: var(--brand-milk-white);
+            background-color: var(--legacy-page-bg);
             min-height: 100vh;
             padding: 0;
             box-sizing: border-box;
@@ -183,7 +183,7 @@
         }
 
         .toast {
-            background: var(--brand-milk-white);
+            background: var(--legacy-card-bg);
             border-radius: 0.6vw;
             padding: 1vw 1.4vw;
             margin-bottom: 0.7vw;
@@ -273,7 +273,7 @@
     {% block styles %}{% endblock %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/experience.css') }}">
 </head>
-<body>
+<body class="legacy-layout">
     <a class="skip-link" href="#main-content">{% if session.get('language') == 'en' %}Skip to main content{% else %}跳到主要内容{% endif %}</a>
 
     <header class="mobile-app-bar">

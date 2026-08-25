@@ -6,6 +6,18 @@
     --brand-sky-blue-deep: #005f99;
     --brand-cool-gray: #6e6f72;
     --brand-readable-gray: #3f4043;
+
+    /* Customer-approved legacy desktop layout tokens. */
+    --legacy-page-bg: #f8f9fa;
+    --legacy-card-bg: #ffffff;
+    --legacy-primary: #0094d9;
+    --legacy-primary-hover: #0082be;
+    --legacy-text: #3f4043;
+    --legacy-muted: #6e6f72;
+    --legacy-upload-icon: #6c757d;
+    --legacy-card-radius: 12px;
+    --legacy-control-radius: 6px;
+    --legacy-action-size: clamp(24px, 2vw, 32px);
 }
 
 /* 品牌Logo样式 */

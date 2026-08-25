@@ -1,21 +1,21 @@
 :root {
-    --ux-page: var(--brand-milk-white);
-    --ux-panel: var(--brand-milk-white);
+    --ux-page: var(--legacy-page-bg);
+    --ux-panel: var(--legacy-card-bg);
     --ux-subtle: rgba(110, 111, 114, 0.08);
     --ux-border: rgba(110, 111, 114, 0.24);
-    --ux-text: var(--brand-readable-gray);
-    --ux-muted: var(--brand-cool-gray);
-    --ux-primary: var(--brand-sky-blue);
-    --ux-primary-hover: var(--brand-sky-blue);
-    --ux-brand: var(--brand-sky-blue);
+    --ux-text: var(--legacy-text);
+    --ux-muted: var(--legacy-muted);
+    --ux-primary: var(--legacy-primary);
+    --ux-primary-hover: var(--legacy-primary-hover);
+    --ux-brand: var(--legacy-primary);
     --ux-success: #18794e;
     --ux-warning: #9a6700;
     --ux-danger: #b42318;
     --ux-focus: var(--brand-sky-blue);
     --ux-sidebar-width: 240px;
     --ux-mobile-header-height: 56px;
-    --ux-radius-panel: 8px;
-    --ux-radius-control: 6px;
+    --ux-radius-panel: var(--legacy-card-radius);
+    --ux-radius-control: var(--legacy-control-radius);
     --ux-shadow-overlay: 0 16px 40px rgba(63, 64, 67, 0.2);
     --ux-font-ui: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
     --ux-font-mono: "Cascadia Mono", Consolas, monospace;
@@ -114,11 +114,11 @@ textarea {
     align-items: center;
     gap: 10px;
     margin-top: 16px;
-    padding: 14px 16px;
+    padding: 0;
     color: var(--ux-success);
-    background: #e9f7ef;
-    border: 1px solid #a6d8bc;
-    border-radius: var(--ux-radius-panel);
+    background: transparent;
+    border: 0;
+    border-radius: 0;
 }
 
 .translation-result > i,
@@ -180,8 +180,7 @@ textarea {
 }
 
 .history-table {
-    min-width: 620px;
-    table-layout: fixed !important;
+    width: 100%;
 }
 
 .history-file-name {
@@ -195,22 +194,6 @@ textarea {
     display: none;
 }
 
-.history-table th:last-child,
-.history-table td:last-child {
-    position: sticky;
-    right: 0;
-    z-index: 2;
-    width: 112px !important;
-    min-width: 112px;
-    background: var(--ux-panel) !important;
-    box-shadow: -1px 0 var(--ux-border), -10px 0 12px -12px rgba(63, 64, 67, 0.35);
-}
-
-.history-table th:last-child {
-    z-index: 3;
-    background: #f8f9fa !important;
-}
-
 .history-actions {
     display: flex;
     align-items: center;
@@ -220,7 +203,7 @@ textarea {
 }
 
 .history-actions .action-btn {
-    flex: 0 0 40px;
+    flex: 0 0 auto;
     margin: 0 !important;
 }
 
@@ -243,9 +226,9 @@ textarea {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
+    width: var(--legacy-action-size);
+    min-width: 24px;
+    height: var(--legacy-action-size);
 }
 
 .action-btn.download {
@@ -329,6 +312,49 @@ textarea {
 
 .translation-log {
     font-family: var(--ux-font-mono) !important;
+}
+
+/*
+ * Desktop keeps the customer-provided legacy hierarchy. New upload hints and
+ * mobile affordances remain in the DOM for accessibility, but do not add a new
+ * visual tier to the established desktop cards.
+ */
+@media (min-width: 901px) {
+    .legacy-layout #dropZone .upload-zone-icon,
+    .legacy-layout .upload-hint {
+        display: none;
+    }
+
+    .legacy-layout #pdfUploadZone .upload-zone-icon {
+        display: block;
+        margin-bottom: 15px;
+        color: var(--legacy-upload-icon);
+        font-size: 48px;
+        line-height: 1.5;
+    }
+
+    .legacy-layout .translation-result {
+        margin-top: 20px;
+    }
+
+    .legacy-layout td.history-actions {
+        display: table-cell;
+        min-width: 0;
+        text-align: center;
+        white-space: nowrap;
+    }
+
+    .legacy-layout .ppt-history-card .refresh-btn-header {
+        display: none;
+    }
+
+    .legacy-layout .legacy-refresh-text {
+        display: inline-flex;
+        width: auto;
+        height: auto;
+        padding: 6px 12px;
+        border-radius: var(--legacy-control-radius);
+    }
 }
 
 @media (max-width: 1100px) and (min-width: 901px) {
@@ -482,6 +508,33 @@ textarea {
         right: 16px !important;
         left: 16px;
         width: auto;
+    }
+
+    .legacy-refresh-text {
+        display: none !important;
+    }
+}
+
+@media (max-width: 900px) and (min-width: 601px) {
+    .history-table {
+        min-width: 620px;
+        table-layout: fixed !important;
+    }
+
+    .history-table th:last-child,
+    .history-table td:last-child {
+        position: sticky;
+        right: 0;
+        z-index: 2;
+        width: 112px !important;
+        min-width: 112px;
+        background: var(--ux-panel) !important;
+        box-shadow: -1px 0 var(--ux-border), -10px 0 12px -12px rgba(63, 64, 67, 0.35);
+    }
+
+    .history-table th:last-child {
+        z-index: 3;
+        background: var(--legacy-page-bg) !important;
     }
 }
 

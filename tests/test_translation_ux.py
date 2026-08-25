@@ -58,12 +58,12 @@ def test_frontend_theme_uses_the_approved_brand_palette() -> None:
     assert "--text-color: var(--brand-readable-gray);" in base
     assert "--bg-color: var(--brand-milk-white);" in base
 
-    assert "--ux-page: var(--brand-milk-white);" in experience
-    assert "--ux-panel: var(--brand-milk-white);" in experience
-    assert "--ux-text: var(--brand-readable-gray);" in experience
-    assert "--ux-muted: var(--brand-cool-gray);" in experience
-    assert "--ux-primary: var(--brand-sky-blue);" in experience
-    assert "--ux-brand: var(--brand-sky-blue);" in experience
+    assert "--ux-page: var(--legacy-page-bg);" in experience
+    assert "--ux-panel: var(--legacy-card-bg);" in experience
+    assert "--ux-text: var(--legacy-text);" in experience
+    assert "--ux-muted: var(--legacy-muted);" in experience
+    assert "--ux-primary: var(--legacy-primary);" in experience
+    assert "--ux-brand: var(--legacy-primary);" in experience
 
 
 def test_brand_stylesheets_have_a_deterministic_cascade_order() -> None:
@@ -103,6 +103,19 @@ def test_translation_uploads_and_history_expose_accessible_states() -> None:
     assert 'class="table-responsive" tabindex="0" role="region"' in pdf
     assert 'class="history-loading-state"' in pdf
     assert 'id="pdfResultContainer"' in pdf
+
+
+def test_pdf_desktop_retains_legacy_upload_and_refresh_affordances() -> None:
+    pdf = _read(PDF_TEMPLATE)
+    experience = _read(EXPERIENCE_CSS)
+    pdf_icon_rule = experience.split(
+        ".legacy-layout #pdfUploadZone .upload-zone-icon {", 1
+    )[1].split("}", 1)[0]
+
+    assert 'class="bi bi-cloud-upload upload-zone-icon"' in pdf
+    assert 'id="refreshHistoryBtnText" class="upload-btn legacy-refresh-text"' in pdf
+    assert "font-size: 48px;" in pdf_icon_rule
+    assert "line-height: 1.5;" in pdf_icon_rule
 
 
 def test_translation_feedback_does_not_use_blocking_alerts() -> None:

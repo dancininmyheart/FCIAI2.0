@@ -765,7 +765,7 @@
             <h2><i class="bi bi-file-pdf"></i> {% if session.get('language') == 'en' %}PDF Translation{% else %}PDF翻译{% endif %}</h2>
             <div class="upload-zone" id="pdfUploadZone" role="button" tabindex="0" aria-controls="pdfFileInput" aria-describedby="pdfUploadHint" aria-busy="false">
                 <div class="upload-zone-content pdf-upload-default">
-                    <i class="bi bi-cloud-arrow-up upload-zone-icon" aria-hidden="true"></i>
+                    <i class="bi bi-cloud-upload upload-zone-icon" aria-hidden="true"></i>
                     <div class="upload-text">
                         {% if session.get('language') == 'en' %}
                             Drag and drop PDF files here or
@@ -847,11 +847,14 @@
         </div>
 
         <!-- 历史记录卡片 -->
-        <div class="history-card">
+        <div class="history-card pdf-history-card">
             <div class="history-header">
                 <h3><i class="bi bi-clock-history" aria-hidden="true"></i> {% if session.get('language') == 'en' %}Translation History{% else %}翻译历史{% endif %}</h3>
                 <button type="button" class="refresh-btn-header" id="refreshHistoryBtn" title="{% if session.get('language') == 'en' %}Refresh history{% else %}刷新历史记录{% endif %}" aria-label="{% if session.get('language') == 'en' %}Refresh history{% else %}刷新历史记录{% endif %}">
                     <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                </button>
+                <button type="button" id="refreshHistoryBtnText" class="upload-btn legacy-refresh-text">
+                    {% if session.get('language') == 'en' %}Refresh{% else %}刷新{% endif %}
                 </button>
             </div>
             <div class="table-responsive" tabindex="0" role="region" aria-label="{% if session.get('language') == 'en' %}PDF translation history table{% else %}PDF 翻译历史表格{% endif %}">
@@ -965,7 +968,9 @@ function formatShanghaiTime(input) {
         
         // 刷新历史记录按钮
         const refreshBtnHeader = document.getElementById('refreshHistoryBtn');
+        const refreshBtnText = document.getElementById('refreshHistoryBtnText');
         if (refreshBtnHeader) refreshBtnHeader.addEventListener('click', loadHistory);
+        if (refreshBtnText) refreshBtnText.addEventListener('click', loadHistory);
     }
 
     function setPDFUploadBusy(isBusy) {
@@ -1336,9 +1341,14 @@ function formatShanghaiTime(input) {
     // 加载历史记录
     function loadHistory() {
         const refreshBtn = document.getElementById('refreshHistoryBtn');
+        const refreshBtnText = document.getElementById('refreshHistoryBtnText');
         const tbody = document.getElementById('historyTableBody');
         if (refreshBtn) refreshBtn.classList.add('rotating');
         if (refreshBtn) refreshBtn.setAttribute('aria-busy', 'true');
+        if (refreshBtnText) {
+            refreshBtnText.disabled = true;
+            refreshBtnText.setAttribute('aria-busy', 'true');
+        }
         tbody.innerHTML = `<tr class="history-loading-state"><td colspan="5">${currentLanguage === 'en' ? 'Loading history...' : '正在加载历史记录...'}</td></tr>`;
         
         fetch('/api/pdf_translation_history')
@@ -1397,6 +1407,10 @@ function formatShanghaiTime(input) {
             .finally(() => {
                 if (refreshBtn) refreshBtn.classList.remove('rotating');
                 if (refreshBtn) refreshBtn.removeAttribute('aria-busy');
+                if (refreshBtnText) {
+                    refreshBtnText.disabled = false;
+                    refreshBtnText.removeAttribute('aria-busy');
+                }
             });
     }
     

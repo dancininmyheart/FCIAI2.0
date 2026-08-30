@@ -188,6 +188,65 @@ def recover_single_unit_segment_count_response(
     return translation, len(actual_segments)
 
 
+def recover_single_unit_target_mismatch_response(
+    raw: str,
+    unit: PptxRequestUnit,
+) -> PptxUnitTranslation | None:
+    """Recover a fluent aggregate when translated run order cannot match it.
+
+    Cross-language word-order changes can make a natural aggregate translation
+    impossible to distribute across the source runs in their original order.
+    Recovery is therefore restricted to streams made exclusively from ordinary
+    text runs.  The complete aggregate is assigned to the longest source run so
+    line breaks and protected fields are never discarded or reordered.
+    """
+    if not unit.text_items or any(
+        not isinstance(item, PptxTextStreamItem)
+        for item in unit.source_stream
+    ):
+        return None
+
+    payload = _parse_json_object(_strip_json_fence(raw))
+    _require_exact_fields(payload, _ROOT_FIELDS)
+    if _integer(payload["provider_contract_schema_version"]) != PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION:
+        raise PptxContractError("schema_version", "unsupported provider contract version")
+    if _string(payload["document_kind"]) != PPTX_DOCUMENT_KIND:
+        raise PptxContractError("document_kind", "unexpected document kind")
+    items = _array(payload["translations"])
+    if len(items) != 1:
+        return None
+    item = _mapping(items[0], unit.unit_id)
+    _require_exact_fields(item, _TRANSLATION_FIELDS, unit.unit_id)
+    if _string(item["unit_id"], unit.unit_id) != unit.unit_id:
+        return None
+    target_text = _string(item["target_text"], unit.unit_id)
+    if not target_text.strip():
+        return None
+    candidate_segments = _parse_segments(item["segments"], unit)
+    if reconstruct_target(unit, candidate_segments) == target_text:
+        return None
+
+    anchor_index = max(
+        range(len(unit.text_items)),
+        key=lambda index: len(unit.text_items[index].source_text),
+    )
+    segments = tuple(
+        PptxSegmentTranslation(
+            source.segment_id,
+            target_text if index == anchor_index else "",
+        )
+        for index, source in enumerate(unit.text_items)
+    )
+    translation = PptxUnitTranslation(
+        unit.unit_id,
+        target_text,
+        segments,
+    )
+    validate_unit_translation_structure(unit, translation)
+    validate_unit_translation_boundaries(unit, translation)
+    return translation
+
+
 def _serialize_unit(unit: PptxRequestUnit) -> dict[str, JsonValue]:
     return {
         "unit_id": unit.unit_id,
@@ -446,6 +505,7 @@ __all__ = [
     "parse_pptx_response",
     "parse_pptx_response_structure",
     "recover_single_unit_segment_count_response",
+    "recover_single_unit_target_mismatch_response",
     "reconstruct_target",
     "reserved_marker_counts",
     "serialize_pptx_request",

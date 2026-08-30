@@ -839,6 +839,130 @@ def test_non_whitespace_target_mismatch_is_repaired_before_writeback(tmp_path: P
     ] == [item.segment_id for item in unit.text_items]
 
 
+def test_repeated_target_mismatch_recovers_natural_aggregate_to_longest_run(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml("B2B", "企业", "GEO", "实操流程介绍"),
+    )
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    aggregate_target = "Introduction to Practical GEO Processes for B2B Enterprises"
+    inconsistent_response = _response_json(
+        unit.unit_id,
+        aggregate_target,
+        [
+            (unit.text_items[0].segment_id, "B2B"),
+            (unit.text_items[1].segment_id, " Enterprises"),
+            (unit.text_items[2].segment_id, " GEO"),
+            (unit.text_items[3].segment_id, " Practical Process Introduction"),
+        ],
+    )
+    provider = ContractProvider(
+        responses=[inconsistent_response, inconsistent_response],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:r/a:t", NS)] == [
+        None,
+        None,
+        None,
+        aggregate_target,
+    ]
+
+
+def test_repeated_target_mismatch_with_control_stream_remains_fail_closed(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    slide = _simple_slide_xml("First", "Second").replace(
+        "</a:r><a:r>",
+        "</a:r><a:br/><a:r>",
+        1,
+    )
+    _write_minimal_pptx(source, slide)
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    assert [item.kind for item in unit.source_stream] == [
+        "text",
+        "line_break",
+        "text",
+    ]
+    aggregate_target = "\u7b2c\u4e00\u4e0e\u7b2c\u4e8c"
+    inconsistent_response = _response_json(
+        unit.unit_id,
+        aggregate_target,
+        [
+            (unit.text_items[0].segment_id, "\u7b2c\u4e00"),
+            (unit.text_items[1].segment_id, "\u7b2c\u4e8c"),
+        ],
+    )
+    provider = ContractProvider(
+        responses=[inconsistent_response, inconsistent_response],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(PptxContractError) as raised:
+        translate_pptx_with_xml(
+            request,
+            provider_registry=ProviderRegistry((provider,)),
+        )
+
+    assert raised.value.code == "target_mismatch"
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    assert not output.exists()
+    assert "pptx_target_mismatch_recovered" not in caplog.text
+
+
 @pytest.mark.parametrize("semantic_qa_mode", ("off", "observe", "enforce"))
 def test_glued_aggregate_target_is_repaired_before_writeback(
     tmp_path: Path,

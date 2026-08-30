@@ -18,6 +18,7 @@ from app.translation.pptx_contract import (
     parse_pptx_response,
     parse_pptx_response_structure,
     recover_single_unit_segment_count_response,
+    recover_single_unit_target_mismatch_response,
     serialize_pptx_request,
     validate_unit_translation_quality,
 )
@@ -255,21 +256,35 @@ def _translate_structured_batch(
                     domain,
                 )
                 continue
-            recovery = (
-                recover_single_unit_segment_count_response(response.text, units[0])
-                if error.code == "segment_count"
-                else None
-            )
-            if recovery is None:
+            if error.code == "segment_count":
+                recovery = recover_single_unit_segment_count_response(
+                    response.text,
+                    units[0],
+                )
+                if recovery is None:
+                    raise
+                recovered, actual_segments = recovery
+                translations = (recovered,)
+                _log_segment_count_recovery(
+                    request,
+                    recovered.unit_id,
+                    len(units[0].text_items),
+                    actual_segments,
+                )
+            elif error.code == "target_mismatch":
+                recovered = recover_single_unit_target_mismatch_response(
+                    response.text,
+                    units[0],
+                )
+                if recovered is None:
+                    raise
+                translations = (recovered,)
+                _log_target_mismatch_recovery(
+                    request,
+                    recovered,
+                )
+            else:
                 raise
-            recovered, actual_segments = recovery
-            translations = (recovered,)
-            _log_segment_count_recovery(
-                request,
-                recovered.unit_id,
-                len(units[0].text_items),
-                actual_segments,
-            )
         if semantic_qa_mode == "off":
             return translations
         quality_errors = _quality_errors(units, translations)
@@ -455,6 +470,21 @@ def _log_segment_count_recovery(
         unit_id,
         expected_segments,
         actual_segments,
+    )
+
+
+def _log_target_mismatch_recovery(
+    request: XmlTranslationRequest,
+    translation: PptxUnitTranslation,
+) -> None:
+    correlation = current_correlation(request.model)
+    logger.warning(
+        "pptx_target_mismatch_recovered job_id=%s unit_id=%s segments=%d "
+        "target_chars=%d strategy=aggregate_to_longest_source_run",
+        correlation.public_job_id,
+        translation.unit_id,
+        len(translation.segments),
+        len(translation.target_text),
     )
 
 

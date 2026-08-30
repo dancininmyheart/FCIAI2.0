@@ -146,7 +146,10 @@ def _validate_bilingual_writeback(
     mode: WriteMode,
 ) -> None:
     source_targets = _package_targets(input_path)
-    output_targets = _package_targets(output_path)
+    output_targets = _package_targets(
+        output_path,
+        include_nontranslatable_text=True,
+    )
     for translation in translations:
         source = source_targets.get(translation.unit_id)
         output = output_targets.get(translation.unit_id)
@@ -202,7 +205,11 @@ def _validate_bilingual_writeback(
             )
 
 
-def _package_targets(path: Path) -> dict[str, StructuredParagraphTarget]:
+def _package_targets(
+    path: Path,
+    *,
+    include_nontranslatable_text: bool = False,
+) -> dict[str, StructuredParagraphTarget]:
     targets: dict[str, StructuredParagraphTarget] = {}
     with zipfile.ZipFile(path) as archive:
         for page_index, slide_path in enumerate(slide_paths(archive)):
@@ -215,6 +222,7 @@ def _package_targets(path: Path) -> dict[str, StructuredParagraphTarget]:
                 "",
                 (),
                 (),
+                include_nontranslatable_text=include_nontranslatable_text,
             ):
                 targets[target.unit.unit_id] = target
     return targets

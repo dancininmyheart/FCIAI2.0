@@ -2188,6 +2188,53 @@ def test_translation_only_writes_exact_source_different_target(
     assert root.find(".//a:fld/a:t", NS).text == "1"
 
 
+def test_translation_only_writes_target_composed_only_of_control_stream(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _structured_slide_xml())
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    translation = PptxUnitTranslation(
+        unit_id=unit.unit_id,
+        target_text="\n1",
+        segments=tuple(
+            PptxSegmentTranslation(item.segment_id, "")
+            for item in unit.text_items
+        ),
+    )
+
+    write_structured_translated_pptx(
+        source,
+        output,
+        (translation,),
+        "translation_only",
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    paragraph = root.find(".//p:txBody/a:p", NS)
+    assert paragraph is not None
+    stream_text: list[str] = []
+    for child in paragraph:
+        if child.tag == f"{{{A_NS}}}r":
+            stream_text.extend(node.text or "" for node in child.findall("a:t", NS))
+        elif child.tag == f"{{{A_NS}}}br":
+            stream_text.append("\n")
+        elif child.tag == f"{{{A_NS}}}fld":
+            stream_text.extend(node.text or "" for node in child.findall("a:t", NS))
+    assert "".join(stream_text) == translation.target_text
+    assert len(paragraph.findall("a:br", NS)) == 1
+    fields = paragraph.findall("a:fld", NS)
+    assert [(field.get("type"), field.findtext("a:t", namespaces=NS)) for field in fields] == [
+        ("slidenum", "1"),
+    ]
+
+
 def test_structured_writer_only_changes_autofit_for_the_modified_text_body(
     tmp_path: Path,
 ) -> None:

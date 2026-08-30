@@ -106,6 +106,8 @@ def structured_slide_targets(
     target_language: str,
     stop_words: tuple[str, ...],
     glossary: tuple[PptxGlossaryEntry, ...],
+    *,
+    include_nontranslatable_text: bool = False,
 ) -> tuple[StructuredParagraphTarget, ...]:
     parents = {child: parent for parent in root.iter() for child in parent}
     owner_ordinals: defaultdict[ElementTree.Element, int] = defaultdict(int)
@@ -145,6 +147,7 @@ def structured_slide_targets(
                 target_language,
                 stop_words,
                 glossary,
+                include_nontranslatable_text=include_nontranslatable_text,
             )
             if target is not None:
                 targets.append(target)
@@ -182,6 +185,8 @@ def _paragraph_target(
     target_language: str,
     stop_words: tuple[str, ...],
     glossary: tuple[PptxGlossaryEntry, ...],
+    *,
+    include_nontranslatable_text: bool,
 ) -> StructuredParagraphTarget | None:
     stream: list[PptxSourceStreamItem] = []
     content_nodes: list[ElementTree.Element] = []
@@ -216,7 +221,10 @@ def _paragraph_target(
         if any(True for _ in child.iter(A_T)):
             raise PptxXmlUnsupportedStructureError(slide_path, f"unsupported text node {_local_name(child.tag)}")
     text = _stream_text(tuple(stream))
-    if not segment_nodes or not _is_translatable_text(text):
+    if not segment_nodes or (
+        not include_nontranslatable_text
+        and not _is_translatable_text(text)
+    ):
         return None
     unit = PptxRequestUnit(
         unit_id=unit_id,

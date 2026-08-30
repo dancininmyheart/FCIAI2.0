@@ -11,11 +11,13 @@ from xml.etree import ElementTree
 
 from app.translation.pptx_contract import (
     PPTX_DOCUMENT_KIND,
+    PPTX_PARAGRAPH_FALLBACK_FIELD,
     PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION,
     PPTX_PROVIDER_FIELD,
     PPTX_PROVIDER_REPAIR_FIELD,
     PptxContractError,
     build_source_text_fallback,
+    build_whole_paragraph_translation,
     parse_pptx_response_structure,
     recover_single_unit_boundary_space_response,
     repair_single_unit_boundary_space_fallback,
@@ -24,7 +26,13 @@ from app.translation.pptx_contract import (
     serialize_pptx_request,
     validate_unit_translation_quality,
 )
-from app.translation.pptx_contract_types import PptxRequestUnit, PptxUnitTranslation
+from app.translation.pptx_contract_types import (
+    PptxLineBreakStreamItem,
+    PptxProtectedFieldStreamItem,
+    PptxRequestUnit,
+    PptxTextStreamItem,
+    PptxUnitTranslation,
+)
 from app.translation.domain import build_presentation_domain_sample, detect_presentation_domain
 from app.translation.providers import ProviderRegistry, default_provider_registry
 from app.translation.metrics import current_correlation
@@ -209,17 +217,16 @@ def _translate_structured_batch(
                 len(units) == 1
                 and last_contract_error is not None
                 and last_rejected_response is not None
-                and (
-                    last_contract_error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES
-                    or last_contract_error.code == "target_mismatch"
-                )
+                and last_contract_error.code in _REPAIR_RECOVERABLE_CONTRACT_CODES
             ):
                 return (
                     _fallback_contract_quality_failure(
                         request,
+                        registry,
                         units[0],
                         last_rejected_response,
                         last_contract_error,
+                        domain,
                         repair_error_code=error.code,
                         repair_failure_kind="provider",
                     ),
@@ -266,7 +273,8 @@ def _translate_structured_batch(
                 and (
                     last_contract_error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES
                     or (
-                        last_contract_error.code == "target_mismatch"
+                        last_contract_error.code
+                        in {"segment_count", "target_mismatch"}
                         and error.code == "malformed_json"
                     )
                 )
@@ -274,9 +282,11 @@ def _translate_structured_batch(
                 return (
                     _fallback_contract_quality_failure(
                         request,
+                        registry,
                         units[0],
                         last_rejected_response,
                         last_contract_error,
+                        domain,
                         repair_error_code=error.code,
                         repair_failure_kind="contract",
                     ),
@@ -345,12 +355,37 @@ def _translate_structured_batch(
                     not in _REPAIR_RECOVERABLE_CONTRACT_CODES
                 ):
                     raise repair_origin_error or error
-                recovery = recover_single_unit_segment_count_response(
-                    response.text,
-                    units[0],
-                )
+                try:
+                    recovery = recover_single_unit_segment_count_response(
+                        response.text,
+                        units[0],
+                    )
+                except PptxContractError as recovery_error:
+                    if recovery_error.code not in _DEGRADABLE_CONTRACT_QUALITY_CODES:
+                        raise
+                    return (
+                        _whole_paragraph_model_fallback(
+                            request,
+                            registry,
+                            units[0],
+                            domain,
+                            error,
+                            repair_error_code=recovery_error.code,
+                            repair_failure_kind="quality",
+                        ),
+                    )
                 if recovery is None:
-                    raise
+                    return (
+                        _whole_paragraph_model_fallback(
+                            request,
+                            registry,
+                            units[0],
+                            domain,
+                            error,
+                            repair_error_code=error.code,
+                            repair_failure_kind="quality",
+                        ),
+                    )
                 recovered, actual_segments = recovery
                 translations = (recovered,)
                 _log_segment_count_recovery(
@@ -362,19 +397,33 @@ def _translate_structured_batch(
             elif error.code == "target_mismatch":
                 if (
                     repair_origin_error is None
-                    or repair_origin_error.code != "target_mismatch"
+                    or repair_origin_error.code
+                    not in _REPAIR_RECOVERABLE_CONTRACT_CODES
                 ):
                     raise repair_origin_error or error
+                if repair_origin_error.code != "target_mismatch":
+                    return (
+                        _whole_paragraph_model_fallback(
+                            request,
+                            registry,
+                            units[0],
+                            domain,
+                            repair_origin_error,
+                            repair_error_code=error.code,
+                            repair_failure_kind="contract",
+                        ),
+                    )
                 recovered = recover_single_unit_target_mismatch_response(
                     response.text,
                     units[0],
                 )
                 if recovered is None:
                     return (
-                        _fallback_contract_quality_failure(
+                        _whole_paragraph_model_fallback(
                             request,
+                            registry,
                             units[0],
-                            response.text,
+                            domain,
                             error,
                             repair_error_code=error.code,
                             repair_failure_kind="quality",
@@ -395,9 +444,11 @@ def _translate_structured_batch(
                 return (
                     _fallback_contract_quality_failure(
                         request,
+                        registry,
                         units[0],
                         response.text,
                         error,
+                        domain,
                         repair_error_code=error.code,
                         repair_failure_kind="quality",
                     ),
@@ -459,9 +510,11 @@ def _translate_provider_request(
 
 def _fallback_contract_quality_failure(
     request: XmlTranslationRequest,
+    registry: ProviderRegistry,
     unit: PptxRequestUnit,
     response_text: str,
     error: PptxContractError,
+    domain: str,
     *,
     repair_error_code: str,
     repair_failure_kind: str,
@@ -473,21 +526,121 @@ def _fallback_contract_quality_failure(
             if aggregate_reallocated:
                 _log_boundary_space_recovery(request, fallback)
         else:
-            fallback = build_source_text_fallback(unit)
-            strategy = "preserve_source_text"
-    elif error.code in {"blank_target", "target_mismatch"}:
-        fallback = build_source_text_fallback(unit)
-        strategy = "preserve_source_text"
+            return _whole_paragraph_model_fallback(
+                request,
+                registry,
+                unit,
+                domain,
+                error,
+                repair_error_code=repair_error_code,
+                repair_failure_kind=repair_failure_kind,
+            )
+        _log_quality_fallback(
+            request,
+            error,
+            repair_error_code,
+            repair_failure_kind,
+            strategy=strategy,
+        )
+        return fallback
+    if error.code in {"blank_target", "segment_count", "target_mismatch"}:
+        return _whole_paragraph_model_fallback(
+            request,
+            registry,
+            unit,
+            domain,
+            error,
+            repair_error_code=repair_error_code,
+            repair_failure_kind=repair_failure_kind,
+        )
+    raise error
+
+
+def _whole_paragraph_model_fallback(
+    request: XmlTranslationRequest,
+    registry: ProviderRegistry,
+    unit: PptxRequestUnit,
+    domain: str,
+    error: PptxContractError,
+    *,
+    repair_error_code: str,
+    repair_failure_kind: str,
+    terminal_fallback: PptxUnitTranslation | None = None,
+    terminal_strategy: str = "preserve_source_text",
+) -> PptxUnitTranslation:
+    if terminal_fallback is None:
+        terminal_fallback = build_source_text_fallback(unit)
+    paragraph_source, protected_placeholders = _paragraph_fallback_source(unit)
+    provider_request = ProviderRequest.create(
+        text=paragraph_source,
+        source_language=request.source_language,
+        target_language=request.target_language,
+        field=PPTX_PARAGRAPH_FALLBACK_FIELD,
+        domain=domain,
+        stop_words=tuple(request.stop_words),
+        custom_translations=dict(request.custom_translations),
+        timeout_seconds=request.provider_timeout_seconds,
+        output_format="plain",
+    )
+    try:
+        response = _translate_provider_request(
+            request,
+            registry,
+            provider_request,
+            (unit,),
+        )
+    except ProviderError as fallback_error:
+        _log_quality_fallback(
+            request,
+            error,
+            fallback_error.code,
+            "paragraph_provider",
+            strategy=terminal_strategy,
+        )
+        return terminal_fallback
+    fallback = build_whole_paragraph_translation(
+        unit,
+        response.text,
+        protected_placeholders=protected_placeholders,
+    )
+    if fallback is None:
+        fallback = terminal_fallback
+        strategy = terminal_strategy
+        fallback_error_code = "invalid_paragraph_translation"
+        fallback_failure_kind = "paragraph_quality"
     else:
-        raise error
+        strategy = "whole_paragraph_model_translation"
+        fallback_error_code = repair_error_code
+        fallback_failure_kind = repair_failure_kind
     _log_quality_fallback(
         request,
         error,
-        repair_error_code,
-        repair_failure_kind,
+        fallback_error_code,
+        fallback_failure_kind,
         strategy=strategy,
     )
     return fallback
+
+
+def _paragraph_fallback_source(
+    unit: PptxRequestUnit,
+) -> tuple[str, tuple[str, ...]]:
+    parts: list[str] = []
+    protected_placeholders: list[str] = []
+    for index, item in enumerate(unit.source_stream):
+        if isinstance(item, PptxTextStreamItem):
+            parts.append(item.source_text)
+        elif isinstance(item, PptxLineBreakStreamItem):
+            parts.append("\n")
+        elif isinstance(item, PptxProtectedFieldStreamItem):
+            placeholder = f"[[FCIAI_PPTX_PROTECTED_{index}]]"
+            while placeholder in unit.source_text:
+                placeholder = f"_{placeholder}_"
+            parts.append(placeholder)
+            protected_placeholders.append(placeholder)
+        else:
+            raise AssertionError(f"unsupported PPTX source stream item: {type(item)!r}")
+    return "".join(parts), tuple(protected_placeholders)
 
 
 def _recover_boundary_quality_locally(
@@ -564,41 +717,65 @@ def _repair_quality_failures(
                 (unit,),
             )
         except ProviderError as repair_error:
-            fallback, strategy = _semantic_quality_fallback(unit, translation, error)
-            _log_quality_fallback(
-                request,
+            terminal_fallback, terminal_strategy = _semantic_quality_fallback(
+                unit,
+                translation,
                 error,
-                repair_error.code,
-                "provider",
-                strategy=strategy,
+            )
+            fallback = _whole_paragraph_model_fallback(
+                request,
+                registry,
+                unit,
+                domain,
+                error,
+                repair_error_code=repair_error.code,
+                repair_failure_kind="provider",
+                terminal_fallback=terminal_fallback,
+                terminal_strategy=terminal_strategy,
             )
             repaired.append(fallback)
             continue
         try:
             candidate = parse_pptx_response_structure(response.text, (unit,))[0]
         except PptxContractError as repair_error:
-            fallback, strategy = _semantic_quality_fallback(unit, translation, error)
-            _log_contract_rejection(request, repair_error, 2, len(response.text))
-            _log_quality_fallback(
-                request,
+            terminal_fallback, terminal_strategy = _semantic_quality_fallback(
+                unit,
+                translation,
                 error,
-                repair_error.code,
-                "contract",
-                strategy=strategy,
+            )
+            _log_contract_rejection(request, repair_error, 2, len(response.text))
+            fallback = _whole_paragraph_model_fallback(
+                request,
+                registry,
+                unit,
+                domain,
+                error,
+                repair_error_code=repair_error.code,
+                repair_failure_kind="contract",
+                terminal_fallback=terminal_fallback,
+                terminal_strategy=terminal_strategy,
             )
             repaired.append(fallback)
             continue
         remaining_errors = _quality_errors((unit,), (candidate,))
         if remaining_errors:
             repair_error = remaining_errors[0]
-            fallback, strategy = _semantic_quality_fallback(unit, translation, error)
-            _log_contract_rejection(request, repair_error, 2, len(response.text))
-            _log_quality_fallback(
-                request,
+            terminal_fallback, terminal_strategy = _semantic_quality_fallback(
+                unit,
+                translation,
                 error,
-                repair_error.code,
-                "quality",
-                strategy=strategy,
+            )
+            _log_contract_rejection(request, repair_error, 2, len(response.text))
+            fallback = _whole_paragraph_model_fallback(
+                request,
+                registry,
+                unit,
+                domain,
+                error,
+                repair_error_code=repair_error.code,
+                repair_failure_kind="quality",
+                terminal_fallback=terminal_fallback,
+                terminal_strategy=terminal_strategy,
             )
             repaired.append(fallback)
             continue

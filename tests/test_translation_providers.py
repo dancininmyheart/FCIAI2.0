@@ -156,6 +156,27 @@ def test_qwen_provider_uses_json_mode_for_pptx_repair_contract() -> None:
     assert "Never retain or insert labels such as 翻译内容" in transport.systems[0]
 
 
+def test_qwen_provider_uses_plain_domain_prompt_for_pptx_paragraph_fallback() -> None:
+    transport = JsonModeQwenTransport()
+    request = ProviderRequest.create(
+        text="Internal review",
+        field="pptx_paragraph_fallback",
+        source_language="English",
+        target_language="Chinese",
+        domain="婴幼儿营养与配方奶粉",
+        output_format="plain",
+    )
+
+    result = QwenProvider(transport).translate(request)
+
+    assert transport.calls == ["text"]
+    assert result.text == "plain"
+    assert "single PPTX paragraph" in transport.systems[0]
+    assert "婴幼儿营养与配方奶粉" in transport.systems[0]
+    assert "Return only the translated paragraph text" in transport.systems[0]
+    assert "Do not add commentary, labels" in transport.systems[0]
+
+
 def test_qwen_provider_uses_json_mode_and_safe_prompt_for_domain_detection() -> None:
     transport = JsonModeQwenTransport()
     request = ProviderRequest.create(
@@ -412,6 +433,37 @@ def test_deepseek_structured_request_keeps_contract_route_and_sends_detected_dom
     assert payload["field"] == "pptx_structured_v2"
     assert payload["text"] == structured_text
     assert "domain" not in payload
+
+
+def test_deepseek_provider_sends_plain_paragraph_fallback_contract() -> None:
+    transport = RecordingRemoteTransport(response="\u4e34\u5e8a\u8425\u517b\u8bc1\u636e")
+    request = ProviderRequest.create(
+        text="Clinical nutrition evidence",
+        source_language="English",
+        target_language="Chinese",
+        field="pptx_paragraph_fallback",
+        domain="Infant nutrition",
+        stop_words=("HMO",),
+        custom_translations={"nutrition": "\u8425\u517b"},
+        timeout_seconds=15,
+        output_format="plain",
+    )
+
+    result = DeepSeekProvider(transport).translate(request)
+
+    _, payload, timeout = transport.calls[0]
+    assert result.text == "\u4e34\u5e8a\u8425\u517b\u8bc1\u636e"
+    assert timeout == 15
+    assert payload == {
+        "_streaming": False,
+        "is_app_uid": False,
+        "field": "pptx_paragraph_fallback",
+        "text": "Clinical nutrition evidence",
+        "stop_words_str": '"HMO"',
+        "custom_translations_str": '"nutrition": "\u8425\u517b"',
+        "source_language": "English",
+        "target_language": "Chinese",
+    }
 
 
 def test_deepseek_structured_dict_response_is_serialized_as_json() -> None:

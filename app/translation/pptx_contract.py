@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import unicodedata
 from typing import Final, assert_never
 
@@ -35,6 +36,7 @@ PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION: Final = 2
 PPTX_DOCUMENT_KIND: Final = "pptx_xml"
 PPTX_PROVIDER_FIELD: Final = "pptx_structured_v2"
 PPTX_PROVIDER_REPAIR_FIELD: Final = "pptx_structured_v2_repair"
+PPTX_PARAGRAPH_FALLBACK_FIELD: Final = "pptx_paragraph_fallback"
 PPTX_DOMAIN_DETECTION_FIELD: Final = "pptx_domain_detection"
 
 _ROOT_FIELDS: Final = frozenset(
@@ -42,6 +44,42 @@ _ROOT_FIELDS: Final = frozenset(
 )
 _TRANSLATION_FIELDS: Final = frozenset({"unit_id", "target_text", "segments"})
 _SEGMENT_FIELDS: Final = frozenset({"segment_id", "target_text"})
+_PLAIN_FALLBACK_LABEL_RE: Final = re.compile(
+    r"^(?:(?:here(?:'s| is)\s+(?:the\s+)?(?:translation|translated\s+text)|"
+    r"the\s+(?:translation|translated\s+text)\s+is|"
+    r"translation(?:\s+result)?|translated(?:\s+(?:text|paragraph))?|"
+    r"target(?:\s+text)?|result|output)"
+    r"\s*[:\uff1a\-]\s*|(?:\u7ffb\u8bd1\u5185\u5bb9|\u8bd1\u6587|\u76ee\u6807\u6587\u672c|\u7ed3\u679c)\s*[:\uff1a]\s*)",
+    re.IGNORECASE,
+)
+_PLAIN_FALLBACK_META_WORDS: Final = frozenset(
+    {
+        "translation",
+        "translation result",
+        "translated",
+        "translated paragraph",
+        "translated text",
+        "here is the translation",
+        "here is the translated text",
+        "here's the translation",
+        "here's the translated text",
+        "the translation is",
+        "the translated text is",
+        "target",
+        "target text",
+        "result",
+        "output",
+        "\u7ffb\u8bd1\u5185\u5bb9",
+        "\u7ffb\u8bd1\u7ed3\u679c",
+        "\u8bd1\u6587",
+        "\u76ee\u6807\u6587\u672c",
+        "\u7ed3\u679c",
+        "\u4ee5\u4e0b\u662f\u7ffb\u8bd1",
+        "\u8fd9\u662f\u7ffb\u8bd1",
+    },
+)
+
+
 def serialize_pptx_request(
     units: tuple[PptxRequestUnit, ...],
     *,
@@ -173,6 +211,144 @@ def build_source_text_fallback(unit: PptxRequestUnit) -> PptxUnitTranslation:
     )
     validate_unit_translation_structure(unit, translation)
     return translation
+
+
+def build_whole_paragraph_translation(
+    unit: PptxRequestUnit,
+    target_text: str,
+    *,
+    protected_placeholders: tuple[str, ...] = (),
+) -> PptxUnitTranslation | None:
+    """Allocate one plain-text paragraph translation to a safe source run."""
+    normalized_target = target_text.replace("\r\n", "\n").replace("\r", "\n").strip(" \t")
+    if (
+        not normalized_target
+        or not unit.text_items
+        or not _plain_paragraph_response_is_safe(normalized_target)
+    ):
+        return None
+    expected_line_breaks = sum(
+        isinstance(item, PptxLineBreakStreamItem)
+        for item in unit.source_stream
+    )
+    if normalized_target.count("\n") != expected_line_breaks:
+        return None
+    protected_items = tuple(
+        item
+        for item in unit.source_stream
+        if isinstance(item, PptxProtectedFieldStreamItem)
+    )
+    if (
+        len(protected_placeholders) != len(protected_items)
+        or any(normalized_target.count(token) != 1 for token in protected_placeholders)
+    ):
+        return None
+    segments = _allocate_whole_paragraph_segments(
+        unit,
+        normalized_target,
+        protected_placeholders,
+    )
+    if segments is None:
+        return None
+    resolved_target = normalized_target
+    if protected_placeholders:
+        for placeholder, protected in zip(
+            protected_placeholders,
+            protected_items,
+            strict=True,
+        ):
+            resolved_target = resolved_target.replace(placeholder, protected.source_text)
+    translation = PptxUnitTranslation(
+        unit.unit_id,
+        resolved_target,
+        segments,
+    )
+    try:
+        validate_unit_translation_structure(unit, translation)
+        validate_unit_translation_boundaries(unit, translation)
+        validate_unit_translation_quality(unit, translation)
+    except PptxContractError:
+        return None
+    return translation
+
+
+def _plain_paragraph_response_is_safe(target_text: str) -> bool:
+    stripped = target_text.strip()
+    if not stripped or not _plain_paragraph_fragment_is_safe(stripped):
+        return False
+    return all(
+        _plain_paragraph_fragment_is_safe(line)
+        for line in stripped.split("\n")
+    )
+
+
+def _plain_paragraph_fragment_is_safe(fragment: str) -> bool:
+    stripped = fragment.strip()
+    if not stripped:
+        return True
+    folded = unicodedata.normalize("NFKC", stripped).casefold()
+    if folded in _PLAIN_FALLBACK_META_WORDS:
+        return False
+    if stripped.startswith("```") or stripped.endswith("```"):
+        return False
+    if (
+        (stripped.startswith("{") and stripped.endswith("}"))
+        or (stripped.startswith("[") and stripped.endswith("]"))
+    ):
+        return False
+    if len(stripped) >= 2 and (stripped[0], stripped[-1]) in {
+        ('"', '"'),
+        ("'", "'"),
+        ("\u201c", "\u201d"),
+        ("\u2018", "\u2019"),
+    }:
+        return False
+    return _PLAIN_FALLBACK_LABEL_RE.match(stripped) is None
+
+
+def _allocate_whole_paragraph_segments(
+    unit: PptxRequestUnit,
+    target_text: str,
+    protected_placeholders: tuple[str, ...],
+) -> tuple[PptxSegmentTranslation, ...] | None:
+    target_by_id = {item.segment_id: "" for item in unit.text_items}
+    pending_text_items: list[PptxTextStreamItem] = []
+    protected_index = 0
+    cursor = 0
+
+    def allocate_pending(chunk: str) -> bool:
+        if "\n" in chunk or "\r" in chunk:
+            return False
+        if not pending_text_items:
+            return not chunk
+        anchor = max(pending_text_items, key=lambda item: len(item.source_text))
+        target_by_id[anchor.segment_id] = chunk
+        pending_text_items.clear()
+        return True
+
+    for item in unit.source_stream:
+        if isinstance(item, PptxTextStreamItem):
+            pending_text_items.append(item)
+            continue
+        if isinstance(item, PptxLineBreakStreamItem):
+            delimiter = "\n"
+        else:
+            delimiter = (
+                protected_placeholders[protected_index]
+                if protected_placeholders
+                else item.source_text
+            )
+            protected_index += 1
+        delimiter_index = target_text.find(delimiter, cursor)
+        if delimiter_index < 0 or not allocate_pending(target_text[cursor:delimiter_index]):
+            return None
+        cursor = delimiter_index + len(delimiter)
+    if not allocate_pending(target_text[cursor:]):
+        return None
+    return tuple(
+        PptxSegmentTranslation(item.segment_id, target_by_id[item.segment_id])
+        for item in unit.text_items
+    )
 
 
 def recover_single_unit_segment_count_response(
@@ -577,8 +753,10 @@ def _strip_json_fence(raw: str) -> str:
 
 __all__ = [
     "build_source_text_fallback",
+    "build_whole_paragraph_translation",
     "PPTX_DOCUMENT_KIND",
     "PPTX_DOMAIN_DETECTION_FIELD",
+    "PPTX_PARAGRAPH_FALLBACK_FIELD",
     "PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION",
     "PPTX_PROVIDER_FIELD",
     "PptxContractError",

@@ -15,8 +15,10 @@ from app.translation.pptx_contract import (
     PPTX_PROVIDER_FIELD,
     PPTX_PROVIDER_REPAIR_FIELD,
     PptxContractError,
-    parse_pptx_response,
+    build_source_text_fallback,
     parse_pptx_response_structure,
+    recover_single_unit_boundary_space_response,
+    repair_single_unit_boundary_space_fallback,
     recover_single_unit_segment_count_response,
     recover_single_unit_target_mismatch_response,
     serialize_pptx_request,
@@ -30,6 +32,13 @@ from app.translation.types import ProviderError, ProviderRequest, ProviderResult
 
 
 logger = logging.getLogger(__name__)
+
+_DEGRADABLE_CONTRACT_QUALITY_CODES = frozenset(
+    {"blank_target", "missing_target_boundary_space"},
+)
+_DEGRADABLE_SEMANTIC_QUALITY_CODES = frozenset(
+    {"duplicate_target_span", "glossary_mismatch", "source_language_residue"},
+)
 
 try:
     from .pptx_xml_ops import (
@@ -178,6 +187,7 @@ def _translate_structured_batch(
         output_format="structured",
     )
     last_contract_error: PptxContractError | None = None
+    last_rejected_response: str | None = None
     for contract_attempt in range(2):
         try:
             response = _translate_provider_request(
@@ -187,6 +197,22 @@ def _translate_structured_batch(
                 units,
             )
         except ProviderError as error:
+            if (
+                len(units) == 1
+                and last_contract_error is not None
+                and last_rejected_response is not None
+                and last_contract_error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES
+            ):
+                return (
+                    _fallback_contract_quality_failure(
+                        request,
+                        units[0],
+                        last_rejected_response,
+                        last_contract_error,
+                        repair_error_code=error.code,
+                        repair_failure_kind="provider",
+                    ),
+                )
             if error.code == "provider_timeout" and error.retryable and len(units) > 1:
                 midpoint = len(units) // 2
                 logger.warning(
@@ -219,8 +245,26 @@ def _translate_structured_batch(
         try:
             translations = parse_pptx_response_structure(response.text, units)
         except PptxContractError as error:
-            last_contract_error = error
             _log_contract_rejection(request, error, contract_attempt + 1, len(response.text))
+            if (
+                contract_attempt > 0
+                and len(units) == 1
+                and last_contract_error is not None
+                and last_rejected_response is not None
+                and last_contract_error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES
+            ):
+                return (
+                    _fallback_contract_quality_failure(
+                        request,
+                        units[0],
+                        last_rejected_response,
+                        last_contract_error,
+                        repair_error_code=error.code,
+                        repair_failure_kind="contract",
+                    ),
+                )
+            last_contract_error = error
+            last_rejected_response = response.text
             if len(units) > 1:
                 midpoint = len(units) // 2
                 logger.info(
@@ -247,6 +291,26 @@ def _translate_structured_batch(
                         semantic_qa_mode,
                     )
                 )
+            if (
+                contract_attempt == 0
+                and error.code == "missing_target_boundary_space"
+            ):
+                local_recovery = _recover_boundary_quality_locally(
+                    response.text,
+                    units[0],
+                )
+                if local_recovery is not None:
+                    recovered, strategy, aggregate_reallocated = local_recovery
+                    if aggregate_reallocated:
+                        _log_boundary_space_recovery(request, recovered)
+                    _log_quality_fallback(
+                        request,
+                        error,
+                        error.code,
+                        "quality",
+                        strategy=strategy,
+                    )
+                    return (recovered,)
             if contract_attempt == 0:
                 provider_request = _repair_provider_request(
                     request,
@@ -282,6 +346,17 @@ def _translate_structured_batch(
                 _log_target_mismatch_recovery(
                     request,
                     recovered,
+                )
+            elif error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES:
+                return (
+                    _fallback_contract_quality_failure(
+                        request,
+                        units[0],
+                        response.text,
+                        error,
+                        repair_error_code=error.code,
+                        repair_failure_kind="quality",
+                    ),
                 )
             else:
                 raise
@@ -338,6 +413,52 @@ def _translate_provider_request(
     raise AssertionError("provider retry loop exhausted without a result")
 
 
+def _fallback_contract_quality_failure(
+    request: XmlTranslationRequest,
+    unit: PptxRequestUnit,
+    response_text: str,
+    error: PptxContractError,
+    *,
+    repair_error_code: str,
+    repair_failure_kind: str,
+) -> PptxUnitTranslation:
+    if error.code == "missing_target_boundary_space":
+        local_recovery = _recover_boundary_quality_locally(response_text, unit)
+        if local_recovery is not None:
+            fallback, strategy, aggregate_reallocated = local_recovery
+            if aggregate_reallocated:
+                _log_boundary_space_recovery(request, fallback)
+        else:
+            fallback = build_source_text_fallback(unit)
+            strategy = "preserve_source_text"
+    elif error.code == "blank_target":
+        fallback = build_source_text_fallback(unit)
+        strategy = "preserve_source_text"
+    else:
+        raise error
+    _log_quality_fallback(
+        request,
+        error,
+        repair_error_code,
+        repair_failure_kind,
+        strategy=strategy,
+    )
+    return fallback
+
+
+def _recover_boundary_quality_locally(
+    response_text: str,
+    unit: PptxRequestUnit,
+) -> tuple[PptxUnitTranslation, str, bool] | None:
+    recovered = recover_single_unit_boundary_space_response(response_text, unit)
+    if recovered is not None:
+        return recovered, "aggregate_to_longest_source_run", True
+    recovered = repair_single_unit_boundary_space_fallback(response_text, unit)
+    if recovered is not None:
+        return recovered, "insert_high_confidence_boundary_space", False
+    return None
+
+
 def _pptx_semantic_qa_mode() -> str:
     configured: object | None = None
     try:
@@ -381,6 +502,8 @@ def _repair_quality_failures(
         if error is None:
             repaired.append(translation)
             continue
+        if error.code not in _DEGRADABLE_SEMANTIC_QUALITY_CODES:
+            raise error
         source_contract = serialize_pptx_request((unit,), domain=domain)
         repair_request = _repair_provider_request(
             request,
@@ -389,17 +512,47 @@ def _repair_quality_failures(
             error,
             domain,
         )
-        response = _translate_provider_request(
-            request,
-            registry,
-            repair_request,
-            (unit,),
-        )
         try:
-            repaired.append(parse_pptx_response(response.text, (unit,))[0])
+            response = _translate_provider_request(
+                request,
+                registry,
+                repair_request,
+                (unit,),
+            )
+        except ProviderError as repair_error:
+            _log_quality_fallback(
+                request,
+                error,
+                repair_error.code,
+                "provider",
+            )
+            repaired.append(translation)
+            continue
+        try:
+            candidate = parse_pptx_response_structure(response.text, (unit,))[0]
         except PptxContractError as repair_error:
             _log_contract_rejection(request, repair_error, 2, len(response.text))
-            raise
+            _log_quality_fallback(
+                request,
+                error,
+                repair_error.code,
+                "contract",
+            )
+            repaired.append(translation)
+            continue
+        remaining_errors = _quality_errors((unit,), (candidate,))
+        if remaining_errors:
+            repair_error = remaining_errors[0]
+            _log_contract_rejection(request, repair_error, 2, len(response.text))
+            _log_quality_fallback(
+                request,
+                error,
+                repair_error.code,
+                "quality",
+            )
+            repaired.append(translation)
+            continue
+        repaired.append(candidate)
     return tuple(repaired)
 
 
@@ -457,6 +610,28 @@ def _log_quality_observation(
     )
 
 
+def _log_quality_fallback(
+    request: XmlTranslationRequest,
+    original_error: PptxContractError,
+    repair_error_code: str,
+    repair_failure_kind: str,
+    *,
+    strategy: str = "keep_structurally_valid_candidate",
+) -> None:
+    correlation = current_correlation(request.model)
+    logger.warning(
+        "pptx_quality_fallback_applied job_id=%s unit_id=%s "
+        "original_error_code=%s repair_error_code=%s repair_failure_kind=%s "
+        "strategy=%s",
+        correlation.public_job_id,
+        original_error.unit_id,
+        original_error.code,
+        repair_error_code,
+        repair_failure_kind,
+        strategy,
+    )
+
+
 def _log_segment_count_recovery(
     request: XmlTranslationRequest,
     unit_id: str,
@@ -480,6 +655,21 @@ def _log_target_mismatch_recovery(
     correlation = current_correlation(request.model)
     logger.warning(
         "pptx_target_mismatch_recovered job_id=%s unit_id=%s segments=%d "
+        "target_chars=%d strategy=aggregate_to_longest_source_run",
+        correlation.public_job_id,
+        translation.unit_id,
+        len(translation.segments),
+        len(translation.target_text),
+    )
+
+
+def _log_boundary_space_recovery(
+    request: XmlTranslationRequest,
+    translation: PptxUnitTranslation,
+) -> None:
+    correlation = current_correlation(request.model)
+    logger.warning(
+        "pptx_boundary_space_recovered job_id=%s unit_id=%s segments=%d "
         "target_chars=%d strategy=aggregate_to_longest_source_run",
         correlation.public_job_id,
         translation.unit_id,

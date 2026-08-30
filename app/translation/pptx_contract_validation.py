@@ -259,6 +259,59 @@ def validate_unit_translation_boundaries(
         )
 
 
+def repair_missing_target_boundary_spaces(
+    unit: PptxRequestUnit,
+    translation: PptxUnitTranslation,
+) -> PptxUnitTranslation | None:
+    """Insert only high-confidence spaces at text-run boundaries."""
+    target_by_id = {
+        segment.segment_id: segment.target_text
+        for segment in translation.segments
+    }
+    previous: PptxTextStreamItem | None = None
+    changed = False
+    for item in unit.source_stream:
+        if not isinstance(item, PptxTextStreamItem):
+            previous = None
+            continue
+        if previous is not None:
+            left_target = target_by_id[previous.segment_id]
+            right_target = target_by_id[item.segment_id]
+            if _is_suspicious_english_boundary(
+                previous.source_text,
+                item.source_text,
+                left_target,
+                right_target,
+            ) and not _is_protected_target_boundary(
+                unit,
+                translation,
+                previous.segment_id,
+            ):
+                target_by_id[item.segment_id] = f" {right_target}"
+                changed = True
+        previous = item
+    if not changed:
+        return None
+    segments = tuple(
+        PptxSegmentTranslation(
+            segment.segment_id,
+            target_by_id[segment.segment_id],
+        )
+        for segment in translation.segments
+    )
+    repaired = PptxUnitTranslation(
+        translation.unit_id,
+        reconstruct_target(unit, segments),
+        segments,
+    )
+    try:
+        validate_unit_translation_structure(unit, repaired)
+        validate_unit_translation_boundaries(unit, repaired)
+    except PptxContractError:
+        return None
+    return repaired
+
+
 def validate_unit_translation_quality(
     unit: PptxRequestUnit,
     translation: PptxUnitTranslation,
@@ -342,6 +395,54 @@ def validate_unit_translation_quality(
             reason_code,
             len(shared_tokens),
         )
+
+
+def _is_protected_target_boundary(
+    unit: PptxRequestUnit,
+    translation: PptxUnitTranslation,
+    left_segment_id: str,
+) -> bool:
+    offset = 0
+    boundary_offset: int | None = None
+    target_by_id = {
+        segment.segment_id: segment.target_text
+        for segment in translation.segments
+    }
+    for item in unit.source_stream:
+        if isinstance(item, PptxTextStreamItem):
+            offset += len(target_by_id[item.segment_id])
+            if item.segment_id == left_segment_id:
+                boundary_offset = offset
+        elif isinstance(item, PptxLineBreakStreamItem):
+            offset += 1
+        else:
+            offset += len(item.source_text)
+    if boundary_offset is None:
+        return True
+    target_text = translation.target_text
+    for pattern in (_URL_RE, _EMAIL_RE, _DOI_RE):
+        if any(
+            match.start() < boundary_offset < match.end()
+            for match in pattern.finditer(target_text)
+        ):
+            return True
+    protected_terms = tuple((term, True) for term in unit.protected_terms)
+    protected_terms += tuple(
+        (entry.target, False)
+        for entry in unit.glossary
+        if entry.target
+    )
+    for term, ignore_case in protected_terms:
+        if any(
+            start < boundary_offset < end
+            for start, end in _literal_term_spans(
+                target_text,
+                term,
+                ignore_case=ignore_case,
+            )
+        ):
+            return True
+    return False
 
 
 def _adjacent_long_duplicate_coverage(text: str) -> int:

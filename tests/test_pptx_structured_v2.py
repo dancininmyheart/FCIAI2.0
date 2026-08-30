@@ -900,6 +900,285 @@ def test_repeated_target_mismatch_recovers_natural_aggregate_to_longest_run(
     ]
 
 
+def test_boundary_space_false_positive_recovers_locally_without_provider_repair(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml(
+            "AI",
+            " ",
+            "\u6700\u4fe1\u4efb\u7684\u4e00\u624b\u4fe1\u6e90\uff0c\u7528\u6765\u6838\u9a8c\u4e8b",
+            "\u5b9e\u3002",
+        ),
+    )
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    aggregate_target = "AI\u2019s most trusted primary source for fact verification."
+    invalid_response = _response_json(
+        unit.unit_id,
+        aggregate_target,
+        [
+            (unit.text_items[0].segment_id, "AI"),
+            (unit.text_items[1].segment_id, "\u2019s "),
+            (
+                unit.text_items[2].segment_id,
+                "most trusted primary source for fact verif",
+            ),
+            (unit.text_items[3].segment_id, "ication."),
+        ],
+    )
+    provider = ContractProvider(responses=[invalid_response])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == ["pptx_structured_v2"]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:r/a:t", NS)] == [
+        None,
+        None,
+        aggregate_target,
+        None,
+    ]
+
+
+def test_glued_boundary_space_is_repaired_locally_without_provider_repair(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml("Token", "\u6210\u672c\u53ef\u63a7"),
+    )
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    glued_target = "Tokencosts are controllable"
+    invalid_response = _response_json(
+        unit.unit_id,
+        glued_target,
+        [
+            (unit.text_items[0].segment_id, "Token"),
+            (unit.text_items[1].segment_id, "costs are controllable"),
+        ],
+    )
+    provider = ContractProvider(responses=[invalid_response])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == ["pptx_structured_v2"]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:r/a:t", NS)] == [
+        "Token",
+        " costs are controllable",
+    ]
+    assert "pptx_quality_fallback_applied" in caplog.text
+    assert "original_error_code=missing_target_boundary_space" in caplog.text
+    assert "repair_error_code=missing_target_boundary_space" in caplog.text
+    assert "strategy=insert_high_confidence_boundary_space" in caplog.text
+
+
+def test_repeated_blank_target_falls_back_to_source_text_and_segments(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml("Internal ", "review"),
+    )
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    blank_response = _response_json(
+        unit.unit_id,
+        "",
+        [(item.segment_id, "") for item in unit.text_items],
+    )
+    provider = ContractProvider(responses=[blank_response, blank_response])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:r/a:t", NS)] == [
+        "Internal ",
+        "review",
+    ]
+    assert "pptx_quality_fallback_applied" in caplog.text
+    assert "original_error_code=blank_target" in caplog.text
+    assert "repair_error_code=blank_target" in caplog.text
+
+
+def test_blank_target_repair_timeout_falls_back_to_source_text(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Internal review"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    blank_response = _response_json(
+        unit.unit_id,
+        "",
+        [(unit.text_items[0].segment_id, "")],
+    )
+    timeouts = [
+        ProviderError(
+            provider="qwen",
+            code="provider_timeout",
+            detail="quality repair timed out",
+            retryable=True,
+        )
+        for _ in range(2)
+    ]
+    provider = ContractProvider(responses=[blank_response, *timeouts])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:t", NS)] == ["Internal review"]
+    assert "original_error_code=blank_target" in caplog.text
+    assert "repair_error_code=provider_timeout" in caplog.text
+    assert "repair_failure_kind=provider" in caplog.text
+
+
+def test_blank_target_invalid_repair_falls_back_to_source_text(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Internal review"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    blank_response = _response_json(
+        unit.unit_id,
+        "",
+        [(unit.text_items[0].segment_id, "")],
+    )
+    provider = ContractProvider(responses=[blank_response, "{not-json"])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:t", NS)] == ["Internal review"]
+    assert "original_error_code=blank_target" in caplog.text
+    assert "repair_error_code=malformed_json" in caplog.text
+    assert "repair_failure_kind=contract" in caplog.text
+
+
 def test_repeated_target_mismatch_with_control_stream_remains_fail_closed(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -987,14 +1266,6 @@ def test_glued_aggregate_target_is_repaired_before_writeback(
                     (unit.text_items[1].segment_id, "costs are controllable"),
                 ],
             ),
-            _response_json(
-                unit.unit_id,
-                "Token costs are controllable",
-                [
-                    (unit.text_items[0].segment_id, "Token"),
-                    (unit.text_items[1].segment_id, " costs are controllable"),
-                ],
-            ),
         ],
     )
     request = XmlTranslationRequest(
@@ -1017,16 +1288,7 @@ def test_glued_aggregate_target_is_repaired_before_writeback(
     )
 
     assert result == str(output)
-    assert [item.field for item in provider.requests] == [
-        "pptx_structured_v2",
-        "pptx_structured_v2_repair",
-    ]
-    repair_payload = json.loads(provider.requests[1].text)
-    assert repair_payload["validation_error"]["code"] == "missing_target_boundary_space"
-    assert [
-        item["segment_id"]
-        for item in repair_payload["response_requirements"]["segments"]
-    ] == [item.segment_id for item in unit.text_items]
+    assert [item.field for item in provider.requests] == ["pptx_structured_v2"]
     with zipfile.ZipFile(output) as archive:
         root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
     assert "".join(node.text or "" for node in root.findall(".//a:r/a:t", NS)) == (
@@ -2254,7 +2516,7 @@ def test_semantic_repair_retries_a_timeout_only_for_the_offending_unit(
     ]
 
 
-def test_semantic_repair_fails_closed_with_the_quality_reason_code(
+def test_semantic_repair_fallback_logs_the_quality_reason_code(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -2290,16 +2552,20 @@ def test_semantic_repair_fails_closed_with_the_quality_reason_code(
     monkeypatch.delenv("PPTX_SEMANTIC_QA_MODE", raising=False)
     caplog.set_level(logging.WARNING)
 
-    with pytest.raises(PptxContractError) as raised:
-        translate_pptx_with_xml(request, provider_registry=ProviderRegistry((provider,)))
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
 
-    assert raised.value.code == "source_language_residue"
+    assert result == str(output)
     assert [item.field for item in provider.requests] == [
         "pptx_structured_v2",
         "pptx_structured_v2_repair",
     ]
-    assert not output.exists()
+    assert output.exists()
     assert f"unit_id={unit.unit_id}" in caplog.text
+    assert "pptx_quality_fallback_applied" in caplog.text
+    assert "original_error_code=source_language_residue" in caplog.text
     assert "first_unit=" not in caplog.text
 
 
@@ -3089,6 +3355,127 @@ def test_typed_package_failure_uses_uno_fallback_only_when_explicitly_enabled(
 
     monkeypatch.setenv("PPTX_XML_RUNTIME_FALLBACK", "1")
     assert _try_controller_xml_path(controller, tmp_path / "deck.pptx") is None
+
+
+def test_semantic_quality_fallback_keeps_safe_candidate_when_repair_is_structurally_invalid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    source_text = "Can impact gut health – Proposed Mechanisms"
+    safe_candidate = "可能影响肠道健康 – Proposed Mechanisms"
+    _write_minimal_pptx(source, _simple_slide_xml(source_text))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    quality_failed_response = _response_json(
+        unit.unit_id,
+        safe_candidate,
+        [(unit.text_items[0].segment_id, safe_candidate)],
+    )
+    structurally_invalid_repair = _response_json(
+        unit.unit_id,
+        safe_candidate,
+        [("wrong-segment-id", safe_candidate)],
+    )
+    provider = ContractProvider(
+        responses=[quality_failed_response, structurally_invalid_repair],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:t", NS)] == [safe_candidate]
+    assert "repair_error_code=segment_order" in caplog.text
+    assert "repair_failure_kind=contract" in caplog.text
+
+
+def test_semantic_quality_fallback_keeps_safe_candidate_when_repair_times_out(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    source_text = "Can impact gut health – Proposed Mechanisms"
+    safe_candidate = "可能影响肠道健康 – Proposed Mechanisms"
+    _write_minimal_pptx(source, _simple_slide_xml(source_text))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    quality_failed_response = _response_json(
+        unit.unit_id,
+        safe_candidate,
+        [(unit.text_items[0].segment_id, safe_candidate)],
+    )
+    repair_timeouts = [
+        ProviderError(
+            provider="qwen",
+            code="provider_timeout",
+            detail="quality repair provider timed out",
+            retryable=True,
+        )
+        for _ in range(2)
+    ]
+    provider = ContractProvider(
+        responses=[quality_failed_response, *repair_timeouts],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+        "pptx_structured_v2_repair",
+    ]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:t", NS)] == [safe_candidate]
 
 
 def _response_json(

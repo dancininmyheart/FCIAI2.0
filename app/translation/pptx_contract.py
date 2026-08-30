@@ -17,6 +17,7 @@ from app.translation.pptx_contract_types import (
     PptxUnitTranslation,
 )
 from app.translation.pptx_contract_validation import (
+    repair_missing_target_boundary_spaces,
     reconstruct_target,
     reserved_marker_counts,
     validate_pptx_translations,
@@ -71,6 +72,19 @@ def parse_pptx_response_structure(
     raw: str,
     expected_units: tuple[PptxRequestUnit, ...],
 ) -> tuple[PptxUnitTranslation, ...]:
+    return _parse_pptx_response_structure(
+        raw,
+        expected_units,
+        validate_boundaries=True,
+    )
+
+
+def _parse_pptx_response_structure(
+    raw: str,
+    expected_units: tuple[PptxRequestUnit, ...],
+    *,
+    validate_boundaries: bool,
+) -> tuple[PptxUnitTranslation, ...]:
     payload = _parse_json_object(_strip_json_fence(raw))
     _require_exact_fields(payload, _ROOT_FIELDS)
     if _integer(payload["provider_contract_schema_version"]) != PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION:
@@ -120,9 +134,45 @@ def parse_pptx_response_structure(
             segments,
         )
         validate_unit_translation_structure(unit, translation)
-        validate_unit_translation_boundaries(unit, translation)
+        if validate_boundaries:
+            validate_unit_translation_boundaries(unit, translation)
         translations.append(translation)
     return tuple(translations)
+
+
+def repair_single_unit_boundary_space_fallback(
+    raw: str,
+    unit: PptxRequestUnit,
+) -> PptxUnitTranslation | None:
+    """Repair a structurally safe candidate whose only failure is word spacing."""
+    try:
+        translation = _parse_pptx_response_structure(
+            raw,
+            (unit,),
+            validate_boundaries=False,
+        )[0]
+    except PptxContractError:
+        return None
+    try:
+        validate_unit_translation_boundaries(unit, translation)
+    except PptxContractError as error:
+        if error.code == "missing_target_boundary_space":
+            return repair_missing_target_boundary_spaces(unit, translation)
+    return None
+
+
+def build_source_text_fallback(unit: PptxRequestUnit) -> PptxUnitTranslation:
+    """Build a lossless fallback that leaves one failed unit untranslated."""
+    translation = PptxUnitTranslation(
+        unit.unit_id,
+        unit.source_text,
+        tuple(
+            PptxSegmentTranslation(item.segment_id, item.source_text)
+            for item in unit.text_items
+        ),
+    )
+    validate_unit_translation_structure(unit, translation)
+    return translation
 
 
 def recover_single_unit_segment_count_response(
@@ -200,6 +250,31 @@ def recover_single_unit_target_mismatch_response(
     text runs.  The complete aggregate is assigned to the longest source run so
     line breaks and protected fields are never discarded or reordered.
     """
+    return _recover_single_unit_aggregate_response(
+        raw,
+        unit,
+        require_stream_mismatch=True,
+    )
+
+
+def recover_single_unit_boundary_space_response(
+    raw: str,
+    unit: PptxRequestUnit,
+) -> PptxUnitTranslation | None:
+    """Recover when one valid English word is split across source text runs."""
+    return _recover_single_unit_aggregate_response(
+        raw,
+        unit,
+        require_stream_mismatch=False,
+    )
+
+
+def _recover_single_unit_aggregate_response(
+    raw: str,
+    unit: PptxRequestUnit,
+    *,
+    require_stream_mismatch: bool,
+) -> PptxUnitTranslation | None:
     if not unit.text_items or any(
         not isinstance(item, PptxTextStreamItem)
         for item in unit.source_stream
@@ -223,7 +298,10 @@ def recover_single_unit_target_mismatch_response(
     if not target_text.strip():
         return None
     candidate_segments = _parse_segments(item["segments"], unit)
-    if reconstruct_target(unit, candidate_segments) == target_text:
+    stream_matches = reconstruct_target(unit, candidate_segments) == target_text
+    if require_stream_mismatch and stream_matches:
+        return None
+    if not require_stream_mismatch and not stream_matches:
         return None
 
     anchor_index = max(
@@ -242,8 +320,11 @@ def recover_single_unit_target_mismatch_response(
         target_text,
         segments,
     )
-    validate_unit_translation_structure(unit, translation)
-    validate_unit_translation_boundaries(unit, translation)
+    try:
+        validate_unit_translation_structure(unit, translation)
+        validate_unit_translation_boundaries(unit, translation)
+    except PptxContractError:
+        return None
     return translation
 
 
@@ -495,6 +576,7 @@ def _strip_json_fence(raw: str) -> str:
 
 
 __all__ = [
+    "build_source_text_fallback",
     "PPTX_DOCUMENT_KIND",
     "PPTX_DOMAIN_DETECTION_FIELD",
     "PPTX_PROVIDER_CONTRACT_SCHEMA_VERSION",
@@ -504,6 +586,8 @@ __all__ = [
     "PptxUnitTranslation",
     "parse_pptx_response",
     "parse_pptx_response_structure",
+    "recover_single_unit_boundary_space_response",
+    "repair_single_unit_boundary_space_fallback",
     "recover_single_unit_segment_count_response",
     "recover_single_unit_target_mismatch_response",
     "reconstruct_target",

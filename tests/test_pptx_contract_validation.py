@@ -8,15 +8,21 @@ from flask import Flask
 
 from app.translation.pptx_contract import (
     PptxContractError,
+    build_source_text_fallback,
     parse_pptx_response,
     validate_pptx_translations,
 )
 from app.translation.pptx_contract_types import (
     PptxGlossaryEntry,
+    PptxLineBreakStreamItem,
+    PptxProtectedFieldStreamItem,
     PptxRequestUnit,
     PptxSegmentTranslation,
     PptxTextStreamItem,
     PptxUnitTranslation,
+)
+from app.translation.pptx_contract_validation import (
+    repair_missing_target_boundary_spaces,
 )
 from app.translation.metrics import TranslationMetrics
 
@@ -56,6 +62,60 @@ def _parse_translation(
         ensure_ascii=False,
     )
     parse_pptx_response(response, (unit,))
+
+
+def test_source_text_fallback_preserves_control_stream_and_segments() -> None:
+    unit_id = "pptx:slide1:shapeId7:tbOrdinal0:p0"
+    first_id = f"{unit_id}:segment0"
+    second_id = f"{unit_id}:segment1"
+    unit = PptxRequestUnit(
+        unit_id=unit_id,
+        source_text="Alpha\n7Beta",
+        source_stream=(
+            PptxTextStreamItem("stream0", first_id, "Alpha"),
+            PptxLineBreakStreamItem("stream1"),
+            PptxProtectedFieldStreamItem("stream2", "7"),
+            PptxTextStreamItem("stream3", second_id, "Beta"),
+        ),
+        source_language="English",
+        target_language="Chinese",
+    )
+
+    fallback = build_source_text_fallback(unit)
+
+    assert fallback.target_text == unit.source_text
+    assert tuple(segment.target_text for segment in fallback.segments) == (
+        "Alpha",
+        "Beta",
+    )
+    validate_pptx_translations((unit,), (fallback,))
+
+
+def test_boundary_space_repair_does_not_split_a_protected_term() -> None:
+    unit_id = "pptx:slide1:shapeId7:tbOrdinal0:p0"
+    first_id = f"{unit_id}:segment0"
+    second_id = f"{unit_id}:segment1"
+    unit = PptxRequestUnit(
+        unit_id=unit_id,
+        source_text="Token成本",
+        source_stream=(
+            PptxTextStreamItem("stream0", first_id, "Token"),
+            PptxTextStreamItem("stream1", second_id, "成本"),
+        ),
+        source_language="Chinese",
+        target_language="English",
+        protected_terms=("TOKENCOSTS",),
+    )
+    translation = PptxUnitTranslation(
+        unit_id,
+        "Tokencosts are controllable",
+        (
+            PptxSegmentTranslation(first_id, "Token"),
+            PptxSegmentTranslation(second_id, "costs are controllable"),
+        ),
+    )
+
+    assert repair_missing_target_boundary_spaces(unit, translation) is None
 
 
 def test_rejects_high_confidence_source_language_residue() -> None:

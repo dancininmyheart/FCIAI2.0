@@ -145,7 +145,7 @@ V2 任务系统以 MySQL `translation_jobs` 为状态事实源，Worker 通过�
 | `paragraph_up` | 已实现 | 保留原文，在同一段落换行后追加译文。 |
 | `paragraph_down` | 已实现 | 先写译文，再换行追加原文。 |
 | 保留文本片段格式 | 已实现 | `.pptx` 默认使用稳定 unit/segment ID 回写到原 `a:r/a:t`，不再把 `[block]` 作为内部协议；字段、换行、超链接关系和 run 样式保持不变。 |
-| PPTX 语义质量门 | 已实现并有测试 | `PPTX_SEMANTIC_QA_MODE=enforce` 默认拦截英译中高置信源语言短语残留和精确词库违约，只定向重试失败单元；`observe/off` 可回滚，结构契约始终强制。 |
+| PPTX 语义质量门与兜底 | 已实现并有测试 | `PPTX_SEMANTIC_QA_MODE=enforce` 默认检测英译中高置信源语言短语残留和精确词库违约，只定向修复失败单元；修复仍有软质量问题、修复结构无效或修复 Provider 最终超时/不可用时，保留首个结构完整候选并记录降级。`blank_target` 使用源文本确定性兜底；`missing_target_boundary_space` 依次尝试安全重组和高置信边界插空，仍无法形成可写回结果时保留该单元源文本并告警。JSON/schema、unit/segment、保留标记、目标重建与写回等硬完整性错误仍 fail-closed；`observe/off` 可回滚。 |
 | 文本框自动适配 | 已实现并有测试 | `PPTX_XML_AUTOFIT_POLICY=editable` 默认对可安全解析的文本体烘焙实际字号并写入 `a:noAutofit`，消除非 100% `a:normAutofit` 隐式缩放。若任一可见 run/field 的继承字号无法解析，或缺几何而无法物化行距压缩，则整 body 的字号与 AutoFit 原样保留并记录无内容 warning；fallback 可能保留低 scale norm，验收会显式失败对应 absent 检查。`legacy_norm` 可恢复旧行为。原 100% `normAutofit` 保持不变，`spAutoFit` 仅在译文已能容纳时保留。 |
 | XML 优先、布局保真 | 已实现 | 直接复制 PPTX ZIP 并只替换目标 slide XML；成功后立即返回，不再进入旧布局调整。 |
 | LibreOffice/PyUNO 降级 | 有条件可用 | 仅类型化 ZIP/XML/包/结构运行时错误可在 `PPTX_XML_RUNTIME_FALLBACK=1` 时进入 UNO；Provider、协议和标记错误不会降级。 |
@@ -166,7 +166,8 @@ PPT 当前主流程：
   -> XML 提取可翻译段落
   -> 按页调用 Qwen/DeepSeek
   -> 解析 JSON 和片段
-  -> 结构校验 + enforce 语义门；只重试失败单元
+  -> 硬完整性校验 + blank_target 确定性兜底
+  -> enforce 语义门；只定向修复失败单元，修复失败时保留首个结构完整候选并记录降级
   -> 按显示模式写回 slide XML + editable AutoFit 原子预检/持久化字号
   -> 覆盖原任务文件
   -> 更新任务和历史状态
@@ -479,6 +480,8 @@ PPTX_SEMANTIC_QA_MODE=enforce
 PPTX_XML_AUTOFIT_POLICY=editable
 ```
 
+`PPTX_SEMANTIC_QA_MODE=enforce` 保持现有默认值。它仍检测并定向修复源语言残留和词库违约，但修复响应仍有软质量错误、修复结构无效，或修复 Provider 最终超时/不可用时，会保留首个结构完整候选并记录降级。`blank_target` 使用源文本确定性兜底；`missing_target_boundary_space` 依次尝试安全重组和高置信边界插空，仍无法形成可写回结果时保留该单元源文本并告警。JSON/schema、unit/segment、保留标记、目标重建和写回完整性等硬约束不参与该降级，仍然 fail-closed。
+
 `PPTX_SEMANTIC_QA_MODE` 可临时回滚为 `observe`（仅记录）或 `off`（跳过语义门）；`PPTX_XML_AUTOFIT_POLICY` 可回滚为 `legacy_norm`。两项在任务开始时快照，修改后必须重启 Worker 才能确保新任务统一读取；不会重写已经发布的 PPTX。
 
 - `app/config.py`、根 `config.py`、`.env` 和 `AppConfig` 存在多套默认值，数据库、上传大小和路径含义不一致。
@@ -508,7 +511,7 @@ PPTX_XML_AUTOFIT_POLICY=editable
 - Worker 领取、中断、重试、取消、重启恢复、不可变源文件、原子产物和历史幂等。
 - Qwen/DeepSeek Provider 契约、错误脱敏、无跨模型降级和 PDF 模型路由。
 - Translation Unit、结构质量观察/执行、定向重试、翻译记忆、去重、批处理和并发上限。
-- PPTX XML 提取、选页、三种写回模式、语义质量门、`editable/legacy_norm` AutoFit、LibreOffice 超时与进程隔离。
+- PPTX XML 提取、选页、三种写回模式、语义质量门及软质量兜底、`editable/legacy_norm` AutoFit、LibreOffice 超时与进程隔离。
 - 配置默认值、指标、健康接口权限、V2 上线、四个全局开关与两个 PPTX 专用开关回滚。
 - 确定性性能基准和真实 LibreOffice 渲染产物验收。
 

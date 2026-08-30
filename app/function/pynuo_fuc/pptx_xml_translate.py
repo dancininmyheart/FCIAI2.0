@@ -201,7 +201,10 @@ def _translate_structured_batch(
                 len(units) == 1
                 and last_contract_error is not None
                 and last_rejected_response is not None
-                and last_contract_error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES
+                and (
+                    last_contract_error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES
+                    or last_contract_error.code == "target_mismatch"
+                )
             ):
                 return (
                     _fallback_contract_quality_failure(
@@ -245,13 +248,20 @@ def _translate_structured_batch(
         try:
             translations = parse_pptx_response_structure(response.text, units)
         except PptxContractError as error:
+            repair_origin_error = last_contract_error
             _log_contract_rejection(request, error, contract_attempt + 1, len(response.text))
             if (
                 contract_attempt > 0
                 and len(units) == 1
                 and last_contract_error is not None
                 and last_rejected_response is not None
-                and last_contract_error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES
+                and (
+                    last_contract_error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES
+                    or (
+                        last_contract_error.code == "target_mismatch"
+                        and error.code == "malformed_json"
+                    )
+                )
             ):
                 return (
                     _fallback_contract_quality_failure(
@@ -336,12 +346,26 @@ def _translate_structured_batch(
                     actual_segments,
                 )
             elif error.code == "target_mismatch":
+                if (
+                    repair_origin_error is None
+                    or repair_origin_error.code != "target_mismatch"
+                ):
+                    raise repair_origin_error or error
                 recovered = recover_single_unit_target_mismatch_response(
                     response.text,
                     units[0],
                 )
                 if recovered is None:
-                    raise
+                    return (
+                        _fallback_contract_quality_failure(
+                            request,
+                            units[0],
+                            response.text,
+                            error,
+                            repair_error_code=error.code,
+                            repair_failure_kind="quality",
+                        ),
+                    )
                 translations = (recovered,)
                 _log_target_mismatch_recovery(
                     request,
@@ -431,7 +455,7 @@ def _fallback_contract_quality_failure(
         else:
             fallback = build_source_text_fallback(unit)
             strategy = "preserve_source_text"
-    elif error.code == "blank_target":
+    elif error.code in {"blank_target", "target_mismatch"}:
         fallback = build_source_text_fallback(unit)
         strategy = "preserve_source_text"
     else:

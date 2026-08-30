@@ -97,7 +97,7 @@ PPT 文本框和 PDF 文本块在调用模型前转换为稳定的 `TranslationU
 
 无效结果不会写入翻译记忆。PPT 观察模式保持 Provider 原始结构化响应字节不变。
 
-PPTX 结构化链路另有独立的 `PPTX_SEMANTIC_QA_MODE`。默认 `enforce`：英译中结果若仍包含源文中的高置信英文短语，或不满足精确词库映射，系统仍只定向修复失败单元一次，已通过的同批单元不会重译。若修复响应仍只有软质量问题、修复响应结构无效，或修复 Provider 最终超时/不可用，则保留该单元首个结构完整候选并记录降级，不再因这类局部质量问题终止整个文件。`blank_target` 使用源文本进行确定性兜底；`missing_target_boundary_space` 依次尝试安全重组和高置信边界插空，仍无法形成可写回结果时保留该单元源文本并告警。`observe` 只记录问题并保留候选译文，`off` 跳过语义检查。三种模式以及上述兜底都不会关闭 JSON/schema、unit/segment ID、顺序、数量、保留标记、目标重建和写回完整性校验；这些硬完整性错误仍然 fail-closed。
+PPTX 结构化链路另有独立的 `PPTX_SEMANTIC_QA_MODE`。默认 `enforce`：英译中结果若仍包含源文中的高置信英文短语，或不满足精确词库映射，系统仍只定向修复失败单元一次，已通过的同批单元不会重译。若修复响应仍只有软质量问题、修复响应结构无效，或修复 Provider 最终超时/不可用，则保留该单元首个结构完整候选并记录降级，不再因这类局部质量问题终止整个文件。`blank_target` 使用源文本进行确定性兜底；`missing_target_boundary_space` 依次尝试安全重组和高置信边界插空；`target_mismatch` 在精确修复仍失败时先尝试只适用于纯文本流的安全聚合重分配，无法恢复则丢弃不一致译文并保留该单元源文本。`observe` 只记录问题并保留候选译文，`off` 跳过语义检查。三种模式以及上述兜底都不会接受 JSON/schema、unit/segment ID、顺序、数量、保留标记或写回完整性错误；首次响应若出现这些硬错误，修复仍无效时继续 fail-closed。
 
 ### 4.4 翻译记忆、去重和并发
 
@@ -204,7 +204,7 @@ slide XML
   -> paragraph source_stream（text / line_break / protected_field）
   -> provider_contract_schema_version=2 JSON
   -> 严格校验 JSON/schema、unit/segment ID、顺序、数量、目标重建和保留标记来源
-  -> blank_target 使用源文本确定性兜底
+  -> blank_target 与不可安全恢复的重复 target_mismatch 使用源文本确定性兜底
   -> enforce 语义门检查源语言残留和精确词库，只定向修复失败单元
   -> 修复仍有软质量问题、结构无效或 Provider 不可用时，保留首个结构完整候选并记录降级
   -> 精确写回原 a:r/a:t
@@ -214,15 +214,15 @@ slide XML
   -> os.replace 原子发布
 ```
 
-结构校验不受 `TRANSLATION_QUALITY_MODE` 或 `PPTX_SEMANTIC_QA_MODE` 影响。Provider 返回无法解析的 JSON、
+结构校验不受 `TRANSLATION_QUALITY_MODE` 或 `PPTX_SEMANTIC_QA_MODE` 影响。Provider 首次返回无法解析的 JSON、
 缺失或未知 schema 字段、错序或不匹配的 unit/segment ID，或凭空新增 `[block]` / `[块]` 及其规范化变体时，
-当前批次只重试一次；第二次仍存在这类硬完整性错误则任务失败，不写出部分文件，也不会切换模型或进入旧提示词。
+当前批次只重试一次；修复后仍无有效结果则任务失败，不写出部分文件，也不会切换模型或进入旧提示词。首次硬错误不会被修复响应中的 `target_mismatch` 降级掩盖。
 `segment_count` 会先通过二分拆批隔离到单个
 翻译单元，再用包含全部预期 segment ID 的精确响应骨架重试。若第二次仍只存在数量不一致，系统仅对不含
 换行、字段或其他控制流的纯文本 run 段落启用本地恢复，而且要求返回 segments 的译文串联值与聚合
 `target_text` 完全一致；恢复时完整译文锚定到原文最长的 run，其余原始 segment 补为空值，然后重新执行
 结构与语义校验。控制流段落、聚合译文不一致、保留标记来源不合法、目标无法重建或写回不完整等错误仍然
-fail-closed。`blank_target` 是例外的可确定恢复项：系统将该单元源文本作为目标文本写入，再重新验证结构并记录降级。
+fail-closed。`blank_target` 是可确定恢复项：系统将该单元源文本作为目标文本写入，再重新验证结构并记录降级。`target_mismatch` 仅在首次响应和精确修复都只发生聚合 `target_text` 与合法 segment 流不一致时进入兜底；纯文本流优先把完整聚合译文安全锚定到最长 run，含换行/字段等控制流或无法通过复检时则保留源文本及原控制流。修复 Provider 失败或返回不可解析 JSON 时也保留源文本。任何不一致的 Provider 候选都不会被直接写回。
 
 结构通过后，`PPTX_SEMANTIC_QA_MODE=enforce` 才执行源语言残留与词库检查，并对失败单元发起一次定向修复。
 如果修复候选仍有软质量错误，或修复响应本身未通过结构校验，系统丢弃修复候选、保留首个结构完整候选并记录
@@ -244,13 +244,13 @@ TRANSLATION_PROVIDER_TIMEOUT_SECONDS=120
 
 只有 ZIP、XML、写入、包完整性、重复 shape ID 和不支持的文本结构等类型化运行时
 错误，才可在 `PPTX_XML_RUNTIME_FALLBACK=1` 时进入 UNO 兼容路径。初始 Provider 请求未产生结构完整候选，
-以及 JSON/schema、unit/segment、保留标记、目标重建和写回等硬完整性错误始终失败关闭；定向质量修复阶段的
+以及首次 JSON/schema、unit/segment、保留标记和写回等硬完整性错误始终失败关闭；重复 `target_mismatch` 按前述确定性源文本兜底处理；定向质量修复阶段的
 Provider 错误只触发前述候选保留，不会转入 UNO。
 
 Qwen 默认模型由 `QWEN_MODEL` 控制，当前为 `qwen3.7-plus`。翻译请求显式关闭思考
 模式；结构化 PPTX 请求使用 OpenAI 兼容接口的 JSON Object 输出模式，并不设置
 `max_tokens`，避免截断 JSON。若初始响应未通过严格协议校验，系统执行一次契约重试；
-再次出现硬完整性错误后结束任务，并记录关联任务 ID、契约错误码和响应长度，不记录原始响应内容，也不会进入
+再次出现硬完整性错误后结束任务；重复 `target_mismatch` 若无法安全恢复则保留该单元源文本。系统记录关联任务 ID、契约错误码和响应长度，不记录原始响应内容，也不会进入
 旧版页面翻译流程。首个结构完整候选之后的软质量修复失败则按前述规则降级保留，不属于硬契约失败。
 
 当前范围覆盖幻灯片正文和表格单元格中已有的 `txBody`。图表、SmartArt、备注、

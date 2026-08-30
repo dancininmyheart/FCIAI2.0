@@ -1179,7 +1179,288 @@ def test_blank_target_invalid_repair_falls_back_to_source_text(
     assert "repair_failure_kind=contract" in caplog.text
 
 
-def test_repeated_target_mismatch_with_control_stream_remains_fail_closed(
+def test_target_mismatch_malformed_repair_falls_back_to_source_text(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Internal review"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    inconsistent_response = _response_json(
+        unit.unit_id,
+        "内部审查",
+        [(unit.text_items[0].segment_id, "内部检查")],
+    )
+    provider = ContractProvider(responses=[inconsistent_response, "{not-json"])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:r/a:t", NS)] == [
+        "Internal review",
+    ]
+    assert "pptx_quality_fallback_applied" in caplog.text
+    assert "original_error_code=target_mismatch" in caplog.text
+    assert "repair_error_code=malformed_json" in caplog.text
+    assert "repair_failure_kind=contract" in caplog.text
+    assert "strategy=preserve_source_text" in caplog.text
+
+
+def test_target_mismatch_provider_error_repair_falls_back_to_source_text(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Internal review"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    inconsistent_response = _response_json(
+        unit.unit_id,
+        "内部审查",
+        [(unit.text_items[0].segment_id, "内部检查")],
+    )
+    provider_error = ProviderError(
+        provider="qwen",
+        code="provider_unavailable",
+        detail="quality repair provider unavailable",
+        retryable=False,
+    )
+    provider = ContractProvider(responses=[inconsistent_response, provider_error])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:r/a:t", NS)] == [
+        "Internal review",
+    ]
+    assert "pptx_quality_fallback_applied" in caplog.text
+    assert "original_error_code=target_mismatch" in caplog.text
+    assert "repair_error_code=provider_unavailable" in caplog.text
+    assert "repair_failure_kind=provider" in caplog.text
+    assert "strategy=preserve_source_text" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "repair_error_code",
+    ("unit_count", "unit_order", "segment_order", "reserved_marker_added"),
+)
+def test_target_mismatch_repair_keeps_hard_structure_errors_fail_closed(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    repair_error_code: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Internal review"))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    inconsistent_response = _response_json(
+        unit.unit_id,
+        "内部审查",
+        [(unit.text_items[0].segment_id, "内部检查")],
+    )
+    repair_payload = json.loads(
+        _response_json(
+            unit.unit_id,
+            "内部审查",
+            [(unit.text_items[0].segment_id, "内部审查")],
+        ),
+    )
+    if repair_error_code == "unit_count":
+        repair_payload["translations"] = []
+    elif repair_error_code == "unit_order":
+        repair_payload["translations"][0]["unit_id"] = f"{unit.unit_id}:wrong"
+    elif repair_error_code == "segment_order":
+        repair_payload["translations"][0]["segments"][0]["segment_id"] = (
+            f"{unit.text_items[0].segment_id}:wrong"
+        )
+    else:
+        repair_payload["translations"][0]["target_text"] = "内部审查[block]"
+        repair_payload["translations"][0]["segments"][0]["target_text"] = (
+            "内部审查[block]"
+        )
+    provider = ContractProvider(
+        responses=[
+            inconsistent_response,
+            json.dumps(repair_payload, ensure_ascii=False, separators=(",", ":")),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(PptxContractError) as raised:
+        translate_pptx_with_xml(
+            request,
+            provider_registry=ProviderRegistry((provider,)),
+        )
+
+    assert raised.value.code == repair_error_code
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    assert not output.exists()
+    assert "pptx_quality_fallback_applied" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "initial_error_code",
+    ("unit_count", "unit_order", "segment_order", "reserved_marker_added"),
+)
+def test_hard_structure_error_is_not_downgraded_by_target_mismatch_repair(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    initial_error_code: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    slide = _simple_slide_xml("First", "Second").replace(
+        "</a:r><a:r>",
+        "</a:r><a:br/><a:r>",
+        1,
+    )
+    _write_minimal_pptx(source, slide)
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    hard_error_payload = json.loads(
+        _response_json(
+            unit.unit_id,
+            "第一\n第二",
+            [
+                (unit.text_items[0].segment_id, "第一"),
+                (unit.text_items[1].segment_id, "第二"),
+            ],
+        ),
+    )
+    if initial_error_code == "unit_count":
+        hard_error_payload["translations"] = []
+    elif initial_error_code == "unit_order":
+        hard_error_payload["translations"][0]["unit_id"] = f"{unit.unit_id}:wrong"
+    elif initial_error_code == "segment_order":
+        hard_error_payload["translations"][0]["segments"][0]["segment_id"] = (
+            f"{unit.text_items[0].segment_id}:wrong"
+        )
+    else:
+        hard_error_payload["translations"][0]["target_text"] = (
+            "第一\n第二[block]"
+        )
+        hard_error_payload["translations"][0]["segments"][1]["target_text"] = (
+            "第二[block]"
+        )
+    target_mismatch_response = _response_json(
+        unit.unit_id,
+        "第一与第二",
+        [
+            (unit.text_items[0].segment_id, "第一"),
+            (unit.text_items[1].segment_id, "第二"),
+        ],
+    )
+    provider = ContractProvider(
+        responses=[
+            json.dumps(hard_error_payload, ensure_ascii=False, separators=(",", ":")),
+            target_mismatch_response,
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(PptxContractError) as raised:
+        translate_pptx_with_xml(
+            request,
+            provider_registry=ProviderRegistry((provider,)),
+        )
+
+    assert raised.value.code == initial_error_code
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    assert not output.exists()
+    assert "pptx_quality_fallback_applied" not in caplog.text
+
+
+def test_repeated_target_mismatch_with_control_stream_falls_back_to_source_text(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1227,18 +1508,27 @@ def test_repeated_target_mismatch_with_control_stream_remains_fail_closed(
     )
     caplog.set_level(logging.WARNING)
 
-    with pytest.raises(PptxContractError) as raised:
-        translate_pptx_with_xml(
-            request,
-            provider_registry=ProviderRegistry((provider,)),
-        )
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
 
-    assert raised.value.code == "target_mismatch"
+    assert result == str(output)
     assert [item.field for item in provider.requests] == [
         "pptx_structured_v2",
         "pptx_structured_v2_repair",
     ]
-    assert not output.exists()
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert [node.text for node in root.findall(".//a:r/a:t", NS)] == [
+        "First",
+        "Second",
+    ]
+    assert len(root.findall(".//a:br", NS)) == 1
+    assert "pptx_quality_fallback_applied" in caplog.text
+    assert "original_error_code=target_mismatch" in caplog.text
+    assert "repair_error_code=target_mismatch" in caplog.text
+    assert "strategy=preserve_source_text" in caplog.text
     assert "pptx_target_mismatch_recovered" not in caplog.text
 
 

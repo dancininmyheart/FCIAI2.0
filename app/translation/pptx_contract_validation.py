@@ -40,6 +40,14 @@ _LOWER_ACRONYM_LOWER_RE: Final = re.compile(r"[a-z][A-Z]{2,}[a-z]")
 _URL_RE: Final = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>()]+")
 _EMAIL_RE: Final = re.compile(r"(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b")
 _DOI_RE: Final = re.compile(r"(?i)\b(?:doi\s*:?\s*)?10\.\d{4,9}/[-._;()/:A-Z0-9]+\b")
+_SOURCE_TRANSLATION_SEMANTIC_RE: Final = re.compile(
+    r"(?i)\b(?:translat(?:e|ed|ing|ion)|locali[sz](?:e|ed|ing|ation)|"
+    r"vertal(?:en|ing|ingen)|vertaald(?:e)?)\b",
+)
+_CHINESE_PROVIDER_META_PREFIX_RE: Final = re.compile(
+    r"^(?P<label>翻译内容|译文)(?:\s*[:：]\s*|\s+)",
+)
+_TARGET_TRAILING_SENTENCE_PUNCTUATION: Final = "。.!！?？;；"
 _YEAR_RE: Final = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _CHEMICAL_FORMULA_RE: Final = re.compile(r"(?:[A-Z][a-z]?\d*){2,}")
 _ALL_CAPS_ACRONYM_RE: Final = re.compile(r"[A-Z]{2,}(?:[0-9-][A-Z0-9-]*)?")
@@ -316,6 +324,13 @@ def validate_unit_translation_quality(
     unit: PptxRequestUnit,
     translation: PptxUnitTranslation,
 ) -> None:
+    if _has_unjustified_provider_meta_label(unit, translation):
+        _record_quality_finding("provider_meta_label")
+        raise PptxContractError(
+            "provider_meta_label",
+            "target contains a translation label or placeholder absent from the source",
+            unit.unit_id,
+        )
     for glossary_entry in unit.glossary:
         source_has_term = _literal_term_spans(
             unit.source_text,
@@ -395,6 +410,42 @@ def validate_unit_translation_quality(
             reason_code,
             len(shared_tokens),
         )
+
+
+def _has_unjustified_provider_meta_label(
+    unit: PptxRequestUnit,
+    translation: PptxUnitTranslation,
+) -> bool:
+    target_language = unit.target_language.strip().casefold()
+    if not (target_language.startswith("zh") or "chinese" in target_language):
+        return False
+    target = unicodedata.normalize("NFKC", translation.target_text).strip()
+    source = unicodedata.normalize("NFKC", unit.source_text)
+    label = _provider_meta_label_at_target_boundary(target)
+    if label is None:
+        return False
+    if label in source or _SOURCE_TRANSLATION_SEMANTIC_RE.search(source):
+        return False
+    if any(
+        label in unicodedata.normalize("NFKC", entry.target)
+        and entry.source
+        and entry.source.casefold() in source.casefold()
+        for entry in unit.glossary
+    ):
+        return False
+    return True
+
+
+def _provider_meta_label_at_target_boundary(target: str) -> str | None:
+    prefix = _CHINESE_PROVIDER_META_PREFIX_RE.match(target)
+    if prefix is not None:
+        return prefix.group("label")
+    suffix_candidate = target.rstrip(_TARGET_TRAILING_SENTENCE_PUNCTUATION).rstrip()
+    if suffix_candidate == "翻译内容" or suffix_candidate.endswith("翻译内容"):
+        return "翻译内容"
+    if suffix_candidate == "译文":
+        return "译文"
+    return None
 
 
 def _is_protected_target_boundary(

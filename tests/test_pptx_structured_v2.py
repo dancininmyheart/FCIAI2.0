@@ -779,6 +779,186 @@ def test_adjacent_long_duplicate_translation_is_repaired_before_writeback(
     assert "".join(node.text or "" for node in root.findall(".//a:r/a:t", NS)) == sentence
 
 
+def test_provider_meta_label_is_repaired_before_pptx_writeback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml("Clinical nutrition improves feeding tolerance."),
+    )
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    contaminated = "临床营养可改善喂养耐受性。翻译内容"
+    repaired = "临床营养可改善喂养耐受性。"
+    provider = ContractProvider(
+        responses=[
+            _response_json(
+                unit.unit_id,
+                contaminated,
+                [(unit.text_items[0].segment_id, contaminated)],
+            ),
+            _response_json(
+                unit.unit_id,
+                repaired,
+                [(unit.text_items[0].segment_id, repaired)],
+            ),
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    repair_payload = json.loads(provider.requests[1].text)
+    assert repair_payload["validation_error"]["code"] == "provider_meta_label"
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert "".join(node.text or "" for node in root.findall(".//a:t", NS)) == repaired
+
+
+def test_provider_meta_label_prefix_with_space_is_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("Clinical nutrition evidence"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )
+    unit = units[0]
+    contaminated = "翻译内容 临床营养证据"
+    response = _response_json(
+        unit.unit_id,
+        contaminated,
+        [(unit.text_items[0].segment_id, contaminated)],
+    )
+
+    with pytest.raises(PptxContractError) as raised:
+        parse_pptx_response(response, units)
+
+    assert raised.value.code == "provider_meta_label"
+
+
+def test_repeated_provider_meta_label_falls_back_to_source_without_failing_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    source_text = "Feeding score 10"
+    contaminated = "喂养评分10翻译内容"
+    _write_minimal_pptx(source, _simple_slide_xml(source_text))
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )[0]
+    invalid = _response_json(
+        unit.unit_id,
+        contaminated,
+        [(unit.text_items[0].segment_id, contaminated)],
+    )
+    provider = ContractProvider(responses=[invalid, invalid])
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="English",
+        target_language="Chinese",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    monkeypatch.setenv("PPTX_SEMANTIC_QA_MODE", "enforce")
+    caplog.set_level(logging.WARNING)
+
+    result = translate_pptx_with_xml(
+        request,
+        provider_registry=ProviderRegistry((provider,)),
+    )
+
+    assert result == str(output)
+    with zipfile.ZipFile(output) as archive:
+        root = ElementTree.fromstring(archive.read("ppt/slides/slide1.xml"))
+    assert "".join(node.text or "" for node in root.findall(".//a:t", NS)) == source_text
+    assert "original_error_code=provider_meta_label" in caplog.text
+    assert "strategy=preserve_source_text" in caplog.text
+
+
+def test_legitimate_dutch_translation_content_phrase_is_preserved(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml("Deze pagina beschrijft de vertaalde inhoud"),
+    )
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="Dutch",
+        target_language="Chinese",
+    )
+    unit = units[0]
+    target = "本页说明翻译内容"
+    response = _response_json(
+        unit.unit_id,
+        target,
+        [(unit.text_items[0].segment_id, target)],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert parsed[0].target_text == target
+
+
+def test_natural_sentence_starting_with_yiwen_is_preserved(tmp_path: Path) -> None:
+    source = tmp_path / "source.pptx"
+    _write_minimal_pptx(source, _simple_slide_xml("The wording is concise"))
+    units = extract_structured_units_from_pptx(
+        source,
+        source_language="English",
+        target_language="Chinese",
+    )
+    unit = units[0]
+    target = "译文措辞简洁"
+    response = _response_json(
+        unit.unit_id,
+        target,
+        [(unit.text_items[0].segment_id, target)],
+    )
+
+    parsed = parse_pptx_response(response, units)
+
+    assert parsed[0].target_text == target
+
+
 def test_non_whitespace_target_mismatch_is_repaired_before_writeback(tmp_path: Path) -> None:
     source = tmp_path / "source.pptx"
     output = tmp_path / "translated.pptx"
@@ -1452,6 +1632,100 @@ def test_hard_structure_error_is_not_downgraded_by_target_mismatch_repair(
         )
 
     assert raised.value.code == initial_error_code
+    assert [item.field for item in provider.requests] == [
+        "pptx_structured_v2",
+        "pptx_structured_v2_repair",
+    ]
+    assert not output.exists()
+    assert "pptx_quality_fallback_applied" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "repair_error_code",
+    ("segment_count", "blank_target", "missing_target_boundary_space"),
+)
+def test_hard_structure_error_is_not_downgraded_by_soft_repair(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    repair_error_code: str,
+) -> None:
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "translated.pptx"
+    _write_minimal_pptx(
+        source,
+        _simple_slide_xml("\u662f\u5426", "AI", "\u62a2\u8d70\u8ba2\u5355"),
+    )
+    unit = extract_structured_units_from_pptx(
+        source,
+        source_language="Chinese",
+        target_language="English",
+    )[0]
+    hard_error_payload = json.loads(
+        _response_json(
+            unit.unit_id,
+            "Is AI stealing orders",
+            [
+                (unit.text_items[0].segment_id, "Is "),
+                (unit.text_items[1].segment_id, "AI"),
+                (unit.text_items[2].segment_id, " stealing orders"),
+            ],
+        ),
+    )
+    hard_error_payload["translations"][0]["unit_id"] = f"{unit.unit_id}:wrong"
+
+    if repair_error_code == "segment_count":
+        repair_response = _response_json(
+            unit.unit_id,
+            "Is AI stealing orders",
+            [(unit.text_items[0].segment_id, "Is AI stealing orders")],
+        )
+    elif repair_error_code == "blank_target":
+        repair_response = _response_json(
+            unit.unit_id,
+            "",
+            [(item.segment_id, "") for item in unit.text_items],
+        )
+    else:
+        repair_response = _response_json(
+            unit.unit_id,
+            "isAIstealing",
+            [
+                (unit.text_items[0].segment_id, "is"),
+                (unit.text_items[1].segment_id, "AI"),
+                (unit.text_items[2].segment_id, "stealing"),
+            ],
+        )
+    provider = ContractProvider(
+        responses=[
+            json.dumps(
+                hard_error_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            repair_response,
+        ],
+    )
+    request = XmlTranslationRequest(
+        input_path=source,
+        output_path=output,
+        selected_page_indices=None,
+        source_language="Chinese",
+        target_language="English",
+        model="qwen",
+        stop_words=(),
+        custom_translations={},
+        bilingual_translation="translation_only",
+        progress_callback=None,
+    )
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(PptxContractError) as raised:
+        translate_pptx_with_xml(
+            request,
+            provider_registry=ProviderRegistry((provider,)),
+        )
+
+    assert raised.value.code == "unit_order"
     assert [item.field for item in provider.requests] == [
         "pptx_structured_v2",
         "pptx_structured_v2_repair",

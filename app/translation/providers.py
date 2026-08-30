@@ -346,6 +346,7 @@ def _semantic_system_prompt(request: ProviderRequest) -> str:
                 "Concatenating segment target_text values in source_stream order must exactly equal target_text, including every whitespace character and punctuation mark.",
                 "When target_text and segments disagree, redistribute the translated wording across segments so their reconstructed text is exactly target_text.",
                 "When validation reports a missing target-language word boundary, restore the required whitespace in target_text and in exactly one adjacent segment; do not split legitimate compounds.",
+                "Never retain or insert labels such as 翻译内容, 译文, Translation:, or Translated text: unless the source explicitly contains that meaning; remove them from target_text and the corresponding segment when validation reports provider_meta_label.",
                 "Do not copy source-language text as a workaround, remove content, add reserved markers, or return prose or Markdown fences.",
             ),
         )
@@ -363,6 +364,7 @@ def _semantic_system_prompt(request: ProviderRequest) -> str:
                 "Return exactly one JSON object with provider_contract_schema_version, document_kind, and translations.",
                 "Each translation must contain exactly unit_id, target_text, and an ordered segments array.",
                 "Each segment must contain exactly segment_id and target_text, preserving every text segment ID and order.",
+                "Each target_text value must contain only translated document text. Never insert labels or placeholders such as 翻译内容, 译文, Translation:, or Translated text: unless the source explicitly contains that meaning.",
                 "Concatenating segment target_text values in source_stream order must exactly equal target_text, including every whitespace character and punctuation mark.",
                 "When adjacent source runs translate into separate target-language words, include the required boundary whitespace in one segment target_text.",
                 "Keep line_break controls as newlines in target_text and copy protected_field text unchanged.",

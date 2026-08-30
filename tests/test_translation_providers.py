@@ -134,6 +134,7 @@ def test_qwen_provider_uses_json_mode_for_pptx_contract() -> None:
 
     assert transport.calls == ["json"]
     assert result.text.startswith('{"provider_contract_schema_version":2')
+    assert "Never insert labels or placeholders such as 翻译内容" in transport.systems[0]
 
 
 def test_qwen_provider_uses_json_mode_for_pptx_repair_contract() -> None:
@@ -152,6 +153,7 @@ def test_qwen_provider_uses_json_mode_for_pptx_repair_contract() -> None:
     assert "response_requirements" in transport.systems[0]
     assert "do not add, remove, merge, reorder, or rename segments" in transport.systems[0]
     assert "missing target-language word boundary" in transport.systems[0]
+    assert "Never retain or insert labels such as 翻译内容" in transport.systems[0]
 
 
 def test_qwen_provider_uses_json_mode_and_safe_prompt_for_domain_detection() -> None:

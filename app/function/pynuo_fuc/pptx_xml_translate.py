@@ -36,8 +36,16 @@ logger = logging.getLogger(__name__)
 _DEGRADABLE_CONTRACT_QUALITY_CODES = frozenset(
     {"blank_target", "missing_target_boundary_space"},
 )
+_REPAIR_RECOVERABLE_CONTRACT_CODES = (
+    _DEGRADABLE_CONTRACT_QUALITY_CODES | {"segment_count", "target_mismatch"}
+)
 _DEGRADABLE_SEMANTIC_QUALITY_CODES = frozenset(
-    {"duplicate_target_span", "glossary_mismatch", "source_language_residue"},
+    {
+        "duplicate_target_span",
+        "glossary_mismatch",
+        "provider_meta_label",
+        "source_language_residue",
+    },
 )
 
 try:
@@ -331,6 +339,12 @@ def _translate_structured_batch(
                 )
                 continue
             if error.code == "segment_count":
+                if (
+                    repair_origin_error is None
+                    or repair_origin_error.code
+                    not in _REPAIR_RECOVERABLE_CONTRACT_CODES
+                ):
+                    raise repair_origin_error or error
                 recovery = recover_single_unit_segment_count_response(
                     response.text,
                     units[0],
@@ -372,6 +386,12 @@ def _translate_structured_batch(
                     recovered,
                 )
             elif error.code in _DEGRADABLE_CONTRACT_QUALITY_CODES:
+                if (
+                    repair_origin_error is None
+                    or repair_origin_error.code
+                    not in _REPAIR_RECOVERABLE_CONTRACT_CODES
+                ):
+                    raise repair_origin_error or error
                 return (
                     _fallback_contract_quality_failure(
                         request,
@@ -544,40 +564,56 @@ def _repair_quality_failures(
                 (unit,),
             )
         except ProviderError as repair_error:
+            fallback, strategy = _semantic_quality_fallback(unit, translation, error)
             _log_quality_fallback(
                 request,
                 error,
                 repair_error.code,
                 "provider",
+                strategy=strategy,
             )
-            repaired.append(translation)
+            repaired.append(fallback)
             continue
         try:
             candidate = parse_pptx_response_structure(response.text, (unit,))[0]
         except PptxContractError as repair_error:
+            fallback, strategy = _semantic_quality_fallback(unit, translation, error)
             _log_contract_rejection(request, repair_error, 2, len(response.text))
             _log_quality_fallback(
                 request,
                 error,
                 repair_error.code,
                 "contract",
+                strategy=strategy,
             )
-            repaired.append(translation)
+            repaired.append(fallback)
             continue
         remaining_errors = _quality_errors((unit,), (candidate,))
         if remaining_errors:
             repair_error = remaining_errors[0]
+            fallback, strategy = _semantic_quality_fallback(unit, translation, error)
             _log_contract_rejection(request, repair_error, 2, len(response.text))
             _log_quality_fallback(
                 request,
                 error,
                 repair_error.code,
                 "quality",
+                strategy=strategy,
             )
-            repaired.append(translation)
+            repaired.append(fallback)
             continue
         repaired.append(candidate)
     return tuple(repaired)
+
+
+def _semantic_quality_fallback(
+    unit: PptxRequestUnit,
+    translation: PptxUnitTranslation,
+    error: PptxContractError,
+) -> tuple[PptxUnitTranslation, str]:
+    if error.code == "provider_meta_label":
+        return build_source_text_fallback(unit), "preserve_source_text"
+    return translation, "keep_structurally_valid_candidate"
 
 
 def _serialize_candidate_response(translation: PptxUnitTranslation) -> str:

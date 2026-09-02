@@ -1275,8 +1275,8 @@ def ocr_controller(presentation_path: str,
 # 使用示例
 if __name__ == "__main__":
     # OCR API Token (替换为你的实际token)
-    OCR_TOKEN = "你的OCR_API_TOKEN"
-    QWEN_API_KEY = "你的QWEN_API_KEY"
+    OCR_TOKEN = ""
+    QWEN_API_KEY = ""
     
     # 设置环境变量
     os.environ["OCR_TOKEN"] = OCR_TOKEN
